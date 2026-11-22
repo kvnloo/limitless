@@ -1,0 +1,15 @@
+{
+ "block": null,
+ "queue": [],
+ "resume": {
+  "saved": 1894708800.0,
+  "night": "2030-01-15",
+  "session_id": "s-synthetic",
+  "title": "Synthetic session",
+  "last_asks": [
+   "outline the synthetic plan"
+  ],
+  "queued": 0
+ },
+ "nudged": "2030-01-15"
+}

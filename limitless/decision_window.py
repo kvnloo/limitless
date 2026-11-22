@@ -37,12 +37,16 @@ DELIVER, HOLD, DROP = "deliver", "hold", "drop"
 
 @dataclass(frozen=True)
 class WindowState:
-    """The window open now. ``since`` names the event that opened it (e.g. "wake"), not a time."""
+    """The window open now. ``since`` names the event that opened it (e.g. "wake"), not a time.
+
+    ``hold_asks``: the provider says every non-critical message waits (e.g. a focus block runs).
+    """
 
     cls: str
     since: Any = None
     source: str = ""
     confidence: float = 1.0
+    hold_asks: bool = False
 
 
 @runtime_checkable
@@ -78,7 +82,8 @@ def decide(job_window_class: str, state: Optional[WindowState], *, budget_left: 
            critical: bool = False) -> Decision:
     """Deliver, hold or drop one proactive message.
 
-    Order: critical delivers; asleep holds; anytime delivers; an unknown window holds;
+    Order: critical delivers; asleep holds; a provider holding asks (focus block) holds;
+    anytime delivers; an unknown window holds;
     a class mismatch holds; a peak job with no budget left in this peak window drops
     (one decision per peak window; the job's next run may ask again).
     """
@@ -88,6 +93,8 @@ def decide(job_window_class: str, state: Optional[WindowState], *, budget_left: 
         return Decision(DELIVER, "critical: delivers whatever the window")
     if asleep:
         return Decision(HOLD, "asleep: holds until wake")
+    if state is not None and state.hold_asks:
+        return Decision(HOLD, f"focus block running{_opened_by(state)}: holds until it ends")
     if job_window_class == "anytime":
         return Decision(DELIVER, "anytime job and awake")
     now = _open_class(state)

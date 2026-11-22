@@ -1,0 +1,17 @@
+{
+ "block": {
+  "start": 1894708800.0,
+  "end": 1894711800.0,
+  "minutes": 50
+ },
+ "queue": [
+  {
+   "title": "Synthetic report",
+   "body": "held during the block",
+   "cls": "report",
+   "at": 1894709400.0
+  }
+ ],
+ "resume": null,
+ "nudged": ""
+}
