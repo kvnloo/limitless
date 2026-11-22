@@ -71,11 +71,29 @@ _RANK = {"red": 0, "amber": 1, "unknown": 2}
 _DIGITS = re.compile(r"\d+")
 
 
+def _drop_parentheticals(text: str) -> str:
+    """Text with every ``( ... )`` removed, nested ones included. An unclosed ``(`` drops the rest of the
+    text and a stray ``)`` is dropped: thresholds sit in parentheses and must not leak half-open."""
+    out, depth = [], 0
+    for ch in text:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+def _tidy(text: str) -> str:
+    return re.sub(r"\s+", " ", _DIGITS.sub("#", text)).strip(" :")
+
+
 def _name(criterion: str) -> str:
-    """Plain words only: no card ids, every digit masked (counts and weeks are the only numbers shown)."""
-    name = _DIGITS.sub("#", scrub(criterion))
-    name = re.sub(r"\s+", " ", name).strip(" :")
-    return name or "unnamed criterion"
+    """Plain words only: no card ids, no parenthetical thresholds, and every digit left masked (counts
+    and weeks are the only numbers shown). A name that is all parenthetical keeps its masked full text."""
+    text = scrub(criterion)
+    return _tidy(_drop_parentheticals(text)) or _tidy(text) or "unnamed criterion"
 
 
 def summary(rows: List[dict]) -> List[str]:
@@ -94,6 +112,23 @@ def summary(rows: List[dict]) -> List[str]:
     behind = sorted((r for r in rows if r["status"] != "green"), key=lambda r: (_RANK[r["status"]], r["n"]))
     lines += [f"{_name(r['criterion'])}: {r['status']}" for r in behind[:MAX_LINES - len(lines)]]
     return lines
+
+
+WEEKLY_TITLE = "North star (self-reported)"
+_CLAIM = re.compile(r"(?i)\b(met|achieved)\b")
+
+
+def weekly_block(lines: List[str]) -> str:
+    """The weekly review's titled block: the title, then up to five lines as ``- `` bullets (six lines in
+    all). Self-reported counts are not proof, so the words "met" and "achieved" are struck from every
+    line. Blank lines are skipped; no lines left gives ""."""
+    bullets = []
+    for ln in lines:
+        ln = re.sub(r"\s+", " ", _CLAIM.sub("", ln or ""))
+        ln = re.sub(r" ([:,.])", r"\1", ln).strip()
+        if ln and ln != ":":
+            bullets.append(f"- {ln}")
+    return "\n".join([WEEKLY_TITLE] + bullets[:MAX_LINES]) if bullets else ""
 
 
 def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:

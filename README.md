@@ -27,6 +27,7 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
 - `limitless/wake_proxy.py`: when Sleep mode is not used, a fallback `wake` event from phone screen events (the first unlock or touch after a quiet gap of a few hours; notifications ignored); `jobs.merged_events()` lets a Sleep-mode wake win in the same gap and adds the habit cue one hour after each wake.
 - Short nights: on a day with no quiet gap of 4 h, the longest quiet gap of 3 h or more is one wake (`"short": true`, lower confidence, at most one per day); runner verdicts from a screen wake say it is a proxy, not a sleep measure.
 - `limitless/aw_reader.py`: the same wake proxy also reads unlocks and app-in-foreground starts from an ActivityWatch-for-Android SQLite copy, opened read-only; set its path with `LIMITLESS_AW_DB` or config key `aw_db` (none by default).
+- `bin/limitless-scorecard [path]`: print the weekly review's "North star (self-reported)" block (criterion names without their parenthetical thresholds); read-only, prints nothing when there is no table.
 - `scripts/replay_log.py`: replay a delivery log through the gate, read-only, counts only.
 
 ## Tools and hook
