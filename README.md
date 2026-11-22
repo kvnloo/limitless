@@ -15,7 +15,7 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
 - **Never:** no drug or supplement advice, no clinical claims, no capability score, no unattended intervention engine.
 
 ## What's here (v0, in progress)
-- The Hermes plugin: five read-mostly tools and a `pre_llm_call` state card (see [Tools and hook](#tools-and-hook)).
+- The Hermes plugin: six read-mostly tools and a `pre_llm_call` state card (see [Tools and hook](#tools-and-hook)).
 - `limitless/send_gate.py`: the one send policy. 12 h dedupe, a daily cap, a hold while the phone is in Sleep mode, a pending-asks digest folded into the morning brief, and internal ids removed.
 - `bin/kevin-push`: the delivery CLI built on the gate (Telegram through a Hermes profile). `KEVIN_PUSH_STRICT=1` exits 3 when the message wasn't delivered.
   - Configure with `KEVIN_PUSH_PROFILE`, `KEVIN_PUSH_TO`, `LIMITLESS_STATE` or `LIMITLESS_CONFIG` (`~/.config/limitless/config.json` → `"state"`).
@@ -38,6 +38,7 @@ Every tool returns an evidence envelope: `{value, modality, age_h, evidence_tier
 | `limitless_state` | today's card and its parts (window, sleep, readiness, habit) as coarse labels |
 | `limitless_window` | `peak`, `trough`, `anytime`, `asleep` or `unknown`, from Sleep mode, the wake event and the last unlock, never the clock. Bands are hours since wake (config `window_bands`) |
 | `limitless_habit` | this week's one habit and its check-ins: Done, No, Skipped; a day with no answer is unlogged, not No |
+| `limitless_scorecard` | the weekly review's north-star block: at most 5 plain lines (green/amber/red counts, "all green for W of 4 weeks" or "not all green yet", the three criteria furthest from green) from the hand-kept scorecard table at `LIMITLESS_SCORECARD` or config `scorecard`; counts only, no evidence text |
 | `limitless_capture` | appends one line to `captures.jsonl`; it records only and never starts work |
 
 The `pre_llm_call` hook adds a state card of at most 6 lines to each turn. It is cached until the window class or a state file changes. Privacy tier T2 is the default: coarse labels only ("sleep short (proxy)", "readiness low (imported)") and every digit masked. Set `LIMITLESS_RAW_IN_PROMPT=1` to opt in to raw numbers. The state dir is `LIMITLESS_STATE`, else `"state"` in `LIMITLESS_CONFIG` (`~/.config/limitless/config.json`); it is read-only except for captures. Its file shapes are in `limitless/state_reader.py`, with synthetic examples in `tests/fixtures/state/`.
