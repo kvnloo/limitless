@@ -46,6 +46,8 @@ Every tool returns an evidence envelope: `{value, modality, age_h, evidence_tier
 
 The `pre_llm_call` hook adds a state card of at most 6 lines to each turn. It is cached until the window class or a state file changes. Privacy tier T2 is the default: coarse labels only ("sleep short (proxy)", "readiness low (imported)") and every digit masked. Set `LIMITLESS_RAW_IN_PROMPT=1` to opt in to raw numbers. The state dir is `LIMITLESS_STATE`, else `"state"` in `LIMITLESS_CONFIG` (`~/.config/limitless/config.json`); it is read-only except for captures. Its file shapes are in `limitless/state_reader.py`, with synthetic examples in `tests/fixtures/state/`.
 
+Privacy tiers: T0 = raw values never enter a prompt; T1 = coarse labels made at the source by code (`limitless/labeler.py`) or, optionally, a small local CPU-only model (`LIMITLESS_T1_CMD` or config `t1_model_cmd`, none by default; any error or out-of-set answer falls back to the rule label); T2 = a cloud model sees T1 labels only.
+
 Roadmap: event-triggered jobs for the wake brief, the post-nap message and the bedtime question, offered as Hermes [Schedule cards](https://github.com/NousResearch/hermes-agent/pull/158289) and gated by decision windows. Then a weekly review and N-of-1 experiments. Data comes from adapters for [NOOP](https://github.com/kvnloo/noop) (WHOOP/Oura), Health Connect, smart-scale fusion, a REHIT bike app, ActivityWatch and Anki.
 
 ## Tests
