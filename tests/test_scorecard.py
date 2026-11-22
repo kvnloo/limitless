@@ -71,5 +71,67 @@ class Parse(unittest.TestCase):
         self.assertEqual(rows, [{"n": 1, "criterion": "Loop uptime", "status": "red", "weeks_green": 0}])
 
 
+def row(n, criterion, status, weeks=0):
+    return {"n": n, "criterion": criterion, "status": status, "weeks_green": weeks}
+
+
+class Summary(unittest.TestCase):
+    def test_fixture_summary(self):
+        lines = sc.summary(sc.parse((FIX / "scorecard.md").read_text()))
+        self.assertEqual(lines, ["6 green, 2 amber, 2 red of 10", "not all green yet",
+                                 "Habit logging: red", "Experiment readout: red", "Delivery: amber"])
+
+    def test_no_rows_no_lines(self):
+        self.assertEqual(sc.summary([]), [])
+
+    def test_at_most_five_lines(self):
+        rows = [row(i, f"Criterion {chr(64 + i)}", "red") for i in range(1, 11)]
+        self.assertEqual(len(sc.summary(rows)), 5)
+
+    def test_red_before_amber_then_lowest_number(self):
+        rows = [row(9, "Delivery", "amber"), row(7, "Loop uptime", "red"), row(2, "Review held", "amber"),
+                row(8, "Notes current", "red"), row(1, "Capture triage", "green", 3)]
+        self.assertEqual(sc.summary(rows)[2:], ["Loop uptime: red", "Notes current: red", "Review held: amber"])
+
+    def test_unknown_ranks_after_amber_and_counts_only_in_the_total(self):
+        rows = [row(1, "Loop uptime", "unknown"), row(2, "Delivery", "amber"), row(3, "Review held", "green", 2)]
+        self.assertEqual(sc.summary(rows), ["1 green, 1 amber, 0 red of 3", "not all green yet",
+                                            "Delivery: amber", "Loop uptime: unknown"])
+
+    def test_all_green_uses_the_minimum_weeks(self):
+        rows = [row(1, "Loop uptime", "green", 3), row(2, "Delivery", "green", 1), row(3, "Review held", "green", 9)]
+        self.assertEqual(sc.summary(rows), ["3 green, 0 amber, 0 red of 3", "all green for 1 of 4 weeks"])
+
+    def test_weeks_are_capped_at_four_and_never_declared_met(self):
+        rows = [row(1, "Loop uptime", "green", 7), row(2, "Delivery", "green", 5)]
+        lines = sc.summary(rows)
+        self.assertEqual(lines[1], "all green for 4 of 4 weeks")
+        for word in ("met", "achieved", "done", "success"):
+            self.assertNotIn(word, " ".join(lines).lower())
+
+    def test_no_evidence_text(self):
+        text = "\n".join(sc.summary(sc.parse((FIX / "scorecard.md").read_text())))
+        self.assertNotIn("sentinel", text)
+
+    def test_criterion_digits_masked_and_card_ids_removed(self):
+        rows = [row(1, "Sleep 7 h t_510c250d", "red"), row(2, "Delivery 2026", "amber", 0)]
+        lines = sc.summary(rows)
+        self.assertEqual(lines[2:], ["Sleep # h: red", "Delivery #: amber"])
+        self.assertNotIn("t_510c250d", " ".join(lines))
+
+    def test_only_counts_and_week_numbers_are_digits(self):
+        import re
+        rows = sc.parse((FIX / "scorecard.md").read_text()) + [row(11, "Window 12 to 14", "red")]
+        lines = sc.summary(rows)
+        self.assertEqual(re.findall(r"\d+", " ".join(lines[2:])), [])
+        self.assertEqual(re.findall(r"\d+", lines[0]), ["6", "2", "3", "11"])
+        self.assertEqual(re.findall(r"\d+", lines[1]), [])
+
+    def test_lines_are_plain_words(self):
+        for ln in sc.summary(sc.parse((FIX / "scorecard.md").read_text())):
+            self.assertNotRegex(ln, r"[|*_`\[\]]")
+            self.assertEqual(ln, ln.strip())
+
+
 if __name__ == "__main__":
     unittest.main()

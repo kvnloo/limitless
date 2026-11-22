@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
+from .send_gate import scrub
+
 HEADER = ("#", "criterion", "status", "evidence (latest)", "weeks green")
 STATUSES = ("red", "amber", "green")
 _SEPARATOR = re.compile(r"^:?-+:?$")
@@ -56,3 +58,34 @@ def parse(md_text: str) -> List[dict]:
         if row is not None:
             rows.append(row)
     return rows
+
+
+WEEKS_TO_STOP = 4
+MAX_LINES = 5
+_RANK = {"red": 0, "amber": 1, "unknown": 2}
+_DIGITS = re.compile(r"\d+")
+
+
+def _name(criterion: str) -> str:
+    """Plain words only: no card ids, every digit masked (counts and weeks are the only numbers shown)."""
+    name = _DIGITS.sub("#", scrub(criterion))
+    name = re.sub(r"\s+", " ", name).strip(" :")
+    return name or "unnamed criterion"
+
+
+def summary(rows: List[dict]) -> List[str]:
+    """At most 5 plain-word lines: the counts, the stop-rule state, then up to three criteria furthest
+    from green (red, then amber, then unknown; lowest number first). Reports counts only: it never says
+    the north star is met. No rows, no lines."""
+    if not rows:
+        return []
+    count = {s: sum(1 for r in rows if r["status"] == s) for s in STATUSES}
+    lines = [f"{count['green']} green, {count['amber']} amber, {count['red']} red of {len(rows)}"]
+    if count["green"] == len(rows):
+        weeks = min(WEEKS_TO_STOP, max(0, min(r["weeks_green"] for r in rows)))
+        lines.append(f"all green for {weeks} of {WEEKS_TO_STOP} weeks")
+    else:
+        lines.append("not all green yet")
+    behind = sorted((r for r in rows if r["status"] != "green"), key=lambda r: (_RANK[r["status"]], r["n"]))
+    lines += [f"{_name(r['criterion'])}: {r['status']}" for r in behind[:MAX_LINES - len(lines)]]
+    return lines
