@@ -70,6 +70,24 @@ def _rows(text: str) -> list:
     return out
 
 
+def normalize_digest(row: Optional[dict]) -> Optional[dict]:
+    """The live sync writes {builtAt, phoneProxy: {gapHours}, ...}; map it to {at, metrics}.
+
+    Rows already in the {at, metrics} shape pass through unchanged. Only values that exist are
+    mapped (sleep from the unlock-gap proxy); nothing is filled in.
+    """
+    if not isinstance(row, dict) or "metrics" in row:
+        return row
+    out = dict(row)
+    out.setdefault("at", row.get("builtAt"))
+    metrics = {}
+    gap = (row.get("phoneProxy") or {}).get("gapHours") if isinstance(row.get("phoneProxy"), dict) else None
+    if isinstance(gap, (int, float)) and not isinstance(gap, bool):
+        metrics["sleep_h"] = {"value": gap, "modality": "proxy"}
+    out["metrics"] = metrics
+    return out
+
+
 class StateReader:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -117,7 +135,7 @@ class StateReader:
         return self._jsonl("digests.jsonl")
 
     def latest_digest(self) -> Optional[dict]:
-        return self._last_row("digests.jsonl")
+        return normalize_digest(self._last_row("digests.jsonl"))
 
     def asks(self) -> Optional[dict]:
         return self._json("asks-latest.json")
