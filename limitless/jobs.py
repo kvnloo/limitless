@@ -221,3 +221,31 @@ def to_schedule_card(spec: JobSpec) -> dict:
     if spec.answers:
         card["answers"] = f"{', '.join(spec.answers[:-1])} or {spec.answers[-1]} in one tap; no answer stays unlogged"
     return card
+
+
+HABIT_TAPS = {"done": "Done", "no": "No", "skip": "Skipped"}   # tap -> the habit.json check-in word
+
+
+def habit_answer(tap: Any) -> Optional[str]:
+    """Done | No | Skipped for a real tap; None (unlogged) for no answer, an expired ask or anything else."""
+    return HABIT_TAPS.get(tap.strip().lower()) if isinstance(tap, str) else None
+
+
+def habit_day(habit: Optional[dict], day: str) -> str:
+    """One day's check-in: Done | No | Skipped, else "unlogged". A day with no answer is never No."""
+    checkins = habit.get("checkins") if isinstance(habit, dict) else None
+    v = checkins.get(day) if isinstance(checkins, dict) else None
+    if isinstance(v, str) and v.strip().lower() in ("done", "no", "skipped"):
+        return v.strip().capitalize()
+    return "unlogged"
+
+
+def record_checkin(habit: Optional[dict], day: str, tap: Any) -> dict:
+    """A copy of habit.json with the day's answer; no answer leaves the day as it was. The caller writes it."""
+    out = dict(habit or {})
+    checkins = dict(out.get("checkins") or {}) if isinstance(out.get("checkins"), dict) else {}
+    answer = habit_answer(tap)
+    if answer is not None:
+        checkins[day] = answer
+    out["checkins"] = checkins
+    return out
