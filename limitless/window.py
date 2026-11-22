@@ -21,7 +21,7 @@ CLASSES = ("asleep", "peak", "trough", "anytime", "unknown")
 
 
 def _unknown(reason: str, age_h: Optional[float] = None) -> dict:
-    env = envelope("unknown", "proxy", age_h)
+    env = envelope("unknown", "proxy", None if age_h is None else max(0.0, age_h))
     env["reason"] = reason
     return env
 
@@ -65,6 +65,8 @@ def classify(sleep_rows: list, poll: Optional[dict], last_unlock: Optional[dict]
     if wake_at is None:
         return _unknown("awake, but no wake event (Sleep mode off after on)", evidence_s / 3600)
     since_h = (now - wake_at) / 3600
+    if since_h < 0:
+        return _unknown("the wake event is in the future (clock skew)", evidence_s / 3600)
     if since_h > MAX_AWAKE_H:
         return _unknown(f"the last wake event is {since_h:.0f} h old", evidence_s / 3600)
     cls = _band(since_h, bands)

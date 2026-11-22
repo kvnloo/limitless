@@ -71,6 +71,9 @@ class Classify(unittest.TestCase):
     def test_a_very_old_wake_is_unknown(self):
         self.assertEqual(cls(woke_h_ago=22), "unknown")
 
+    def test_a_wake_event_in_the_future_is_unknown(self):
+        self.assertEqual(cls(woke_h_ago=-2), "unknown")  # clock skew between hosts, not a band
+
     def test_envelope_is_a_proxy(self):
         env = w.classify(*events(NOW, woke_h_ago=3), now=NOW)
         self.assertEqual(env["modality"], "proxy")
