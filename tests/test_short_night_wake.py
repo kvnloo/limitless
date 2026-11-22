@@ -1,4 +1,4 @@
-"""A short night still yields one wake: the longest quiet gap of a day with no >= MIN_GAP_S gap.
+"""A short night still yields one wake: the first quiet gap of a day with no >= MIN_GAP_S gap.
 
 Synthetic rows only. T0 is an arbitrary epoch; only differences between times matter.
 """
@@ -62,8 +62,16 @@ class ShortNight(unittest.TestCase):
         self.assertEqual(evs[0]["confidence"], wake_proxy.SCREEN_CONFIDENCE)
 
     def test_b_the_break_before_the_night_is_not_a_wake_either(self):
+        # With last night's wake in the rows, the break shares its day and is not a wake.
+        rows = day(-8, 6.0, -6.0, 30, extra=[(9.0, 3.2), (18.0, 5.0)])  # night -6 -> 0, break 9.0 -> 12.2, night 18 -> 23
+        self.assertEqual([e["at"] for e in wake_proxy.events_from_screen(rows)], [T0 + 0.0 * H, T0 + 23.0 * H])
+
+    def test_b_a_break_seen_as_a_short_wake_stays_one_after_the_night(self):
+        # Prefix stability: with no earlier wake in the rows, the poll at 12.2 h sees the break as a short
+        # wake. The night that ends later does not take it back; the night is its own (long) wake.
         rows = day(0, 3.2, 9.0, 30, extra=[(18.0, 5.0)])  # break 9.0 -> 12.2, then night 18 -> 23
-        self.assertEqual([e["at"] for e in wake_proxy.events_from_screen(rows)], [T0 + 23.0 * H])
+        evs = wake_proxy.events_from_screen(rows)
+        self.assertEqual([(e["at"], e.get("short", False)) for e in evs], [(T0 + 12.2 * H, True), (T0 + 23.0 * H, False)])
 
     def test_c_only_gaps_under_3_h_give_no_wake(self):
         rows = day(0, 2.9, 3.0, 48, step_h=2.5)
@@ -80,10 +88,12 @@ class ShortNight(unittest.TestCase):
         rows = day(0, 3.5, 2.0, 48, extra=[(25.0, 3.5)])
         self.assertEqual([e["at"] for e in wake_proxy.events_from_screen(rows)], [T0 + 5.5 * H, T0 + 28.5 * H])
 
-    def test_the_longest_gap_of_the_day_wins(self):
+    def test_the_first_gap_of_the_day_wins(self):
+        # Was "the longest gap wins" (15.6 h). The first poll after 5.2 h already saw that wake;
+        # a longer gap later the same day must not move it.
         rows = day(0, 3.2, 2.0, 24, extra=[(12.0, 3.6)])
         evs = wake_proxy.events_from_screen(rows)
-        self.assertEqual([e["at"] for e in evs], [T0 + 15.6 * H])
+        self.assertEqual([e["at"] for e in evs], [T0 + 5.2 * H])
 
     def test_no_short_wake_near_a_long_wake(self):
         # A normal night, then long breaks over the next 20 h: none of them is a second wake.
