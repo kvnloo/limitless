@@ -3,6 +3,9 @@
 build: write state/brief-latest.md from real state. send: build + deliver via kevin-push (Telegram).
 show: print the latest file. Before delivery the text is finalized: card ids removed and the folded
 'Asks waiting on you' digest (kevin-push asks-latest.json) added as one line.
+send passes this wake's event key (jobs_runner.event_key, the key bin/limitless-jobs passes) to kevin-push
+as $KEVIN_PUSH_ONCE, so one wake gets one brief whichever sender goes first. With no wake trigger (or
+unreadable state) it sends as before, with no key; a KEVIN_PUSH_ONCE from outside is never passed on.
 """
 import importlib.util
 import json
@@ -13,7 +16,8 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import brief_post  # noqa: E402
+from limitless import brief_post, jobs_runner  # noqa: E402
+from limitless.state_reader import state_dir  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("limitless_loop", os.path.expanduser("~/.local/lib/limitless_loop.py"))
 L = importlib.util.module_from_spec(spec)
@@ -21,8 +25,19 @@ spec.loader.exec_module(L)
 ASKS = Path.home() / ".local/state/kevin-push/asks-latest.json"
 
 
-def notify(cfg, text):
+def wake_key(now):
+    """This wake's event key, or None (no wake trigger, or state that cannot be read: send as before)."""
+    try:
+        return jobs_runner.event_key(state_dir(), now)
+    except Exception:  # noqa: BLE001 - a broken state dir must not stop the brief
+        return None
+
+
+def notify(cfg, text, once=None):
     env = dict(os.environ, CIRCADIAN_CLASS=os.environ.get("CIRCADIAN_CLASS", "digest"))
+    env.pop("KEVIN_PUSH_ONCE", None)          # the key is this wake's, never one left in the env
+    if once:
+        env["KEVIN_PUSH_ONCE"] = once
     d = L.deliver(cfg, "Wake-up brief", text, url="dash://notices", env=env)
     return (0 if str(d.get("shown", "")).startswith("telegram") else 1), d
 
@@ -34,7 +49,7 @@ def main(argv):
     out = L.build(cfg, day=day)
     text = brief_post.finalize(out["notif"], brief_post.load_asks(ASKS), time.time())
     if cmd in ("send", "--send"):
-        rc, msg = notify(cfg, text)
+        rc, msg = notify(cfg, text, once=wake_key(time.time()))
         print(json.dumps({"path": out["path"], "notify_rc": rc, "notify": msg, "notif_text": text}, indent=1, default=str))
         return 0 if out else 2
     if cmd == "show":
