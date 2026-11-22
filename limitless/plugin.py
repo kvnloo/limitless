@@ -85,8 +85,9 @@ TOOLS = {
         "decisions in peak, reviews in trough; capture works anytime."), _window, "🪟"),
     "limitless_habit": (_schema(
         "limitless_habit",
-        "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped). A day "
-        "with no answer is unlogged, never a No."), _habit, "🌱"),
+        "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped), plus "
+        "\"N of M logged days\". A 1-tap answer beats the phone sync's met/missed; a day with neither is "
+        "unlogged, never a No, and stays out of M."), _habit, "🌱"),
     "limitless_capture": (_schema(
         "limitless_capture",
         "Record one thought, idea or to-do for later triage by appending it to the capture log. It only "

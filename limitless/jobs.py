@@ -18,10 +18,13 @@ from .state_reader import parse_ts
 from .window import MAX_AWAKE_H
 
 # Events a job can wake on or end on. sleep_mode_on/off come from the phone; wake is a Sleep-mode
-# off after a long on; wind_down and habit_cue come from whatever automation marks them.
+# off after a long on, or a screen-event wake when Sleep mode is not used (merged_events); habit_cue is
+# HABIT_CUE_AFTER_S after a wake (merged_events) or comes from whatever automation marks it.
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end")
 TRIGGER_AFTER = ("", "short_on")
 NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
+SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake_proxy) carries less
+HABIT_CUE_AFTER_S = 3600     # the feeds-free-first-hour check-in asks once the first hour after a wake has passed
 DELIVER, HOLD, DROP, NOT_TRIGGERED = "deliver", "hold", "drop", "not_triggered"
 ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
@@ -90,6 +93,48 @@ def events_from_sleepmode(rows: list) -> list:
         if at is not None:
             out.append({"event": "sleep_mode_on" if r.get("on") else "sleep_mode_off", "at": at})
     return sorted(out, key=lambda e: e["at"])
+
+
+def _sleep_spans(sleep_events: list) -> list:
+    """(on_at, off_at) for each Sleep-mode on followed by an off, oldest first."""
+    evs = sorted((parse_ts(e.get("at")), e.get("event")) for e in sleep_events or ()
+                 if isinstance(e, dict) and e.get("event") in _SLEEP and parse_ts(e.get("at")) is not None)
+    spans, on = [], None
+    for t, name in evs:
+        if name == "sleep_mode_on":
+            on = t if on is None else on
+        elif on is not None:
+            spans.append((on, t))
+            on = None
+    return spans
+
+
+def merged_events(sleep_events: list, screen_events: list) -> list:
+    """Sleep-mode events, the screen-event wakes they do not cover, and a habit_cue after each wake.
+
+    A screen wake (wake_proxy.events_from_screen) covers the quiet gap from its ``gap_from`` to its
+    ``at``. When a Sleep-mode on/off overlaps that gap, Sleep mode wins: a long on is the wake (found by
+    should_fire from the on/off pair, as before) and a short on is a nap, which stays Sleep-mode only.
+    Otherwise the screen wake is used. Each wake, from either source, adds a ``habit_cue`` event
+    HABIT_CUE_AFTER_S later (a duration from the event). Inputs are not changed; output is sorted.
+    """
+    sleep = [dict(e) for e in sleep_events or () if isinstance(e, dict) and e.get("event") in _SLEEP]
+    spans = _sleep_spans(sleep)
+    out = list(sleep)
+    wake_from = [(off, "sleep_mode", SLEEP_MODE_CONFIDENCE) for on, off in spans if off - on >= NAP_MAX_S]
+    for e in screen_events or ():
+        t = parse_ts(e.get("at")) if isinstance(e, dict) and e.get("event") == "wake" else None
+        if t is None:
+            continue
+        g = parse_ts(e.get("gap_from"))
+        g = t if g is None else g
+        if any(on < t and off > g for on, off in spans):
+            continue
+        out.append(dict(e, at=t))
+        wake_from.append((t, e.get("source", "screen"), e.get("confidence")))
+    for t, source, conf in wake_from:
+        out.append({"event": "habit_cue", "at": t + HABIT_CUE_AFTER_S, "source": source, "confidence": conf})
+    return sorted(out, key=lambda e: parse_ts(e["at"]))
 
 
 def _past(events: list, now: float) -> list:
@@ -231,13 +276,21 @@ def habit_answer(tap: Any) -> Optional[str]:
     return HABIT_TAPS.get(tap.strip().lower()) if isinstance(tap, str) else None
 
 
-def habit_day(habit: Optional[dict], day: str) -> str:
-    """One day's check-in: Done | No | Skipped, else "unlogged". A day with no answer is never No."""
+SYNC_WORDS = {"met": "Done", "missed": "No"}   # StateReader.habit_days() -> the check-in word
+
+
+def habit_day(habit: Optional[dict], day: str, synced: Optional[dict] = None) -> str:
+    """One day's check-in: Done | No | Skipped, else "unlogged". A day with no answer is never No.
+
+    A 1-tap answer in habit.json wins; else the sync's habit1.jsonl verdict (``synced``, from
+    StateReader.habit_days(): met -> Done, missed -> No); a day with neither stays unlogged.
+    """
     checkins = habit.get("checkins") if isinstance(habit, dict) else None
     v = checkins.get(day) if isinstance(checkins, dict) else None
     if isinstance(v, str) and v.strip().lower() in ("done", "no", "skipped"):
         return v.strip().capitalize()
-    return "unlogged"
+    s = synced.get(day) if isinstance(synced, dict) else None
+    return SYNC_WORDS.get(s, "unlogged") if isinstance(s, str) else "unlogged"
 
 
 def record_checkin(habit: Optional[dict], day: str, tap: Any) -> dict:
