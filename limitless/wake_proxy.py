@@ -6,8 +6,9 @@ screen that lights up and goes dark again, is the phone, not the person.
 
 A wake is the first such action after a person-quiet gap of at least ``min_gap_s``. The gap is a
 duration measured from the person's last action; nothing here reads or compares a time of day.
-A short night has no such gap: then the longest quiet gap of at least ``SHORT_NIGHT_MIN_S`` whose
-24 h span holds no other wake is a wake too, marked ``"short": true`` with a lower confidence.
+A short night has no such gap: then the first quiet gap of at least ``SHORT_NIGHT_MIN_S`` whose
+24 h span holds no earlier wake is a wake too, marked ``"short": true`` with a lower confidence.
+A wake, once seen in the rows so far, never moves when later rows arrive.
 The gap is a quiet phone, not sleep: no event carries a sleep duration.
 Each event says ``"source": "screen"`` and carries a confidence below the Sleep-mode one
 (jobs.SLEEP_MODE_CONFIDENCE), so a Sleep-mode wake wins when both describe the same gap
@@ -21,7 +22,7 @@ PERSON = ("KEYGUARD_HIDDEN", "USER_INTERACTION")   # the person's own actions; e
 MIN_GAP_S = 4 * 3600        # a quiet gap at least this long, then an action, is a wake (longer than a nap)
 SCREEN_CONFIDENCE = 0.6     # below jobs.SLEEP_MODE_CONFIDENCE: a quiet phone is weaker evidence of sleep
 SHORT_NIGHT_MIN_S = 3 * 3600   # a short-night fallback wake needs at least this quiet gap
-SHORT_CONFIDENCE = 0.4      # below SCREEN_CONFIDENCE: the longest gap of a day is weaker evidence still
+SHORT_CONFIDENCE = 0.4      # below SCREEN_CONFIDENCE: a shorter gap is weaker evidence still
 SAME_DAY_S = MIN_GAP_S + 20 * 3600   # two quiet gaps that fit in one span this long belong to one day
 
 
@@ -57,22 +58,21 @@ def events_from_screen(rows: list, *, min_gap_s: float = MIN_GAP_S,
 
     ``gap_from`` is the person's last action before the quiet gap. The first action in the rows has
     no known gap before it, so it is never a wake. Every gap of at least ``min_gap_s`` is a wake.
-    Then, longest first, a gap of at least ``short_min_s`` (and under ``min_gap_s``) is a short wake
-    (``"short": True``, SHORT_CONFIDENCE) unless it and another wake's gap fit in one SAME_DAY_S span:
-    one wake per day, and a long break on a normal day is never a second one. Durations only.
+    A gap of at least ``short_min_s`` (and under ``min_gap_s``) is a short wake (``"short": True``,
+    SHORT_CONFIDENCE) unless it and an earlier wake's gap fit in one SAME_DAY_S span: the first such
+    gap of a day wins, and a long break after a normal night is never a second wake. Scanning oldest
+    first makes the output prefix-stable: a wake seen in the rows so far stays, with the same ``at``
+    and ``gap_from``, when later rows arrive, so a poll never moves a wake. Durations only.
     """
     times = person_times(rows)
-    out, taken, short = [], [], []
-    for prev, cur in zip(times, times[1:]):
+    out, taken = [], []
+    for prev, cur in zip(times, times[1:]):        # oldest first: a gap's fate rests on earlier gaps only
         if cur - prev >= min_gap_s:
             out.append({"event": "wake", "at": cur, "gap_from": prev, "source": "screen",
                         "confidence": SCREEN_CONFIDENCE})
             taken.append((prev, cur))
-        elif cur - prev >= short_min_s:
-            short.append((prev, cur))
-    for gap in sorted(short, key=lambda g: (g[0] - g[1], g[1])):     # longest first; ties: the earlier
-        if not any(_same_day(gap, t, SAME_DAY_S) for t in taken):
-            out.append({"event": "wake", "at": gap[1], "gap_from": gap[0], "source": "screen",
+        elif cur - prev >= short_min_s and not any(_same_day((prev, cur), t, SAME_DAY_S) for t in taken):
+            out.append({"event": "wake", "at": cur, "gap_from": prev, "source": "screen",
                         "confidence": SHORT_CONFIDENCE, "short": True})
-            taken.append(gap)
-    return sorted(out, key=lambda e: e["at"])
+            taken.append((prev, cur))
+    return out
