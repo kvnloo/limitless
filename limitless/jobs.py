@@ -10,14 +10,23 @@ Stdlib only, Python 3.9+.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, NamedTuple, Optional, Tuple
 
+from . import decision_window, send_gate
 from .decision_window import WINDOW_CLASSES
+from .state_reader import parse_ts
+from .window import MAX_AWAKE_H
 
 # Events a job can wake on or end on. sleep_mode_on/off come from the phone; wake is a Sleep-mode
 # off after a long on; wind_down and habit_cue come from whatever automation marks them.
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end")
 TRIGGER_AFTER = ("", "short_on")
+NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
+DELIVER, HOLD, DROP, NOT_TRIGGERED = "deliver", "hold", "drop", "not_triggered"
+ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED)
+_SLEEP = ("sleep_mode_on", "sleep_mode_off")
+_WORDS = {"wake": "wake", "sleep_mode_on": "Sleep-mode on", "sleep_mode_off": "Sleep-mode off",
+          "wind_down": "wind-down", "habit_cue": "habit cue", "focus_end": "focus-end", "nap": "nap"}
 
 
 @dataclass(frozen=True)
@@ -65,3 +74,123 @@ def habit_checkin(habit: Optional[dict]) -> JobSpec:
         return JobSpec(HABIT_CHECKIN.name, cue, "anytime", HABIT_CHECKIN.send_title, 1, "sleep_mode_on",
                        answers=HABIT_CHECKIN.answers)
     return HABIT_CHECKIN
+
+
+class Verdict(NamedTuple):
+    action: str                        # deliver | hold | drop | not_triggered
+    reason: str                        # one line; a held or dropped job shows it in the run log
+    trigger_at: Optional[float] = None
+
+
+def events_from_sleepmode(rows: list) -> list:
+    """sleepmode.jsonl rows ({"at", "on"}) as events ({"event": "sleep_mode_on" | "sleep_mode_off", "at"})."""
+    out = []
+    for r in rows:
+        at = parse_ts((r or {}).get("at")) if isinstance(r, dict) else None
+        if at is not None:
+            out.append({"event": "sleep_mode_on" if r.get("on") else "sleep_mode_off", "at": at})
+    return sorted(out, key=lambda e: e["at"])
+
+
+def _past(events: list, now: float) -> list:
+    out = []
+    for e in events or ():
+        at = parse_ts(e.get("at")) if isinstance(e, dict) else None
+        if at is not None and at <= now and e.get("event") in EVENTS:
+            out.append((at, e["event"]))
+    return sorted(out)
+
+
+def _triggers(spec: JobSpec, evs: list) -> list:
+    """Times of the events that wake this job. A Sleep-mode off counts by the length of the on before it."""
+    hits, last_sleep = [], None
+    for at, name in evs:
+        if name in _SLEEP:
+            prev, last_sleep = last_sleep, (at, name)
+            if name == "sleep_mode_off" and prev is not None and prev[1] == "sleep_mode_on":
+                short = at - prev[0] < NAP_MAX_S
+                if spec.trigger_event == "wake" and not short:
+                    hits.append(at)
+                elif spec.trigger_event == "sleep_mode_off" and (short or spec.trigger_after != "short_on"):
+                    hits.append(at)
+            continue
+        if name == spec.trigger_event:
+            hits.append(at)
+    return hits
+
+
+def _label(spec: JobSpec) -> str:
+    return "nap" if spec.trigger_after == "short_on" else _WORDS[spec.trigger_event]
+
+
+def _window(state: Any):
+    """(WindowState | None, asleep) from a decision_window.WindowState or a window.py envelope."""
+    if state is None:
+        return None, False
+    if isinstance(state, dict):
+        cls = state.get("cls", state.get("value"))
+        if cls == "asleep":
+            return None, True
+        try:
+            conf = float(state.get("confidence", 1.0))
+        except (TypeError, ValueError):
+            conf = 0.0
+        return decision_window.WindowState(cls=cls if isinstance(cls, str) else decision_window.UNKNOWN,
+                                           since=state.get("since"), source="window", confidence=conf), False
+    if getattr(state, "cls", None) == "asleep":
+        return None, True
+    return state, False
+
+
+def _dedupe_body(spec: JobSpec, trigger_at: float) -> str:
+    return f"{spec.name} after {spec.trigger_event} {trigger_at:.0f}"
+
+
+def dedupe_key(spec: JobSpec, trigger_at: float) -> str:
+    """The send gate's key for this job's message about one trigger event."""
+    return send_gate.key(spec.send_title, _dedupe_body(spec, trigger_at))
+
+
+def sent_entry(spec: JobSpec, trigger_at: float, now: float) -> dict:
+    """The sent-log record a caller appends after a real delivery (send gate shape plus the job name)."""
+    return {"t": now, "k": dedupe_key(spec, trigger_at), "job": spec.name}
+
+
+def _times(n: int) -> str:
+    return {1: "once", 2: "twice"}.get(n, f"{n} times")
+
+
+def should_fire(spec: JobSpec, events: list, window_state: Any, sent_log: list, now: float) -> Verdict:
+    """Deliver, hold, drop, or not triggered, with a one-line reason. Pure: reads its inputs, sends nothing.
+
+    Order: the latest trigger event; expiry; a trigger too old to trust; the per-window limit;
+    decision_window.decide (asleep, class, peak budget); the send gate's 12 h dedupe and daily cap.
+    A hold is not a send: nothing is counted until the caller delivers and appends sent_entry().
+    """
+    label = _label(spec)
+    evs = _past(events, now)
+    hits = _triggers(spec, evs)
+    if not hits:
+        return Verdict(NOT_TRIGGERED, f"no {label} event yet")
+    trig = hits[-1]
+    if any(trig < at and name == spec.expires for at, name in evs):
+        return Verdict(DROP, f"expired: {_WORDS[spec.expires]} after the {label} event", trig)
+    age_h = (now - trig) / 3600
+    if age_h > MAX_AWAKE_H:
+        return Verdict(DROP, f"the {label} event is {age_h:.0f} h old: missing data, not a long day", trig)
+    sent = [s for s in (sent_log or ()) if isinstance(s, dict) and isinstance(s.get("t"), (int, float))]
+    count = sum(1 for s in sent if s.get("job") == spec.name and trig <= s["t"] <= now)
+    if count >= spec.max_per_window:
+        return Verdict(DROP, f"already spoke {_times(count)} since the {label} event", trig)
+    state, asleep = _window(window_state)
+    w = decision_window.decide(spec.window_class, state, budget_left=spec.max_per_window - count, asleep=asleep)
+    if w.action != decision_window.DELIVER:
+        return Verdict(w.action, w.reason, trig)
+    gate = send_gate.decide("limitless", spec.send_title, _dedupe_body(spec, trig), "decision", now, sent, False)
+    if gate == "duplicate":
+        return Verdict(DROP, "the send gate sent this same message within 12 h", trig)
+    if gate == "cap":
+        return Verdict(HOLD, f"the send gate's daily cap of {send_gate.DAILY_CAP} is reached", trig)
+    if gate != "send":
+        return Verdict(HOLD, f"the send gate says {gate}", trig)
+    return Verdict(DELIVER, f"{label} event; {w.reason}", trig)
