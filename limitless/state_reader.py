@@ -7,6 +7,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   digests.jsonl        {"date", "at", "metrics": {name: {"value", "modality"}}}
   asks-latest.json     {"at": epoch, "count", "lines"}
   habit.json           {"week_of": date, "habit", "start", "checkins": {date: Done|No|Skipped}}
+  habit1.jsonl         one row per day from the sync: {"day", "wake", "feedMinFirstHour", "firstApp",
+                       "firstCat", "minToFirstFeed", "met": bool}
   sleepmode.jsonl      {"at", "on"} phone Sleep-mode changes; sleepmode-poll.json {"at", "ok"}
   unlocks.jsonl        {"at"} phone unlocks
 Missing or malformed files read as None / []: callers report "no data", never a guess.
@@ -15,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -142,6 +144,23 @@ class StateReader:
 
     def habit(self) -> Optional[dict]:
         return self._json("habit.json")
+
+    def habit1(self) -> list:
+        return self._jsonl("habit1.jsonl")
+
+    def habit_days(self) -> dict:
+        """{day: "met" | "missed"} from habit1.jsonl. A row without a real date and a bool met is left out."""
+        out = {}
+        for r in self.habit1():
+            day, met = r.get("day"), r.get("met")
+            if not isinstance(met, bool) or not isinstance(day, str):
+                continue
+            try:
+                date.fromisoformat(day)
+            except ValueError:
+                continue
+            out[day] = "met" if met else "missed"
+        return out
 
     def sleepmode(self) -> list:
         return self._jsonl("sleepmode.jsonl")

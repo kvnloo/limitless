@@ -276,13 +276,21 @@ def habit_answer(tap: Any) -> Optional[str]:
     return HABIT_TAPS.get(tap.strip().lower()) if isinstance(tap, str) else None
 
 
-def habit_day(habit: Optional[dict], day: str) -> str:
-    """One day's check-in: Done | No | Skipped, else "unlogged". A day with no answer is never No."""
+SYNC_WORDS = {"met": "Done", "missed": "No"}   # StateReader.habit_days() -> the check-in word
+
+
+def habit_day(habit: Optional[dict], day: str, synced: Optional[dict] = None) -> str:
+    """One day's check-in: Done | No | Skipped, else "unlogged". A day with no answer is never No.
+
+    A 1-tap answer in habit.json wins; else the sync's habit1.jsonl verdict (``synced``, from
+    StateReader.habit_days(): met -> Done, missed -> No); a day with neither stays unlogged.
+    """
     checkins = habit.get("checkins") if isinstance(habit, dict) else None
     v = checkins.get(day) if isinstance(checkins, dict) else None
     if isinstance(v, str) and v.strip().lower() in ("done", "no", "skipped"):
         return v.strip().capitalize()
-    return "unlogged"
+    s = synced.get(day) if isinstance(synced, dict) else None
+    return SYNC_WORDS.get(s, "unlogged") if isinstance(s, str) else "unlogged"
 
 
 def record_checkin(habit: Optional[dict], day: str, tap: Any) -> dict:

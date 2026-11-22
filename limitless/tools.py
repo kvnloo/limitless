@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from . import jobs
 from .envelope import STALE_H, envelope, missing
 from .state_reader import StateReader, parse_ts
 
@@ -55,7 +56,11 @@ def _checkin(v) -> str:
 
 
 def habit(reader: StateReader, now: float, today: date) -> dict:
-    """This week's one habit and its check-ins from habit.json, week_of through today."""
+    """This week's one habit and its check-ins, week_of through today, and the one number so far.
+
+    A 1-tap answer (habit.json) beats the sync's verdict (habit1.jsonl); a day with neither is unlogged.
+    ``logged`` is "N of M logged days": N Done, M Done + No. Skipped and unlogged days stay out of M.
+    """
     h = reader.habit()
     if not h or not h.get("habit"):
         return missing("no habit.json with a habit: no habit set this week")
@@ -66,14 +71,25 @@ def habit(reader: StateReader, now: float, today: date) -> dict:
         return envelope(None, "self_report", age_h, reason="habit.json has no valid week_of date")
     if not start <= today < start + timedelta(days=7):
         return envelope(None, "self_report", age_h, reason=f"habit.json is for the week of {start}, not this week")
-    checkins = h.get("checkins") if isinstance(h.get("checkins"), dict) else {}
-    days = []
+    synced = reader.habit_days()
+    wakes = {r.get("day"): _age_h(r.get("wake"), now) for r in reader.habit1() if isinstance(r.get("day"), str)}
+    tapped = {d for d in (h.get("checkins") or {}) if _checkin(h["checkins"][d]) != "unlogged"} \
+        if isinstance(h.get("checkins"), dict) else set()
+    days, sync_ages = [], []
     for i in range((today - start).days + 1):
         d = (start + timedelta(days=i)).isoformat()
-        days.append({"date": d, "checkin": _checkin(checkins.get(d))})
+        checkin = jobs.habit_day(h, d, synced)
+        src = None if checkin == "unlogged" else ("tap" if d in tapped else "sync")
+        if src == "sync" and wakes.get(d) is not None:
+            sync_ages.append(wakes[d])
+        days.append({"date": d, "checkin": checkin, "from": src})
     counts = {c: 0 for c in CHECKINS + ("unlogged",)}
     for d in days:
         counts[d["checkin"]] += 1
+    n, m = counts["Done"], counts["Done"] + counts["No"]
     value = {"habit": h["habit"], "start": h.get("start"), "week_of": start.isoformat(), "days": days,
-             "counts": counts, "today": days[-1]["checkin"]}
+             "counts": counts, "today": days[-1]["checkin"], "day": len(days), "logged": f"{n} of {m} logged days"}
+    if any(d["from"] == "sync" for d in days):
+        ages = [a for a in sync_ages + [age_h] if a is not None]
+        return envelope(value, "proxy", min(ages) if ages else None)
     return envelope(value, "self_report", age_h)
