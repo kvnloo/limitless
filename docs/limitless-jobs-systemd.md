@@ -11,9 +11,10 @@ from those events, the decision window and the send gate. A run with no new even
 and a second run after a send drops the job (`already spoke once since the wake event`). A shorter
 interval means a lower delay after an event, never more messages.
 
-If an older script also sends a message for the same event (say its own wake-up brief), have it call
-`kevin-push ... --once wake_brief:<wake event time in epoch seconds>`, the same key `limitless-jobs`
-passes, so whichever sender gets there first is the only one that goes out.
+The older wake-up brief sender, `bin/limitless-brief send`, now passes the same key
+(`wake_brief:<wake event time in epoch seconds>`, from `jobs_runner.event_key`, the wake event
+`limitless-jobs` uses) to `kevin-push`, so on one wake whichever sender gets there first is the only
+brief that goes out.
 
 Save as `~/.config/systemd/user/limitless-jobs.service`:
 
