@@ -11,6 +11,7 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        "firstCat", "minToFirstFeed", "met": bool}
   sleepmode.jsonl      {"at", "on"} phone Sleep-mode changes; sleepmode-poll.json {"at", "ok"}
   unlocks.jsonl        {"at"} phone unlocks
+  screen-events.jsonl  {"ts": epoch_ms, "type", "pkg"} Android screen events (wake_proxy.events_from_screen)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -167,6 +168,9 @@ class StateReader:
 
     def sleepmode_poll(self) -> Optional[dict]:
         return self._json("sleepmode-poll.json")
+
+    def screen_events(self) -> list:
+        return self._jsonl("screen-events.jsonl")
 
     def last_unlock(self) -> Optional[dict]:
         return self._last_row("unlocks.jsonl")

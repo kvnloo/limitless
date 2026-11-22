@@ -95,5 +95,19 @@ class EventsFromScreen(unittest.TestCase):
         self.assertIsNone(re.search(r"(?i)hour_of_day|time_of_day|morning|night_start|bedtime_h", src))
 
 
+class ReadFromStateDir(unittest.TestCase):
+    def test_screen_events_file_to_wake(self):
+        import json
+        import tempfile
+        from limitless.state_reader import StateReader
+        with tempfile.TemporaryDirectory() as d:
+            text = "\n".join(json.dumps(r) for r in EVENING + NIGHT_PINGS + MORNING) + "\n{broken\n"
+            (Path(d) / "screen-events.jsonl").write_text(text)
+            rows = StateReader(Path(d)).screen_events()
+            self.assertEqual(StateReader(Path(d) / "absent").screen_events(), [])
+        self.assertEqual(len(rows), len(EVENING + NIGHT_PINGS + MORNING))
+        self.assertEqual([e["at"] for e in wake_proxy.events_from_screen(rows)], [T0 + 8.01 * H])
+
+
 if __name__ == "__main__":
     unittest.main()
