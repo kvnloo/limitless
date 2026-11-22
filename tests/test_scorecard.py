@@ -160,6 +160,37 @@ class Summary(unittest.TestCase):
             self.assertEqual(ln, ln.strip())
 
 
+class WeeklyBlock(unittest.TestCase):
+    def test_fixture_block(self):
+        block = sc.weekly_block(sc.summary(sc.parse((FIX / "thresholds.md").read_text())))
+        self.assertEqual(block, "North star (self-reported)\n"
+                                "- 1 green, 2 amber, 2 red of 5\n"
+                                "- not all green yet\n"
+                                "- Loop uptime: red\n"
+                                "- Review held: red\n"
+                                "- Delivery: amber")
+
+    def test_no_lines_is_empty(self):
+        self.assertEqual(sc.weekly_block([]), "")
+        self.assertEqual(sc.weekly_block(["", "   "]), "")
+
+    def test_at_most_six_lines(self):
+        block = sc.weekly_block([f"line {chr(97 + i)}" for i in range(9)])
+        self.assertEqual(len(block.splitlines()), 6)
+        self.assertEqual(block.splitlines()[0], "North star (self-reported)")
+        self.assertTrue(all(ln.startswith("- ") for ln in block.splitlines()[1:]))
+
+    def test_never_says_met_or_achieved(self):
+        import re
+        rows = [row(1, "Targets met", "green", 9), row(2, "Goal achieved", "green", 9)]
+        block = sc.weekly_block(sc.summary(rows) + ["Targets met: red", "Goal ACHIEVED (early): amber"])
+        self.assertEqual(re.findall(r"(?i)\b(met|achieved)\b", block), [])
+        self.assertIn("- Targets: red", block)
+
+    def test_lines_are_stripped(self):
+        self.assertEqual(sc.weekly_block(["  Delivery: amber  "]), "North star (self-reported)\n- Delivery: amber")
+
+
 class Tool(unittest.TestCase):
     def setUp(self):
         self._d = tempfile.TemporaryDirectory()

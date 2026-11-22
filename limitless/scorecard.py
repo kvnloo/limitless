@@ -114,6 +114,23 @@ def summary(rows: List[dict]) -> List[str]:
     return lines
 
 
+WEEKLY_TITLE = "North star (self-reported)"
+_CLAIM = re.compile(r"(?i)\b(met|achieved)\b")
+
+
+def weekly_block(lines: List[str]) -> str:
+    """The weekly review's titled block: the title, then up to five lines as ``- `` bullets (six lines in
+    all). Self-reported counts are not proof, so the words "met" and "achieved" are struck from every
+    line. Blank lines are skipped; no lines left gives ""."""
+    bullets = []
+    for ln in lines:
+        ln = re.sub(r"\s+", " ", _CLAIM.sub("", ln or ""))
+        ln = re.sub(r" ([:,.])", r"\1", ln).strip()
+        if ln and ln != ":":
+            bullets.append(f"- {ln}")
+    return "\n".join([WEEKLY_TITLE] + bullets[:MAX_LINES]) if bullets else ""
+
+
 def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
     """The scorecard file: $LIMITLESS_SCORECARD, else ``scorecard`` in config.json; None if neither."""
     env = os.environ if env is None else env
