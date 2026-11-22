@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""limitless-once-key <job>: print the event key limitless-jobs --send would pass for <job> right now.
+
+For senders outside this repo (shell scripts) that cannot import the Python helpers:
+
+    KEVIN_PUSH_ONCE=$(limitless-once-key miq) kevin-push limitless "MIQ for tonight?" "..."
+
+so that on one event only the first message goes out, whichever sender is first. The key is
+jobs_runner.event_key: `<job>:<trigger event time in epoch seconds>`.
+Exit 0 and the key on stdout; exit 3 and nothing on stdout when the job has no trigger event (or the
+state cannot be read: then the caller sends as before, with no key); exit 2 and a usage line on stderr
+for an unknown job. It only reads the state dir ($LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG);
+it never sends and never writes.
+"""
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import jobs, jobs_runner  # noqa: E402
+from limitless.state_reader import state_dir  # noqa: E402
+
+USAGE = f"usage: limitless-once-key <job>  (job: {' | '.join(sorted(jobs.SPECS))})"
+NO_KEY = 3
+
+
+def key(job, now):
+    """The event key, or None (no trigger, or state that cannot be read)."""
+    try:
+        st = state_dir()
+        return jobs_runner.event_key(st, now, job=job) if st.is_dir() else None
+    except Exception:  # noqa: BLE001 - broken state is no key, never a traceback
+        return None
+
+
+def main(argv):
+    args = argv[1:]
+    if args in (["-h"], ["--help"]):
+        print(USAGE)
+        return 0
+    if len(args) != 1 or args[0] not in jobs.SPECS:
+        print(USAGE, file=sys.stderr)
+        return 2
+    k = key(args[0], time.time())
+    if not k:
+        return NO_KEY
+    print(k)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
