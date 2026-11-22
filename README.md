@@ -19,6 +19,7 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
 - `bin/kevin-push`: the delivery CLI built on the gate (Telegram through a Hermes profile). `KEVIN_PUSH_STRICT=1` exits 3 when the message wasn't delivered.
   - Configure with `KEVIN_PUSH_PROFILE`, `KEVIN_PUSH_TO`, `LIMITLESS_STATE` or `LIMITLESS_CONFIG` (`~/.config/limitless/config.json` → `"state"`).
 - `limitless/brief_post.py` + `bin/limitless-brief`: finalize and deliver the wake-up brief.
+- `limitless/decision_window.py`: decision windows. A job declares `peak`, `trough`, `wind_down` or `anytime`; a provider (`StaticProvider`, `StateFileProvider`) says which window is open from events, never clock times; `decide()` returns deliver, hold or drop with a one-line reason. `send_gate.decide(..., window=...)` takes it as an optional input. Design note: [docs/decision-window.md](docs/decision-window.md).
 - `scripts/replay_log.py`: replay a delivery log through the gate, read-only, counts only.
 
 Roadmap: plugin tools (`limitless_status`, `limitless_state`, `limitless_window`, `limitless_habit`, `limitless_capture`) and a `pre_llm_call` state card. Also event-triggered jobs for the wake brief, the post-nap message and the bedtime question, offered as Hermes [Schedule cards](https://github.com/NousResearch/hermes-agent/pull/158289) and gated by decision windows. Then a weekly review and N-of-1 experiments. Data comes from adapters for [NOOP](https://github.com/kvnloo/noop) (WHOOP/Oura), Health Connect, smart-scale fusion, a REHIT bike app, ActivityWatch and Anki.
