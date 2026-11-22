@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""limitless-brief: render + deliver the wake-up brief. Private, local-only.
+build: write state/brief-latest.md from real state. send: build + deliver via kevin-push (Telegram).
+show: print the latest file. Before delivery the text is finalized: card ids removed and the folded
+'Asks waiting on you' digest (kevin-push asks-latest.json) added as one line.
+"""
+import importlib.util
+import json
+import os
+import sys
+import time
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import brief_post  # noqa: E402
+
+spec = importlib.util.spec_from_file_location("limitless_loop", os.path.expanduser("~/.local/lib/limitless_loop.py"))
+L = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(L)
+ASKS = Path.home() / ".local/state/kevin-push/asks-latest.json"
+
+
+def notify(cfg, text):
+    env = dict(os.environ, CIRCADIAN_CLASS=os.environ.get("CIRCADIAN_CLASS", "digest"))
+    d = L.deliver(cfg, "Wake-up brief", text, url="dash://notices", env=env)
+    return (0 if str(d.get("shown", "")).startswith("telegram") else 1), d
+
+
+def main(argv):
+    cfg = L.load_config()
+    cmd = argv[1] if len(argv) > 1 else "build"
+    day = date.fromisoformat(argv[argv.index("--date") + 1]) if "--date" in argv else None
+    out = L.build(cfg, day=day)
+    text = brief_post.finalize(out["notif"], brief_post.load_asks(ASKS), time.time())
+    if cmd in ("send", "--send"):
+        rc, msg = notify(cfg, text)
+        print(json.dumps({"path": out["path"], "notify_rc": rc, "notify": msg, "notif_text": text}, indent=1, default=str))
+        return 0 if out else 2
+    if cmd == "show":
+        print(open(out["path"]).read())
+        return 0
+    print(json.dumps({"path": out["path"], "notif_text": text}, indent=1, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
