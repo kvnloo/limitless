@@ -17,8 +17,10 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
+CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_capture", "limitless_habit", "limitless_state", "limitless_status", "limitless_window"]
+TOOLS = ["limitless_capture", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
+         "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
 
@@ -106,13 +108,13 @@ class Wiring(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def call(self, name, args=None, env=None):
-        env = env or {"LIMITLESS_STATE": str(FIX)}
+        env = env or {"LIMITLESS_STATE": str(FIX), "LIMITLESS_SCORECARD": str(CARD)}
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(time, "time", return_value=NOW):
             out = self.ctx.tools[name]["handler"](args if args is not None else {}, task_id="t", session_id="s")
         self.assertIsInstance(out, str)
         return json.loads(out)
 
-    def test_the_five_tools_and_the_hook(self):
+    def test_the_six_tools_and_the_hook(self):
         self.assertEqual(sorted(self.ctx.tools), TOOLS)
         self.assertEqual(sorted(self.ctx.hooks), ["pre_llm_call"])
 
@@ -130,6 +132,14 @@ class Wiring(unittest.TestCase):
         self.assertEqual(self.call("limitless_status")["value"]["not_recording"], ["anki", "bike", "scale"])
         self.assertEqual(self.call("limitless_habit")["value"]["today"], "Done")
         self.assertEqual(self.call("limitless_state")["value"]["items"]["readiness"]["value"], "low")
+
+    def test_scorecard_through_the_handler(self):
+        res = self.call("limitless_scorecard")
+        self.assertEqual(res["modality"], "self_report")
+        self.assertEqual(res["value"][:2], ["6 green, 2 amber, 2 red of 10", "not all green yet"])
+        res = self.call("limitless_scorecard", env={"LIMITLESS_SCORECARD": "/definitely/not/here.md"})
+        self.assertIsNone(res["value"])
+        self.assertTrue(res["reason"])
 
     def test_window_bands_come_from_config(self):
         cfg = Path(self.tmp.name) / "config.json"
