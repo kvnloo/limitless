@@ -5,14 +5,21 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
-from . import jobs, scorecard as _scorecard
-from .envelope import STALE_H, envelope, missing
+from . import jobs, labeler as _labeler, scorecard as _scorecard
+from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import StateReader, parse_ts
 
 
 def _age_h(at, now: float):
     t = parse_ts(at)
     return None if t is None else max(0.0, now - t) / 3600
+
+
+def labeled(env: dict) -> dict:
+    """env with the T1 age label (fresh | stale | missing | unknown) next to its value, where allowed."""
+    if not isinstance(env, dict):
+        return env
+    return with_label(env, _labeler.label("age_h", env.get("age_h"), env.get("modality")))
 
 
 def status(reader: StateReader, now: float) -> dict:

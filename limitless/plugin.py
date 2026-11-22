@@ -2,7 +2,7 @@
 ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=None, is_async=False,
 description="", emoji="", override=False) and ctx.register_hook(hook_name, callback).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
-Every result is an evidence envelope (envelope.py).
+Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import capture, card, scorecard, tools
+from . import capture, card, labeler, scorecard, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 from .window import window
@@ -36,7 +36,8 @@ def _status(args, now):
 
 
 def _state(args, now):
-    return card.state(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ), bands=_bands())
+    return card.state(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ), bands=_bands(),
+                      labeler=labeler.from_config())
 
 
 def _window(args, now):
@@ -58,7 +59,7 @@ def _capture(args, now):
 def _handler(fn: Callable) -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
-            env = fn(args if isinstance(args, dict) else {}, time.time())
+            env = tools.labeled(fn(args if isinstance(args, dict) else {}, time.time()))
         except Exception as exc:  # the handler contract: report, never raise into the agent loop
             env = missing(f"{type(exc).__name__}: {exc}")
         return json.dumps(env, ensure_ascii=False)
