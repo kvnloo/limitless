@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import jobs
+from . import jobs, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, parse_ts
 from .window_chain import EventProvider, first_known
@@ -57,8 +57,10 @@ def _push(push, title: str, text: str):
 
 
 def events(reader: StateReader) -> list:
-    """Sleep-mode events plus the valid rows of events.jsonl, oldest first."""
-    out = jobs.events_from_sleepmode(reader.sleepmode())
+    """Sleep-mode events, screen-event wakes Sleep mode does not cover (and their habit cues), plus the
+    valid rows of events.jsonl, oldest first."""
+    out = jobs.merged_events(jobs.events_from_sleepmode(reader.sleepmode()),
+                             wake_proxy.events_from_screen(reader.screen_events()))
     for r in reader.events():
         at = parse_ts(r.get("at"))
         if at is not None and r.get("event") in jobs.EVENTS:

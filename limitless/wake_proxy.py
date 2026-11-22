@@ -19,11 +19,15 @@ MIN_GAP_S = 4 * 3600        # a quiet gap at least this long, then an action, is
 SCREEN_CONFIDENCE = 0.6     # below jobs.SLEEP_MODE_CONFIDENCE: a quiet phone is weaker evidence of sleep
 
 
+MS_ABOVE = 1e11             # an epoch above this is milliseconds (1e11 s is far in the future); else seconds
+
+
 def _ts_s(row) -> Optional[float]:
+    """Epoch seconds of a row's ``ts``, which some exporters write in seconds and others in milliseconds."""
     v = row.get("ts") if isinstance(row, dict) else None
     if isinstance(v, bool) or not isinstance(v, (int, float)):
         return None
-    return float(v) / 1000.0
+    return float(v) / 1000.0 if v > MS_ABOVE else float(v)
 
 
 def person_times(rows: list) -> list:
