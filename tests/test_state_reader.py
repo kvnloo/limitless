@@ -35,6 +35,16 @@ class StateDir(unittest.TestCase):
             (home / ".config/limitless/config.json").write_text(json.dumps({"state": "/cfg/home"}))
             self.assertEqual(sr.state_dir({}, home=home), Path("/cfg/home"))
 
+    def test_config_dict(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Path(d) / "config.json"
+            cfg.write_text(json.dumps({"state": "/s", "window_bands": {"peak": [1, 2]}}))
+            self.assertEqual(sr.config({"LIMITLESS_CONFIG": str(cfg)}, home=Path("/h"))["window_bands"],
+                             {"peak": [1, 2]})
+            cfg.write_text("[1, 2]")
+            self.assertEqual(sr.config({"LIMITLESS_CONFIG": str(cfg)}, home=Path("/h")), {})
+        self.assertEqual(sr.config({}, home=Path("/nohome")), {})
+
     def test_fallback(self):
         self.assertEqual(sr.state_dir({}, home=Path("/nohome")), Path("/nohome/.local/state/limitless"))
 

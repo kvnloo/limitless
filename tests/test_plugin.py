@@ -4,13 +4,22 @@ Loaded the way hermes_cli/plugins_loader.py loads one (spec_from_file_location w
 the package path, module name hermes_plugins.<slug>), against a fake ctx: Hermes is not needed.
 """
 import importlib.util
+import json
+import os
 import re
 import sys
+import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+FIX = ROOT / "tests" / "fixtures" / "state"
+NOW = 1894708800.0  # fixture clock
+TOOLS = ["limitless_capture", "limitless_habit", "limitless_state", "limitless_status", "limitless_window"]
+FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
 
 class FakeCtx:
@@ -87,6 +96,64 @@ class PluginSkeleton(unittest.TestCase):
         finally:
             sys.path.remove(str(ROOT))
         self.assertTrue(callable(p.register))
+
+
+class Wiring(unittest.TestCase):
+    def setUp(self):
+        self.ctx = FakeCtx()
+        load_plugin().register(self.ctx)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def call(self, name, args=None, env=None):
+        env = env or {"LIMITLESS_STATE": str(FIX)}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(time, "time", return_value=NOW):
+            out = self.ctx.tools[name]["handler"](args if args is not None else {}, task_id="t", session_id="s")
+        self.assertIsInstance(out, str)
+        return json.loads(out)
+
+    def test_the_five_tools_and_the_hook(self):
+        self.assertEqual(sorted(self.ctx.tools), TOOLS)
+        self.assertEqual(sorted(self.ctx.hooks), ["pre_llm_call"])
+
+    def test_every_tool_returns_an_envelope(self):
+        st = Path(self.tmp.name)
+        for name in TOOLS:
+            args = {"text": "remember the shed"} if name == "limitless_capture" else {}
+            env = {"LIMITLESS_STATE": str(st)} if name == "limitless_capture" else None
+            res = self.call(name, args, env)
+            self.assertTrue(FIELDS <= set(res), (name, res))
+            self.assertIsNotNone(res["value"], (name, res))
+
+    def test_fixture_values_through_the_handlers(self):
+        self.assertEqual(self.call("limitless_window")["value"], "peak")
+        self.assertEqual(self.call("limitless_status")["value"]["not_recording"], ["anki", "bike", "scale"])
+        self.assertEqual(self.call("limitless_habit")["value"]["today"], "Done")
+        self.assertEqual(self.call("limitless_state")["value"]["items"]["readiness"]["value"], "low")
+
+    def test_window_bands_come_from_config(self):
+        cfg = Path(self.tmp.name) / "config.json"
+        cfg.write_text(json.dumps({"state": str(FIX), "window_bands": {"peak": [6, 8], "trough": [1, 6]}}))
+        self.assertEqual(self.call("limitless_window", env={"LIMITLESS_CONFIG": str(cfg)})["value"], "trough")
+
+    def test_handlers_never_raise(self):
+        res = self.call("limitless_capture", {"text": 42}, {"LIMITLESS_STATE": self.tmp.name})
+        self.assertIsNone(res["value"])
+        self.assertTrue(res["reason"])
+        res = self.call("limitless_status", None, {"LIMITLESS_STATE": "/definitely/not/here"})
+        self.assertIsNone(res["value"])
+
+    def test_capture_schema_requires_text(self):
+        params = self.ctx.tools["limitless_capture"]["schema"]["parameters"]
+        self.assertEqual(params["required"], ["text"])
+
+    def test_hook_injects_the_card(self):
+        hook = self.ctx.hooks["pre_llm_call"][0]
+        with mock.patch.dict(os.environ, {"LIMITLESS_STATE": str(FIX)}, clear=True), \
+                mock.patch.object(time, "time", return_value=NOW):
+            out = hook(session_id="s", user_message="hi", conversation_history=[], is_first_turn=True,
+                       model="m", platform="cli", sender_id="u")
+        self.assertIn("readiness low (imported)", out["context"])
 
 
 if __name__ == "__main__":

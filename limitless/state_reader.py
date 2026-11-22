@@ -22,16 +22,25 @@ from typing import Mapping, Optional
 TAIL_BYTES = 64 * 1024
 
 
+def config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """Host config: $LIMITLESS_CONFIG, else ~/.config/limitless/config.json; {} when absent or not an object."""
+    env = os.environ if env is None else env
+    home = Path.home() if home is None else home
+    path = Path(env.get("LIMITLESS_CONFIG") or home / ".config/limitless/config.json")
+    try:
+        cfg = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
 def state_dir(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Path:
     env = os.environ if env is None else env
     home = Path.home() if home is None else home
     if env.get("LIMITLESS_STATE"):
         return Path(env["LIMITLESS_STATE"])
-    cfg = Path(env.get("LIMITLESS_CONFIG") or home / ".config/limitless/config.json")
-    try:
-        return Path(json.loads(cfg.read_text())["state"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return home / ".local/state/limitless"
+    st = config(env, home).get("state")
+    return Path(st) if isinstance(st, str) and st else home / ".local/state/limitless"
 
 
 def parse_ts(v) -> Optional[float]:
