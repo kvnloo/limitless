@@ -6,7 +6,8 @@ Events are the phone's Sleep-mode changes (``sleepmode.jsonl``), screen-event wa
 ``screen-events.jsonl`` and the optional ActivityWatch DB (``aw_reader``), plus any ``{"event", "at"}`` rows
 in ``events.jsonl`` (any name in ``jobs.EVENTS``; others are ignored). The window is
 ``first_known(GlideProvider, EventProvider)``; asleep comes from the EventProvider. Each job's
-verdict is ``jobs.should_fire`` against the sent log ``jobs-sent.jsonl`` in the state dir.
+verdict is ``jobs.should_fire`` against the sent log ``jobs-sent.jsonl`` in the state dir; a verdict
+whose trigger is a screen-event wake (or its habit cue) says the wake is a proxy.
 
 Only a ``deliver`` verdict calls ``push(title, body)``. ``push`` returns what kevin-push reported
 (``"telegram"`` or ``True`` for a real delivery). Only a real delivery appends ``jobs.sent_entry()``
@@ -100,10 +101,13 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     window = {"cls": "asleep"} if ev_provider.asleep else state
     sent = reader.jobs_sent()
     habit = reader.habit()
+    proxy_at = {e["at"] for e in evs if e.get("source") == "screen"}   # screen wakes and their habit cues
     rows = []
     for spec in _specs(reader):
         v = jobs.should_fire(spec, evs, window, sent, now)
         action, reason = v.action, v.reason
+        if v.trigger_at is not None and v.trigger_at in proxy_at:
+            reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
         if action == jobs.DELIVER and not dry_run and push is not None:
             ok, how = _push(push, spec.send_title, body(spec, habit))
             if ok:
