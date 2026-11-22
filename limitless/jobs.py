@@ -194,3 +194,30 @@ def should_fire(spec: JobSpec, events: list, window_state: Any, sent_log: list, 
     if gate != "send":
         return Verdict(HOLD, f"the send gate says {gate}", trig)
     return Verdict(DELIVER, f"{label} event; {w.reason}", trig)
+
+
+_SPEAKS = {"wake": "when you wake up", "sleep_mode_on": "when Sleep mode goes on",
+           "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
+           "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends"}
+_IN_WINDOW = {"peak": "in a peak window, at most one decision per window",
+              "trough": "in a low-energy window, for a review or an easy read",
+              "wind_down": "once your wind-down has started", "anytime": "any time you are awake"}
+_ENDS = {"wake": "when you next wake up", "sleep_mode_on": "when Sleep mode goes on",
+         "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
+         "habit_cue": "at your habit's next cue", "focus_end": "when a focus block ends"}
+_NUM = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def _at_most(n: int) -> str:
+    return "at most " + {1: "once", 2: "twice"}.get(n, f"{_NUM[n] if n < len(_NUM) else 'a few'} times")
+
+
+def to_schedule_card(spec: JobSpec) -> dict:
+    """The plain-words fields a Hermes "Schedule this job?" card could show for this job. No internal ids."""
+    when = "when you are back from a nap" if spec.trigger_after == "short_on" else _SPEAKS[spec.trigger_event]
+    card = {"name": spec.send_title, "speaks": f"{when}, {_at_most(spec.max_per_window)}",
+            "window": _IN_WINDOW[spec.window_class], "ends": _ENDS[spec.expires],
+            "delivery": "you, through the send gate; this job never sends by itself"}
+    if spec.answers:
+        card["answers"] = f"{', '.join(spec.answers[:-1])} or {spec.answers[-1]} in one tap; no answer stays unlogged"
+    return card
