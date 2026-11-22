@@ -90,6 +90,15 @@ class PersonRows(unittest.TestCase):
         ts = [r["ts"] for r in aw_reader.person_rows(self.db, since_s=NOW - 4 * H)]
         self.assertEqual(ts, [NOW - 3 * H, NOW])
 
+    def test_read_never_writes_the_db(self):
+        make_db(self.db, unlocks=[NOW - 9 * H, NOW], spans=[(NOW + 1, NOW + 2, "a")])
+        before = (self.db.stat().st_mtime_ns, self.db.read_bytes())
+        entries = sorted(p.name for p in self.db.parent.iterdir())
+        aw_reader.person_rows(self.db)
+        aw_reader.person_rows(self.db, since_s=NOW - H)
+        self.assertEqual((self.db.stat().st_mtime_ns, self.db.read_bytes()), before)
+        self.assertEqual(sorted(p.name for p in self.db.parent.iterdir()), entries)   # no -wal/-journal left
+
     def test_missing_file_is_empty(self):
         self.assertEqual(aw_reader.person_rows(self.db), [])
         self.assertFalse(self.db.exists())          # read-only open never creates the file
