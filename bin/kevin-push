@@ -22,8 +22,22 @@ from limitless import send_gate as g  # noqa: E402
 
 ST = Path.home() / ".local/state/kevin-push"
 LOG, SENT = ST / "log.jsonl", ST / "sent.json"
-SLEEPMODE = Path(os.environ.get("LIMITLESS_SLEEPMODE",
-                                "/mnt/zer0models/sft-svlm/data/limitless/state/sleepmode.jsonl"))
+CONFIG = Path(os.environ.get("LIMITLESS_CONFIG", Path.home() / ".config/limitless/config.json"))
+
+
+def state_dir():
+    """Private state dir: $LIMITLESS_STATE, else config.json "state", else ~/.local/state/limitless."""
+    if os.environ.get("LIMITLESS_STATE"):
+        return Path(os.environ["LIMITLESS_STATE"])
+    try:
+        return Path(json.loads(CONFIG.read_text())["state"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return Path.home() / ".local/state/limitless"
+
+
+SLEEPMODE = Path(os.environ.get("LIMITLESS_SLEEPMODE", state_dir() / "sleepmode.jsonl"))
+PUSH_PROFILE = os.environ.get("KEVIN_PUSH_PROFILE", "intake")      # Hermes profile that owns the Telegram bot
+PUSH_TO = os.environ.get("KEVIN_PUSH_TO", "telegram:kevin")        # contact alias, not a chat id
 HOW = {"log": "log", "fold": "folded (brief line)", "hold": "held (sleep mode)",
        "duplicate": "log (duplicate)", "cap": "log (daily cap)"}
 
@@ -60,7 +74,7 @@ def main(argv):
     elif verdict == "send":
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
             f.write(body)
-        r = subprocess.run(["hermes", "-p", "intake", "send", "--to", "telegram:kevin", "--subject", title,
+        r = subprocess.run(["hermes", "-p", PUSH_PROFILE, "send", "--to", PUSH_TO, "--subject", title,
                             "--file", f.name, "-q"], capture_output=True, text=True, timeout=60)
         os.unlink(f.name)
         how = "telegram" if r.returncode == 0 else f"log (telegram rc={r.returncode})"

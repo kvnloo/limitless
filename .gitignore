@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# never commit data
+*.db
+*.sqlite*
+state/
+*.jsonl
+!tests/fixtures/*.jsonl
