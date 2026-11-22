@@ -6,10 +6,15 @@ is never read into a row: it may hold private detail and has no place in a summa
 """
 from __future__ import annotations
 
+import os
 import re
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Mapping, Optional
 
 from .send_gate import scrub
+from .state_reader import config
+
+ENV_KEY, CONFIG_KEY = "LIMITLESS_SCORECARD", "scorecard"
 
 HEADER = ("#", "criterion", "status", "evidence (latest)", "weeks green")
 STATUSES = ("red", "amber", "green")
@@ -89,3 +94,12 @@ def summary(rows: List[dict]) -> List[str]:
     behind = sorted((r for r in rows if r["status"] != "green"), key=lambda r: (_RANK[r["status"]], r["n"]))
     lines += [f"{_name(r['criterion'])}: {r['status']}" for r in behind[:MAX_LINES - len(lines)]]
     return lines
+
+
+def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+    """The scorecard file: $LIMITLESS_SCORECARD, else ``scorecard`` in config.json; None if neither."""
+    env = os.environ if env is None else env
+    if env.get(ENV_KEY):
+        return Path(env[ENV_KEY])
+    p = config(env, home).get(CONFIG_KEY)
+    return Path(p) if isinstance(p, str) and p else None

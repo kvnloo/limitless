@@ -12,7 +12,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import capture, card, tools
+from . import capture, card, scorecard, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 from .window import window
@@ -45,6 +45,10 @@ def _window(args, now):
 
 def _habit(args, now):
     return tools.habit(_reader(), now, date.fromtimestamp(now))
+
+
+def _scorecard(args, now):
+    return tools.scorecard(scorecard.path(), now)
 
 
 def _capture(args, now):
@@ -88,6 +92,12 @@ TOOLS = {
         "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped), plus "
         "\"N of M logged days\". A 1-tap answer beats the phone sync's met/missed; a day with neither is "
         "unlogged, never a No, and stays out of M."), _habit, "🌱"),
+    "limitless_scorecard": (_schema(
+        "limitless_scorecard",
+        "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "
+        "and red counts, whether every criterion has been green for 4 weeks, and the three criteria furthest "
+        "from green. Counts only: it never says the north star is met. Read from the hand-kept scorecard "
+        "table (self-reported)."), _scorecard, "🎯"),
     "limitless_capture": (_schema(
         "limitless_capture",
         "Record one thought, idea or to-do for later triage by appending it to the capture log. It only "

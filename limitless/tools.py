@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
+from typing import Optional
 
-from . import jobs
+from . import jobs, scorecard as _scorecard
 from .envelope import STALE_H, envelope, missing
 from .state_reader import StateReader, parse_ts
 
@@ -93,3 +95,20 @@ def habit(reader: StateReader, now: float, today: date) -> dict:
         ages = [a for a in sync_ages + [age_h] if a is not None]
         return envelope(value, "proxy", min(ages) if ages else None)
     return envelope(value, "self_report", age_h)
+
+
+def scorecard(path: Optional[Path], now: float) -> dict:
+    """The weekly review's scorecard block: at most 5 plain-word lines (counts, the stop rule, the criteria
+    furthest from green). Self-reported, aged by the file's mtime. Reasons never echo the path."""
+    if path is None:
+        return missing(f"no scorecard path: set {_scorecard.ENV_KEY} or \"{_scorecard.CONFIG_KEY}\" in config.json")
+    try:
+        text = Path(path).read_text(errors="replace")
+        mtime = Path(path).stat().st_mtime
+    except OSError:
+        return missing("no scorecard file at the configured path")
+    age_h = max(0.0, now - mtime) / 3600
+    lines = _scorecard.summary(_scorecard.parse(text))
+    if not lines:
+        return envelope(None, "self_report", age_h, reason="the scorecard file has no scorecard table rows")
+    return envelope(lines, "self_report", age_h)

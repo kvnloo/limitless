@@ -3,13 +3,16 @@
 Synthetic fixtures only (tests/fixtures/scorecard/): invented criteria, no real person's data.
 """
 import os
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from limitless import scorecard as sc  # noqa: E402
+from limitless import tools  # noqa: E402
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "scorecard"
 HEADER = "| # | Criterion | Status | Evidence (latest) | Weeks green |\n|---|---|---|---|---|\n"
@@ -131,6 +134,80 @@ class Summary(unittest.TestCase):
         for ln in sc.summary(sc.parse((FIX / "scorecard.md").read_text())):
             self.assertNotRegex(ln, r"[|*_`\[\]]")
             self.assertEqual(ln, ln.strip())
+
+
+class Tool(unittest.TestCase):
+    def setUp(self):
+        self._d = tempfile.TemporaryDirectory()
+        self.addCleanup(self._d.cleanup)
+        self.dir = Path(self._d.name)
+
+    def card(self, text, mtime=1894708800.0):
+        p = self.dir / "scorecard.md"
+        p.write_text(text)
+        os.utime(p, (mtime, mtime))
+        return p
+
+    def test_summary_in_a_self_report_envelope_aged_by_mtime(self):
+        p = self.card((FIX / "scorecard.md").read_text(), mtime=1894708800.0)
+        env = tools.scorecard(p, 1894708800.0 + 6 * 3600)
+        self.assertEqual(env["modality"], "self_report")
+        self.assertEqual(env["age_h"], 6.0)
+        self.assertEqual(env["evidence_tier"], "direct")
+        self.assertEqual(env["value"], sc.summary(sc.parse((FIX / "scorecard.md").read_text())))
+
+    def test_a_week_old_card_is_stale_not_hidden(self):
+        p = self.card((FIX / "scorecard.md").read_text(), mtime=1894708800.0)
+        env = tools.scorecard(p, 1894708800.0 + 7 * 86400)
+        self.assertEqual(env["evidence_tier"], "stale")
+        self.assertEqual(env["age_h"], 168.0)
+        self.assertEqual(len(env["value"]), 5)
+
+    def test_missing_file_is_missing(self):
+        env = tools.scorecard(self.dir / "nope.md", 1894708800.0)
+        self.assertIsNone(env["value"])
+        self.assertEqual(env["evidence_tier"], "none")
+        self.assertTrue(env["reason"])
+        self.assertNotIn(str(self.dir), env["reason"])
+
+    def test_no_path_is_missing(self):
+        env = tools.scorecard(None, 1894708800.0)
+        self.assertIsNone(env["value"])
+        self.assertIn("LIMITLESS_SCORECARD", env["reason"])
+
+    def test_file_without_a_table_has_no_value(self):
+        p = self.card("# Scorecard\n\nnot started\n")
+        env = tools.scorecard(p, 1894708800.0 + 3600)
+        self.assertIsNone(env["value"])
+        self.assertEqual(env["modality"], "self_report")
+        self.assertEqual(env["age_h"], 1.0)
+        self.assertTrue(env["reason"])
+
+    def test_future_mtime_reads_as_age_zero(self):
+        p = self.card((FIX / "scorecard.md").read_text(), mtime=1894708800.0 + 60)
+        self.assertEqual(tools.scorecard(p, 1894708800.0)["age_h"], 0.0)
+
+
+class Path_(unittest.TestCase):
+    def test_env_wins(self):
+        self.assertEqual(sc.path({"LIMITLESS_SCORECARD": "card.md"}, Path("nohome")), Path("card.md"))
+
+    def test_config_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Path(d) / "config.json"
+            cfg.write_text(json.dumps({"scorecard": "from-config.md"}))
+            self.assertEqual(sc.path({"LIMITLESS_CONFIG": str(cfg)}, Path(d)), Path("from-config.md"))
+            home = Path(d) / "home"
+            (home / ".config/limitless").mkdir(parents=True)
+            (home / ".config/limitless/config.json").write_text(json.dumps({"scorecard": "home.md"}))
+            self.assertEqual(sc.path({}, home), Path("home.md"))
+
+    def test_neither_is_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(sc.path({}, Path(d)))
+            cfg = Path(d) / "config.json"
+            cfg.write_text(json.dumps({"scorecard": 3}))
+            self.assertIsNone(sc.path({"LIMITLESS_CONFIG": str(cfg)}, Path(d)))
 
 
 if __name__ == "__main__":
