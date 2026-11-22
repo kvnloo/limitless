@@ -150,3 +150,41 @@ def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, dry_run:
         _write_atomic(state / HABIT_FILE, dict(habit, checkins=dict(checkins, **{day: new})))
     return rows
 
+
+def hermes_db_path(state_dir, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None, arg: Optional[str] = None) -> Optional[Path]:
+    """The Hermes session DB: ``arg`` (--db), else $LIMITLESS_HERMES_DB, else config ``hermes_db``; a
+    relative config path is in the state dir. None when none is set (there is no default)."""
+    env = os.environ if env is None else env
+    if arg:
+        return Path(arg).expanduser()
+    if env.get(ENV_KEY):
+        return Path(env[ENV_KEY]).expanduser()
+    v = config(env, home).get(CONFIG_KEY)
+    if not isinstance(v, str) or not v:
+        return None
+    p = Path(v).expanduser()
+    return p if p.is_absolute() else Path(state_dir) / p
+
+
+def replies_from_hermes_db(db_path, since_ts: float, source: str = "telegram") -> list:
+    """``[(timestamp, content)]``, oldest first: the person's (role ``user``) messages from ``source``
+    sessions after ``since_ts``. Read-only; a missing, locked or malformed DB reads as ``[]``."""
+    if not db_path:
+        return []
+    path = Path(db_path)
+    if not path.is_file():
+        return []
+    uri = "file:" + quote(str(path.resolve())) + "?mode=ro"
+    try:
+        con = sqlite3.connect(uri, uri=True, timeout=BUSY_TIMEOUT_S)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = con.execute(_QUERY, (source, float(since_ts))).fetchall()
+    except (sqlite3.Error, ValueError, TypeError, OverflowError):
+        return []
+    finally:
+        con.close()
+    return [(float(t), c) for t, c in rows
+            if isinstance(t, (int, float)) and not isinstance(t, bool) and isinstance(c, str)]
