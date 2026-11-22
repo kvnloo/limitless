@@ -21,6 +21,7 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
   - Configure with `KEVIN_PUSH_PROFILE`, `KEVIN_PUSH_TO`, `LIMITLESS_STATE` or `LIMITLESS_CONFIG` (`~/.config/limitless/config.json` → `"state"`).
 - `limitless/brief_post.py` + `bin/limitless-brief`: finalize and deliver the wake-up brief.
 - `limitless/decision_window.py`: decision windows. A job declares `peak`, `trough`, `wind_down` or `anytime`; a provider (`StaticProvider`, `StateFileProvider`) says which window is open from events, never clock times; `decide()` returns deliver, hold or drop with a one-line reason. `send_gate.decide(..., window=...)` takes it as an optional input. Design note: [docs/decision-window.md](docs/decision-window.md).
+- `limitless/glide_provider.py` + `limitless/window_chain.py`: `first_known(GlideProvider, EventProvider)` reads the window from [Glide](https://github.com/kvnloo/glide) first (a focus block is `peak` with asks held, the wind-down nudge is `wind_down`; path from `LIMITLESS_GLIDE_ATTENTION` or config `glide_attention`), then from Sleep mode and unlocks. Wind-down comes from an event, never from an evening hour ([docs/glide-wind-down-event.md](docs/glide-wind-down-event.md)).
 - `scripts/replay_log.py`: replay a delivery log through the gate, read-only, counts only.
 
 ## Tools and hook
