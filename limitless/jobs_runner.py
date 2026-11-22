@@ -10,7 +10,7 @@ verdict is ``jobs.should_fire`` against the sent log ``jobs-sent.jsonl`` in the 
 whose trigger is a screen-event wake (or its habit cue) says the wake is a proxy.
 
 Only a ``deliver`` verdict calls ``push(title, body)``, with ``once=once_key(spec, trigger_at)`` when push
-takes a ``once`` parameter: the event key ``<job>:<trigger event time>`` that every sender for one event
+takes a ``once`` parameter (``event_key`` gives the same key to any other sender): the event key ``<job>:<trigger event time>`` that every sender for one event
 passes to ``kevin-push --once``, so only the first message per event goes out. A push that reports
 ``send_gate.ONCE_DROP`` (another sender already sent for this event) drops the job. ``push`` returns what kevin-push reported
 (``"telegram"`` or ``True`` for a real delivery). Only a real delivery appends ``jobs.sent_entry()``
@@ -23,7 +23,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, jobs, send_gate, wake_proxy
 from .glide_provider import GlideProvider
@@ -112,26 +112,60 @@ def _specs(reader: StateReader) -> list:
             for name, spec in jobs.SPECS.items()]
 
 
+class _Pass(NamedTuple):
+    """Everything one pass reads from the state dir, read once so every caller sees the same inputs."""
+    evs: list
+    window: object
+    sent: list
+    habit: Optional[dict]
+    specs: list
+
+
+def _read_pass(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None) -> _Pass:
+    reader = StateReader(Path(state_dir))
+    ev_provider = EventProvider.from_reader(reader, now)
+    state = first_known(GlideProvider.from_config(env=env, home=home, now=now), ev_provider)
+    return _Pass(evs=events(reader, env=env, home=home),
+                 window={"cls": "asleep"} if ev_provider.asleep else state,
+                 sent=reader.jobs_sent(), habit=reader.habit(), specs=_specs(reader))
+
+
+def _key(spec: jobs.JobSpec, v: jobs.Verdict) -> Optional[str]:
+    """The event key for one verdict: once_key of its trigger, or None when nothing triggered it."""
+    return once_key(spec, v.trigger_at) if v.trigger_at is not None else None
+
+
+def event_key(state_dir, now: float, job: str = jobs.WAKE_BRIEF.name, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None) -> Optional[str]:
+    """The ``kevin-push --once`` key run_once uses for ``job`` right now, or None when it has no trigger.
+
+    Same events, same trigger as run_once (both read through _read_pass and should_fire), so another
+    sender for the same event (bin/limitless-brief) gets the same key. The key is the latest trigger's
+    whatever the verdict: after run_once has sent (a drop), a later sender still gets that event's key and
+    kevin-push drops it. Reads only; never sends or writes.
+    """
+    p = _read_pass(state_dir, now, env=env, home=home)
+    spec = next((s for s in p.specs if s.name == job), None)
+    if spec is None:
+        raise ValueError(f"job must be one of {sorted(jobs.SPECS)}, got {job!r}")
+    return _key(spec, jobs.should_fire(spec, p.evs, p.window, p.sent, now))
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``."""
-    reader = StateReader(Path(state_dir))
-    evs = events(reader, env=env, home=home)
-    ev_provider = EventProvider.from_reader(reader, now)
-    state = first_known(GlideProvider.from_config(env=env, home=home, now=now), ev_provider)
-    window = {"cls": "asleep"} if ev_provider.asleep else state
-    sent = reader.jobs_sent()
-    habit = reader.habit()
-    proxy_at = {e["at"] for e in evs if e.get("source") == "screen"}   # screen wakes and their habit cues
+    p = _read_pass(state_dir, now, env=env, home=home)
+    sent = p.sent
+    proxy_at = {e["at"] for e in p.evs if e.get("source") == "screen"}   # screen wakes and their habit cues
     rows = []
-    for spec in _specs(reader):
-        v = jobs.should_fire(spec, evs, window, sent, now)
+    for spec in p.specs:
+        v = jobs.should_fire(spec, p.evs, p.window, sent, now)
         action, reason = v.action, v.reason
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
         if action == jobs.DELIVER and not dry_run and push is not None:
-            key = once_key(spec, v.trigger_at) if v.trigger_at is not None else None
-            ok, how = _push(push, spec.send_title, body(spec, habit), key)
+            ok, how = _push(push, spec.send_title, body(spec, p.habit), _key(spec, v))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:
