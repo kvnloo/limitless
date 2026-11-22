@@ -25,6 +25,7 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
 - `limitless/jobs.py`: event-triggered job specs (wake brief, back from nap, the bedtime question, the habit check-in); `should_fire()` returns deliver, hold, drop or not_triggered with a reason through the decision window and the send gate, and `to_schedule_card()` gives the plain words a Hermes Schedule card could show. Pure functions: nothing sends by itself.
 - `limitless/jobs_runner.py` + `bin/limitless-jobs [--send]`: one pass over the jobs, one line per job; dry run unless `--send`, which goes through `kevin-push` (strict) and logs a send only on real Telegram delivery. Poll it with a systemd timer: [docs/limitless-jobs-systemd.md](docs/limitless-jobs-systemd.md).
 - `limitless/wake_proxy.py`: when Sleep mode is not used, a fallback `wake` event from phone screen events (the first unlock or touch after a quiet gap of a few hours; notifications ignored); `jobs.merged_events()` lets a Sleep-mode wake win in the same gap and adds the habit cue one hour after each wake.
+- `limitless/aw_reader.py`: the same wake proxy also reads unlocks and app-in-foreground starts from an ActivityWatch-for-Android SQLite copy, opened read-only; set its path with `LIMITLESS_AW_DB` or config key `aw_db` (none by default).
 - `scripts/replay_log.py`: replay a delivery log through the gate, read-only, counts only.
 
 ## Tools and hook
