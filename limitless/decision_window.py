@@ -1,0 +1,133 @@
+"""Decision windows: deliver a proactive message when the person can use it, not on a clock.
+
+A proactive job declares a ``window_class``:
+
+- ``peak``: needs a decision; asked while focus is high (after waking, after a deep-work block).
+- ``trough``: a review or a low-effort read; fine when energy dips.
+- ``wind_down``: an end-of-day question; only once the evening has started.
+- ``anytime``: capture or a short note; any moment the person is awake.
+
+A pluggable ``WindowProvider`` says which class is open *now*. Providers decide from events
+(woke up, screen off, focus block ended), never from clock times, so this module has no
+times of day in it. ``decide()`` turns (job class, current window) into deliver | hold | drop
+plus a one-line "why now / why not" reason.
+
+Context (Hermes Agent, public):
+
+- Proactivity roadmap, STEP 2: every recurring job states when it speaks and when it ends;
+  pacing is "one message at the moment it matters".
+  https://github.com/NousResearch/hermes-agent/issues/158538
+- Schedule cards (STEP 1): the model proposes a job and the person approves it on a
+  "Schedule this job?" card. A ``window_class`` is one more field that card can show.
+  https://github.com/NousResearch/hermes-agent/pull/158289
+
+Stdlib only, Python 3.9+.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, NamedTuple, Optional, Protocol, runtime_checkable
+
+WINDOW_CLASSES = ("peak", "trough", "anytime", "wind_down")
+UNKNOWN = "unknown"
+MIN_CONFIDENCE = 0.5
+DELIVER, HOLD, DROP = "deliver", "hold", "drop"
+
+
+@dataclass(frozen=True)
+class WindowState:
+    """The window open now. ``since`` names the event that opened it (e.g. "wake"), not a time."""
+
+    cls: str
+    since: Any = None
+    source: str = ""
+    confidence: float = 1.0
+
+
+@runtime_checkable
+class WindowProvider(Protocol):
+    def current(self) -> WindowState: ...
+
+
+class Decision(NamedTuple):
+    action: str  # deliver | hold | drop
+    reason: str  # one line: why now / why not
+
+
+@dataclass(frozen=True)
+class JobWindow:
+    """What a job brings to the send gate: its declared class, the current window, peak budget left."""
+
+    job_class: str
+    state: Optional[WindowState]
+    budget_left: int = 1
+
+
+def _open_class(state: Optional[WindowState]) -> str:
+    if state is None or state.cls not in WINDOW_CLASSES or state.confidence < MIN_CONFIDENCE:
+        return UNKNOWN
+    return state.cls
+
+
+def _opened_by(state: Optional[WindowState]) -> str:
+    return f" (since {state.since})" if state is not None and state.since not in (None, "") else ""
+
+
+def decide(job_window_class: str, state: Optional[WindowState], *, budget_left: int, asleep: bool,
+           critical: bool = False) -> Decision:
+    """Deliver, hold or drop one proactive message.
+
+    Order: critical delivers; asleep holds; anytime delivers; an unknown window holds;
+    a class mismatch holds; a peak job with no budget left in this peak window drops
+    (one decision per peak window; the job's next run may ask again).
+    """
+    if job_window_class not in WINDOW_CLASSES:
+        raise ValueError(f"window_class must be one of {WINDOW_CLASSES}, got {job_window_class!r}")
+    if critical:
+        return Decision(DELIVER, "critical: delivers whatever the window")
+    if asleep:
+        return Decision(HOLD, "asleep: holds until wake")
+    if job_window_class == "anytime":
+        return Decision(DELIVER, "anytime job and awake")
+    now = _open_class(state)
+    if now == UNKNOWN:
+        return Decision(HOLD, f"window unknown: holds the {job_window_class} job until a provider knows")
+    if now != job_window_class:
+        return Decision(HOLD, f"{now} window open{_opened_by(state)}: holds the {job_window_class} job")
+    if job_window_class == "peak" and budget_left <= 0:
+        return Decision(DROP, "peak budget spent: one decision per peak window")
+    return Decision(DELIVER, f"{now} window open{_opened_by(state)}")
+
+
+class StaticProvider:
+    """A fixed window, for tests and hosts that set the window by hand."""
+
+    def __init__(self, cls: str, since: Any = None, confidence: float = 1.0):
+        self._state = WindowState(cls=cls, since=since, source="static", confidence=confidence)
+
+    def current(self) -> WindowState:
+        return self._state
+
+
+class StateFileProvider:
+    """Reads ``{"cls": "peak", "since": "wake", "confidence": 0.9}`` from a JSON file on every call.
+
+    Whatever writes the file (a phone automation, a wearable adapter) owns the event logic.
+    A missing, unreadable or malformed file is an unknown window, never an error.
+    """
+
+    def __init__(self, path: str):
+        self.path = path
+
+    def current(self) -> WindowState:
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                data = json.load(f)
+            cls = data.get("cls")
+            confidence = float(data.get("confidence", 1.0))
+        except (OSError, ValueError, AttributeError, TypeError):
+            return WindowState(cls=UNKNOWN, source="state_file", confidence=0.0)
+        if cls not in WINDOW_CLASSES:
+            return WindowState(cls=UNKNOWN, since=data.get("since"), source="state_file", confidence=0.0)
+        return WindowState(cls=cls, since=data.get("since"), source="state_file", confidence=confidence)
