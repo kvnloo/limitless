@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kevin-push <tag> <title> <body>: the ONE way agents reach Kevin's phone (Telegram).
+"""kevin-push [--once KEY] <tag> <title> <body>: the ONE way agents reach Kevin's phone (Telegram).
 
 Policy lives in limitless/send_gate.py: decision|critical (or the wake brief / back-from-nap) go to
 Telegram; reports are log-only; 12 h dedupe; 6 sends/day; Sleep mode holds non-critical; the
@@ -7,6 +7,10 @@ Telegram; reports are log-only; 12 h dedupe; 6 sends/day; Sleep mode holds non-c
 Every call is appended to ~/.local/state/kevin-push/log.jsonl.
 Exit 0 unless args are missing. KEVIN_PUSH_STRICT=1: exit 3 when the message was not delivered,
 so callers (brief-sent.json) can record 'sent' only on real delivery.
+--once KEY (or $KEVIN_PUSH_ONCE) names the event the message is about, e.g. wake_brief:<event time>:
+the first delivery claims the key and any other message with it in the next 12 h is dropped, whatever
+its words, so two senders for one event send once. Only a real delivery claims a key; a held, log-only
+or failed send does not, so a later retry can still go out.
 """
 import json
 import os
@@ -39,7 +43,27 @@ SLEEPMODE = Path(os.environ.get("LIMITLESS_SLEEPMODE", state_dir() / "sleepmode.
 PUSH_PROFILE = os.environ.get("KEVIN_PUSH_PROFILE", "intake")      # Hermes profile that owns the Telegram bot
 PUSH_TO = os.environ.get("KEVIN_PUSH_TO", "telegram:kevin")        # contact alias, not a chat id
 HOW = {"log": "log", "fold": "folded (brief line)", "hold": "held (sleep mode)",
-       "duplicate": "log (duplicate)", "cap": "log (daily cap)"}
+       "duplicate": "log (duplicate)", "cap": "log (daily cap)", "drop": "log (dropped)"}
+USAGE = "usage: kevin-push [--once KEY] <tag> <title> <body>"
+
+
+def split_once(args):
+    """(positional args, once key or None, ok): pulls `--once KEY` / `--once=KEY` out of args."""
+    rest, once = [], None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--once":
+            if i + 1 >= len(args):
+                return rest, None, False
+            once, i = args[i + 1], i + 2
+            continue
+        if a.startswith("--once="):
+            once = a[len("--once="):]
+        else:
+            rest.append(a)
+        i += 1
+    return rest, once, True
 
 
 def asleep():
@@ -54,17 +78,21 @@ def asleep():
 
 
 def main(argv):
-    if len(argv) < 4:
-        print("usage: kevin-push <tag> <title> <body>", file=sys.stderr)
+    args, once, ok = split_once(argv[1:])
+    if not ok or len(args) < 3:
+        print(USAGE, file=sys.stderr)
         return 2
-    tag, title, body = argv[1], g.scrub(argv[2]), g.scrub(argv[3])
+    tag, title, body = args[0], g.scrub(args[1]), g.scrub(args[2])
+    once = g.scrub(once if once is not None else os.environ.get("KEVIN_PUSH_ONCE", "")).strip() or None
     cls = os.environ.get("CIRCADIAN_CLASS", "report")
     ST.mkdir(parents=True, exist_ok=True)
     now = time.time()
     sent = json.loads(SENT.read_text()) if SENT.exists() else []
     sent = [s for s in sent if now - s["t"] < 86400]
-    verdict = g.decide(tag, title, body, cls, now, sent, asleep())
+    verdict = g.decide(tag, title, body, cls, now, sent, asleep(), once_key=once)
     how = HOW.get(verdict, "log")
+    if verdict == "drop" and g.once_sent(sent, once, now):
+        how = f"log ({g.ONCE_DROP})"
     if verdict == "fold":
         lines = [ln for ln in body.splitlines() if ln.strip()]
         (ST / "asks-latest.json").write_text(json.dumps({"at": int(now), "count": len(lines), "lines": lines[:20]}))
@@ -79,7 +107,10 @@ def main(argv):
         os.unlink(f.name)
         how = "telegram" if r.returncode == 0 else f"log (telegram rc={r.returncode})"
         if r.returncode == 0:
-            sent.append({"t": now, "k": g.key(title, body)})
+            row = {"t": now, "k": g.key(title, body)}
+            if once:
+                row["once"] = once        # claimed only on real delivery
+            sent.append(row)
     SENT.write_text(json.dumps(sent))
     with open(LOG, "a") as f:
         f.write(json.dumps({"at": int(now), "tag": tag, "cls": cls, "title": title, "body": body[:2000], "how": how}) + "\n")
