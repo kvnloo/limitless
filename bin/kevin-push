@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""kevin-push <tag> <title> <body>: the ONE way agents reach Kevin's phone (Telegram).
+
+Policy lives in limitless/send_gate.py: decision|critical (or the wake brief / back-from-nap) go to
+Telegram; reports are log-only; 12 h dedupe; 6 sends/day; Sleep mode holds non-critical; the
+'Asks waiting on you' digest is folded into one brief line (asks-latest.json); card ids are removed.
+Every call is appended to ~/.local/state/kevin-push/log.jsonl.
+Exit 0 unless args are missing. KEVIN_PUSH_STRICT=1: exit 3 when the message was not delivered,
+so callers (brief-sent.json) can record 'sent' only on real delivery.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import send_gate as g  # noqa: E402
+
+ST = Path.home() / ".local/state/kevin-push"
+LOG, SENT = ST / "log.jsonl", ST / "sent.json"
+SLEEPMODE = Path(os.environ.get("LIMITLESS_SLEEPMODE",
+                                "/mnt/zer0models/sft-svlm/data/limitless/state/sleepmode.jsonl"))
+HOW = {"log": "log", "fold": "folded (brief line)", "hold": "held (sleep mode)",
+       "duplicate": "log (duplicate)", "cap": "log (daily cap)"}
+
+
+def asleep():
+    """Phone Sleep mode, polled every 2 min by limitless-sync. Fails open (stale poll = awake)."""
+    try:
+        poll = json.loads(SLEEPMODE.with_name("sleepmode-poll.json").read_text())
+        if not poll.get("ok") or time.time() - datetime.fromisoformat(poll["at"].replace("Z", "+00:00")).timestamp() > 600:
+            return False
+        return json.loads(SLEEPMODE.read_text().strip().splitlines()[-1]).get("on", False)
+    except (OSError, ValueError, IndexError, KeyError):
+        return False
+
+
+def main(argv):
+    if len(argv) < 4:
+        print("usage: kevin-push <tag> <title> <body>", file=sys.stderr)
+        return 2
+    tag, title, body = argv[1], g.scrub(argv[2]), g.scrub(argv[3])
+    cls = os.environ.get("CIRCADIAN_CLASS", "report")
+    ST.mkdir(parents=True, exist_ok=True)
+    now = time.time()
+    sent = json.loads(SENT.read_text()) if SENT.exists() else []
+    sent = [s for s in sent if now - s["t"] < 86400]
+    verdict = g.decide(tag, title, body, cls, now, sent, asleep())
+    how = HOW.get(verdict, "log")
+    if verdict == "fold":
+        lines = [ln for ln in body.splitlines() if ln.strip()]
+        (ST / "asks-latest.json").write_text(json.dumps({"at": int(now), "count": len(lines), "lines": lines[:20]}))
+    elif verdict == "hold":
+        with open(ST / "held.jsonl", "a") as f:  # delivered inside the 'Back from nap' message
+            f.write(json.dumps({"at": int(now), "tag": tag, "title": title, "body": body[:1000]}) + "\n")
+    elif verdict == "send":
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write(body)
+        r = subprocess.run(["hermes", "-p", "intake", "send", "--to", "telegram:kevin", "--subject", title,
+                            "--file", f.name, "-q"], capture_output=True, text=True, timeout=60)
+        os.unlink(f.name)
+        how = "telegram" if r.returncode == 0 else f"log (telegram rc={r.returncode})"
+        if r.returncode == 0:
+            sent.append({"t": now, "k": g.key(title, body)})
+    SENT.write_text(json.dumps(sent))
+    with open(LOG, "a") as f:
+        f.write(json.dumps({"at": int(now), "tag": tag, "cls": cls, "title": title, "body": body[:2000], "how": how}) + "\n")
+    print(f"kevin-push: {how}")
+    if os.environ.get("KEVIN_PUSH_STRICT") == "1" and how != "telegram":
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
