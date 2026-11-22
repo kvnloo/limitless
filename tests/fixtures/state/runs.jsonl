@@ -1,0 +1,4 @@
+{"at": "2030-01-15T08:47:00Z", "job": "sync", "ok": true, "took_s": 11.2}
+{"at": "2030-01-15T09:47:00Z", "job": "sync", "ok": false, "took_s": 47.9}
+not json: a torn line the reader must skip
+{"at": "2030-01-15T10:47:00Z", "job": "sync", "ok": true, "took_s": 13.8}

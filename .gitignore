@@ -4,5 +4,7 @@ __pycache__/
 *.db
 *.sqlite*
 state/
+!tests/fixtures/state/
 *.jsonl
 !tests/fixtures/*.jsonl
+!tests/fixtures/**/*.jsonl
