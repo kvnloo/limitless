@@ -130,6 +130,30 @@ class Summary(unittest.TestCase):
         self.assertEqual(re.findall(r"\d+", lines[0]), ["6", "2", "3", "11"])
         self.assertEqual(re.findall(r"\d+", lines[1]), [])
 
+    def test_parenthetical_thresholds_are_dropped(self):
+        lines = sc.summary(sc.parse((FIX / "thresholds.md").read_text()))
+        self.assertEqual(lines, ["1 green, 2 amber, 2 red of 5", "not all green yet",
+                                 "Loop uptime: red", "Review held: red", "Delivery: amber"])
+
+    def test_nested_and_unbalanced_parentheses(self):
+        rows = [row(1, "Review held (weekly, within 2 days (grace 1))", "red"),
+                row(2, "Notes current (updated <3 d", "red"),
+                row(3, "Window kept) by 9 (+-1 h)", "red")]
+        self.assertEqual(sc.summary(rows)[2:], ["Review held: red", "Notes current: red", "Window kept by #: red"])
+
+    def test_text_around_a_parenthetical_is_kept(self):
+        rows = [row(1, "Sleep (>=7 h) logged 5 days", "red"), row(2, "Inbox (<10) triaged t_510c250d", "amber")]
+        self.assertEqual(sc.summary(rows)[2:], ["Sleep logged # days: red", "Inbox triaged: amber"])
+
+    def test_name_that_is_only_a_parenthetical_falls_back_to_masked_text(self):
+        rows = [row(5, "(90% of 7 days)", "amber"), row(6, "()", "red")]
+        self.assertEqual(sc.summary(rows)[2:], ["(): red", "(#% of # days): amber"])
+
+    def test_threshold_fixture_shows_no_digits_in_names(self):
+        import re
+        lines = sc.summary(sc.parse((FIX / "thresholds.md").read_text()))
+        self.assertEqual(re.findall(r"[\d(<>=%]", " ".join(lines[2:])), [])
+
     def test_lines_are_plain_words(self):
         for ln in sc.summary(sc.parse((FIX / "scorecard.md").read_text())):
             self.assertNotRegex(ln, r"[|*_`\[\]]")

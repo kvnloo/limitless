@@ -71,11 +71,29 @@ _RANK = {"red": 0, "amber": 1, "unknown": 2}
 _DIGITS = re.compile(r"\d+")
 
 
+def _drop_parentheticals(text: str) -> str:
+    """Text with every ``( ... )`` removed, nested ones included. An unclosed ``(`` drops the rest of the
+    text and a stray ``)`` is dropped: thresholds sit in parentheses and must not leak half-open."""
+    out, depth = [], 0
+    for ch in text:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+def _tidy(text: str) -> str:
+    return re.sub(r"\s+", " ", _DIGITS.sub("#", text)).strip(" :")
+
+
 def _name(criterion: str) -> str:
-    """Plain words only: no card ids, every digit masked (counts and weeks are the only numbers shown)."""
-    name = _DIGITS.sub("#", scrub(criterion))
-    name = re.sub(r"\s+", " ", name).strip(" :")
-    return name or "unnamed criterion"
+    """Plain words only: no card ids, no parenthetical thresholds, and every digit left masked (counts
+    and weeks are the only numbers shown). A name that is all parenthetical keeps its masked full text."""
+    text = scrub(criterion)
+    return _tidy(_drop_parentheticals(text)) or _tidy(text) or "unnamed criterion"
 
 
 def summary(rows: List[dict]) -> List[str]:
