@@ -42,6 +42,13 @@ class Decide(unittest.TestCase):
     def test_wake_brief_is_sent_whatever_the_class(self):
         self.assertEqual(decide(tag="limitless", title="Wake-up brief", cls="digest"), "send")
 
+    def test_miq_prompt_is_sent_although_its_class_is_report(self):
+        # The wind-down MIQ prompt was logged, never delivered, while it used the default class.
+        self.assertEqual(decide(tag="limitless", title="MIQ for tonight?", cls="report"), "send")
+
+    def test_miq_prompt_is_held_in_sleep_mode(self):
+        self.assertEqual(decide(tag="limitless", title="MIQ for tonight?", cls="report", asleep=True), "hold")
+
     def test_same_text_within_12h_is_duplicate(self):
         k = g.key("T", "b")
         self.assertEqual(decide(sent=[{"t": NOW - 3600, "k": k}]), "duplicate")

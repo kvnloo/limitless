@@ -5,7 +5,7 @@ import hashlib
 import re
 
 DAILY_CAP, DEDUP_S = 6, 12 * 3600
-ALWAYS = {("limitless", "Wake-up brief"), ("limitless", "Back from nap")}
+ALWAYS = {("limitless", "Wake-up brief"), ("limitless", "Back from nap"), ("limitless", "MIQ for tonight?")}
 # 'Asks waiting on you' hit the cap 133x on 11-21 and starved real messages: it becomes one brief line.
 FOLD = {"asks"}
 
