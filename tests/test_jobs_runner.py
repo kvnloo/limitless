@@ -87,5 +87,90 @@ class DryRun(Base):
         self.assertEqual({r["action"] for r in rows}, {jobs.NOT_TRIGGERED})
 
 
+class Send(Base):
+    def test_deliver_pushes_and_logs_sent_only_on_telegram(self):
+        self.awake_after_night()
+        push = FakePush("telegram")
+        rows = self.once(push=push, dry_run=False)
+        self.assertEqual([t for t, _ in push.calls], ["Wake-up brief"])
+        self.assertTrue(push.calls[0][1].strip())
+        self.assertEqual(self.by_job(rows)["Wake-up brief"]["action"], jobs.DELIVER)
+        trig = NOW - 0.2 * H
+        self.assertEqual(self.sent_rows(), [jobs.sent_entry(jobs.WAKE_BRIEF, trig, NOW)])
+
+    def test_log_only_push_is_not_sent(self):
+        self.awake_after_night()
+        for result in ("log", "log (telegram rc=1)", "held (sleep mode)", False, None, ""):
+            push = FakePush(result)
+            rows = self.once(push=push, dry_run=False)
+            self.assertEqual(len(push.calls), 1, result)
+            self.assertEqual(self.sent_rows(), [], result)
+            row = self.by_job(rows)["Wake-up brief"]
+            self.assertEqual(row["action"], jobs.HOLD, result)
+            self.assertIn("not delivered", row["reason"])
+
+    def test_push_that_raises_is_not_sent(self):
+        self.awake_after_night()
+
+        def boom(title, body):
+            raise OSError("no kevin-push")
+        rows = self.once(push=boom, dry_run=False)
+        self.assertEqual(self.sent_rows(), [])
+        self.assertEqual(self.by_job(rows)["Wake-up brief"]["action"], jobs.HOLD)
+
+    def test_true_counts_as_delivered(self):
+        self.awake_after_night()
+        self.once(push=FakePush(True), dry_run=False)
+        self.assertEqual(len(self.sent_rows()), 1)
+
+    def test_only_deliver_verdicts_push(self):
+        # Sleep mode on with a live poll: asleep, every triggered job holds, nothing is pushed.
+        write_rows(self.st / "sleepmode.jsonl", [{"at": NOW - 9 * H, "on": True}, {"at": NOW - 1 * H, "on": False},
+                                                 {"at": NOW - 0.1 * H, "on": True}])
+        (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": NOW - 60, "ok": True}))
+        push = FakePush()
+        rows = self.once(push=push, dry_run=False)
+        self.assertEqual(push.calls, [])
+        self.assertNotIn(jobs.DELIVER, {r["action"] for r in rows})
+        self.assertEqual(self.sent_rows(), [])
+
+
+class Idempotent(Base):
+    def test_two_runs_send_once_per_trigger(self):
+        self.awake_after_night()
+        push = FakePush()
+        first = self.once(push=push, dry_run=False)
+        second = self.once(push=push, dry_run=False, now=NOW + 300)
+        self.assertEqual(len(push.calls), 1)
+        self.assertEqual(len(self.sent_rows()), 1)
+        self.assertEqual(self.by_job(first)["Wake-up brief"]["action"], jobs.DELIVER)
+        row = self.by_job(second)["Wake-up brief"]
+        self.assertEqual(row["action"], jobs.DROP)
+        self.assertIn("already spoke once", row["reason"])
+
+    def test_failed_push_then_good_push_sends_once(self):
+        self.awake_after_night()
+        self.once(push=FakePush("log"), dry_run=False)
+        push = FakePush()
+        self.once(push=push, dry_run=False, now=NOW + 300)
+        self.once(push=push, dry_run=False, now=NOW + 600)
+        self.assertEqual(len(push.calls), 1)
+        self.assertEqual(len(self.sent_rows()), 1)
+
+    def test_a_new_trigger_sends_again(self):
+        self.awake_after_night()
+        push = FakePush()
+        self.once(push=push, dry_run=False)
+        # The next day: Sleep mode on for a night, then off again.
+        later = NOW + 24 * H
+        write_rows(self.st / "sleepmode.jsonl", [{"at": NOW - 8.5 * H, "on": True}, {"at": NOW - 0.2 * H, "on": False},
+                                                 {"at": later - 8 * H, "on": True}, {"at": later - 0.1 * H, "on": False}])
+        (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": later - 60, "ok": True}))
+        self.once(push=push, dry_run=False, now=later)
+        self.once(push=push, dry_run=False, now=later + 300)
+        self.assertEqual(len(push.calls), 2)
+        self.assertEqual(len(self.sent_rows()), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
