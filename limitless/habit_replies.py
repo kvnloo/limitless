@@ -142,10 +142,11 @@ def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, dry_run:
         if answer is None:
             rows.append(_row(t, day, None, IGNORE, "not Done, No or Skip: the day stays unlogged", tz))
         elif have is not None:
-            rows.append(_row(t, day, answer, KEEP, f"the day already says {have}", tz))
+            why = f"an earlier reply to this check-in says {have}" if new else f"the day already says {have}"
+            rows.append(_row(t, day, answer, KEEP, why, tz))
         else:
             have = new = answer
-            rows.append(_row(t, day, answer, WOULD_WRITE if dry_run else WRITE, f"{answer} for {day}", tz))
+            rows.append(_row(t, day, answer, WOULD_WRITE if dry_run else WRITE, "the first tap after the check-in", tz))
     if new is not None and not dry_run:
         _write_atomic(state / HABIT_FILE, dict(habit, checkins=dict(checkins, **{day: new})))
     return rows

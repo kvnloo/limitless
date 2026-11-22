@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""limitless-habit-ingest [--db PATH] [--write]: log a Done / No / Skip reply to the habit check-in.
+
+Reads the person's Telegram messages from the Hermes session DB (read-only) after the latest habit
+check-in in jobs-sent.jsonl, and logs the first Done, No or Skip into habit.json's checkins for the
+check-in's local date. Anything else stays unlogged; a day that already has an answer is kept.
+Without --write it is a dry run: it prints what it would write and writes nothing.
+The DB is --db, else $LIMITLESS_HERMES_DB, else "hermes_db" in $LIMITLESS_CONFIG
+(~/.config/limitless/config.json; a relative path is in the state dir). There is no default: with none
+set it reads nothing and says so. The state dir is $LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG.
+Nothing here sends.
+"""
+import argparse
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import habit_replies  # noqa: E402
+from limitless.state_reader import StateReader, state_dir  # noqa: E402
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-habit-ingest", add_help=True)
+    ap.add_argument("--db", help="the Hermes session DB (state.db)")
+    ap.add_argument("--write", action="store_true", help="write habit.json (default: dry run)")
+    args = ap.parse_args(argv[1:])
+    now = time.time()
+    state = state_dir()
+    db = habit_replies.hermes_db_path(state, arg=args.db)
+    if db is None:
+        print(f"limitless-habit-ingest: no Hermes DB set (--db, {habit_replies.ENV_KEY} or config "
+              f"\"{habit_replies.CONFIG_KEY}\"): nothing read, nothing written")
+        return 0
+    sent = habit_replies.latest_checkin(StateReader(state).jobs_sent(), now)
+    replies = [] if sent is None else habit_replies.replies_from_hermes_db(db, sent)
+    for r in habit_replies.ingest(state, replies, now, dry_run=not args.write):
+        word = f"{r['answer']}: " if r["answer"] else ""
+        print(f"{r['day'] or 'no day'}: {r['action']}: {word}{r['reason']}")
+    if not args.write:
+        print("dry run: nothing written (--write writes habit.json)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
