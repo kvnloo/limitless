@@ -1,4 +1,4 @@
-# hermes-limitless
+# limitless
 
 The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin: a closed loop around one person's peak performance. Sleep, energy and recovery come first, then learning, then flow. The agent observes, suggests one small intervention, and checks what actually happened. It never prescribes.
 
