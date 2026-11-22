@@ -1,8 +1,9 @@
 """Today's state card: the limitless_state tool and the pre_llm_call hook.
 
 Privacy tier T2 (default): the card carries coarse labels only ("sleep short (proxy)", "readiness low"),
-and every digit left in it is masked, so no raw value reaches the prompt. LIMITLESS_RAW_IN_PROMPT=1 opts
-in to raw numbers. Labels describe one imported or proxy value; nothing here computes a score.
+made at the source by the T1 labeler (labeler.py: rules, or an optional local model), so its lines never
+hold a raw value. Every digit left in it is masked as a second guard (MASK_DIGITS). LIMITLESS_RAW_IN_PROMPT=1
+opts in to raw numbers. Labels describe one imported or proxy value; nothing here computes a score.
 The hook's card is cached until the window class, a card input file's mtime, the date or the raw flag changes.
 """
 from __future__ import annotations
@@ -13,6 +14,7 @@ import time
 from datetime import date
 from typing import Callable, Mapping, Optional
 
+from . import labeler as _labeler
 from . import tools
 from .envelope import STALE_H, envelope, missing
 from .state_reader import StateReader, parse_ts, state_dir
@@ -22,29 +24,41 @@ MAX_LINES = 6
 ASKS_MAX_AGE_H = 36.0
 CARD_FILES = ("inputs.json", "digests.jsonl", "habit.json", "asks-latest.json")
 _WEAKEST_LAST = ("measured", "imported", "self_report", "proxy")
+MASK_DIGITS = True  # the second guard: lines are built from T1 labels first
 
 
 def sleep_label(hours: float) -> str:
-    return "short" if hours < 6 else "long" if hours > 9 else "ok"
+    return _labeler.rule_label("sleep_h", hours)
 
 
 def readiness_label(v: float) -> str:
-    return "low" if v < 34 else "moderate" if v < 67 else "high"
+    return _labeler.rule_label("readiness", v)
 
 
-METRICS = (("sleep", "sleep_h", sleep_label, " h"), ("readiness", "readiness", readiness_label, ""))
+METRICS = (("sleep", "sleep_h", " h"), ("readiness", "readiness", ""))
+
+
+def _t1(lab: Callable, kind: str, value, modality) -> dict:
+    """The labeler's answer, kept only if it is one of the kind's labels (else unknown, never a guess)."""
+    try:
+        out = lab(kind, value, modality)
+        word = out.get("label") if isinstance(out, dict) else None
+    except Exception:  # a broken labeler must not break the card
+        word = None
+    ok = isinstance(word, str) and word in _labeler.ALLOWED.get(kind, ())
+    return _labeler.t1(word if ok else _labeler.UNKNOWN, modality)
 
 
 def _number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _metric_items(reader: StateReader, now: float, raw: bool):
+def _metric_items(reader: StateReader, now: float, raw: bool, lab: Callable):
     d = reader.latest_digest()
     t = parse_ts((d or {}).get("at"))
     age_h = None if t is None else max(0.0, now - t) / 3600
     items = {}
-    for name, key, label, unit in METRICS:
+    for name, key, _unit in METRICS:
         if d is None or age_h is None or age_h > STALE_H:
             items[name] = missing("no digest in the last day")
             continue
@@ -52,7 +66,12 @@ def _metric_items(reader: StateReader, now: float, raw: bool):
         if not _number(m.get("value")) or m.get("modality") not in _WEAKEST_LAST:
             items[name] = missing(f"today's digest has no {key}")
             continue
-        items[name] = envelope(label(m["value"]), m["modality"], age_h)
+        t1 = _t1(lab, key, m["value"], m["modality"])
+        if t1["label"] == _labeler.UNKNOWN:
+            items[name] = envelope(None, m["modality"], age_h, reason=f"today's {key} has no coarse label")
+            continue
+        items[name] = envelope(t1["label"], m["modality"], age_h)
+        items[name]["label"] = t1
         if raw:
             items[name]["raw"] = m["value"]
     return items, age_h
@@ -66,14 +85,16 @@ def _metric_text(name: str, env: dict, unit: str) -> str:
 
 
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
-          win: Optional[dict] = None, bands: Optional[Mapping] = None) -> dict:
-    """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines."""
+          win: Optional[dict] = None, bands: Optional[Mapping] = None,
+          labeler: Optional[Callable] = None) -> dict:
+    """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
+    labeler(kind, value, modality) -> T1 dict; the rule labeler by default."""
     win = win or window(reader, now, bands)
-    items, digest_age = _metric_items(reader, now, raw)
+    items, digest_age = _metric_items(reader, now, raw, labeler or _labeler.label)
     items["window"] = win
     lines = ["[limitless] state card (coarse labels; limitless_state has detail)",
              f"window: {win['value']}" + (f" ({win['modality']})" if win["value"] != "unknown" else ""),
-             "; ".join(_metric_text(n, items[n], u) for n, _, _, u in METRICS)]
+             "; ".join(_metric_text(n, items[n], u) for n, _, u in METRICS)]
     h = tools.habit(reader, now, today)
     items["habit_today"] = h if h["value"] is None else envelope(h["value"]["today"], "self_report", h["age_h"])
     if h["value"] is None:
@@ -88,17 +109,17 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
     if asks_at is not None and now - asks_at <= ASKS_MAX_AGE_H * 3600 and asks.get("count"):
         lines.append("asks waiting on you" + (f": {asks['count']}" if raw else ""))
     lines = lines[:MAX_LINES]
-    if not raw:
+    if not raw and MASK_DIGITS:
         lines = [re.sub(r"\d+", "#", ln) for ln in lines]
     return {"text": "\n".join(lines), "lines": lines, "items": items, "age_h": digest_age}
 
 
 def state(reader: StateReader, now: float, today: date, *, raw: bool = False,
-          bands: Optional[Mapping] = None) -> dict:
+          bands: Optional[Mapping] = None, labeler: Optional[Callable] = None) -> dict:
     """limitless_state: today's card plus its parts, each an envelope. Modality = the weakest part's."""
     if not reader.exists():
         return missing("the state dir does not exist")
-    c = build(reader, now, today, raw=raw, bands=bands)
+    c = build(reader, now, today, raw=raw, bands=bands, labeler=labeler)
     mods = [e["modality"] for e in c["items"].values() if e["value"] is not None and e["modality"]]
     if not mods:
         return envelope(None, "proxy", c["age_h"], reason="no state for today: every part is unknown")
@@ -111,11 +132,12 @@ class CardCache:
         self._key, self._text, self.builds = None, None, 0
 
     def get(self, reader: StateReader, now: float, today: date, raw: bool = False,
-            bands: Optional[Mapping] = None) -> str:
+            bands: Optional[Mapping] = None, labeler: Optional[Callable] = None) -> str:
         win = window(reader, now, bands)
-        key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES))
+        key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
+               tuple(getattr(labeler, "cmd", None) or ()))
         if key != self._key:
-            self._text = build(reader, now, today, raw=raw, win=win, bands=bands)["text"]
+            self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler)["text"]
             self._key = key
             self.builds += 1
         return self._text
@@ -134,6 +156,7 @@ def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[
         reader = StateReader(state_dir(e))
         if not reader.exists():
             return None
-        return {"context": cache.get(reader, clock(), today(), raw=raw_in_prompt(e), bands=bands)}
+        return {"context": cache.get(reader, clock(), today(), raw=raw_in_prompt(e), bands=bands,
+                                     labeler=_labeler.from_config(e))}
 
     return pre_llm_call

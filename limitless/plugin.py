@@ -12,7 +12,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import capture, card, scorecard, tools
+from . import capture, card, labeler, scorecard, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 from .window import window
@@ -36,7 +36,8 @@ def _status(args, now):
 
 
 def _state(args, now):
-    return card.state(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ), bands=_bands())
+    return card.state(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ), bands=_bands(),
+                      labeler=labeler.from_config())
 
 
 def _window(args, now):
