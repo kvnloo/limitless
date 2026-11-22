@@ -21,6 +21,7 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
   - Configure with `KEVIN_PUSH_PROFILE`, `KEVIN_PUSH_TO`, `LIMITLESS_STATE` or `LIMITLESS_CONFIG` (`~/.config/limitless/config.json` → `"state"`).
 - `limitless/brief_post.py` + `bin/limitless-brief`: finalize and deliver the wake-up brief.
 - `limitless/decision_window.py`: decision windows. A job declares `peak`, `trough`, `wind_down` or `anytime`; a provider (`StaticProvider`, `StateFileProvider`) says which window is open from events, never clock times; `decide()` returns deliver, hold or drop with a one-line reason. `send_gate.decide(..., window=...)` takes it as an optional input. Design note: [docs/decision-window.md](docs/decision-window.md).
+- `limitless/jobs.py`: event-triggered job specs (wake brief, back from nap, the bedtime question, the habit check-in); `should_fire()` returns deliver, hold, drop or not_triggered with a reason through the decision window and the send gate, and `to_schedule_card()` gives the plain words a Hermes Schedule card could show. Pure functions: nothing sends by itself.
 - `scripts/replay_log.py`: replay a delivery log through the gate, read-only, counts only.
 
 ## Tools and hook
