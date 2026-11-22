@@ -2,8 +2,8 @@
 """limitless-jobs [--send]: one pass over the event-triggered jobs; prints one line per job.
 
 Without --send it is a dry run: verdicts only, nothing is pushed or written.
-With --send, a deliver verdict goes out through `kevin-push limitless <title> <body>` with
-KEVIN_PUSH_STRICT=1, and the job is logged as sent (jobs-sent.jsonl in the state dir) only when
+With --send, a deliver verdict goes out through `kevin-push limitless <title> <body> --once <job>:<event time>`
+with KEVIN_PUSH_STRICT=1 (any other sender for the same event should pass the same --once key), and the job is logged as sent (jobs-sent.jsonl in the state dir) only when
 kevin-push reports a real Telegram delivery. kevin-push is $KEVIN_PUSH_BIN, else `kevin-push` on PATH.
 The state dir is $LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG (~/.config/limitless/config.json).
 Run it as often as you like (e.g. a systemd timer every few minutes): it polls for events and sends
@@ -20,12 +20,14 @@ from limitless import jobs_runner  # noqa: E402
 from limitless.state_reader import state_dir  # noqa: E402
 
 
-def kevin_push(title, body):
+def kevin_push(title, body, once=None):
     """What kevin-push reported: "telegram" only for a real delivery (exit 0 under STRICT)."""
     exe = os.environ.get("KEVIN_PUSH_BIN") or "kevin-push"
     env = dict(os.environ, KEVIN_PUSH_STRICT="1", CIRCADIAN_CLASS="decision")
+    env.pop("KEVIN_PUSH_ONCE", None)          # the key is this event's, never one left in the env
+    argv = [exe, "limitless", title, body] + (["--once", once] if once else [])
     try:
-        r = subprocess.run([exe, "limitless", title, body], env=env, capture_output=True, text=True, timeout=120)
+        r = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as e:
         return f"kevin-push did not run ({type(e).__name__})"
     lines = [ln for ln in r.stdout.splitlines() if ln.startswith("kevin-push: ")]

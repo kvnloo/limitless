@@ -9,7 +9,10 @@ in ``events.jsonl`` (any name in ``jobs.EVENTS``; others are ignored). The windo
 verdict is ``jobs.should_fire`` against the sent log ``jobs-sent.jsonl`` in the state dir; a verdict
 whose trigger is a screen-event wake (or its habit cue) says the wake is a proxy.
 
-Only a ``deliver`` verdict calls ``push(title, body)``. ``push`` returns what kevin-push reported
+Only a ``deliver`` verdict calls ``push(title, body)``, with ``once=once_key(spec, trigger_at)`` when push
+takes a ``once`` parameter: the event key ``<job>:<trigger event time>`` that every sender for one event
+passes to ``kevin-push --once``, so only the first message per event goes out. A push that reports
+``send_gate.ONCE_DROP`` (another sender already sent for this event) drops the job. ``push`` returns what kevin-push reported
 (``"telegram"`` or ``True`` for a real delivery). Only a real delivery appends ``jobs.sent_entry()``
 to the sent log; a failed, log-only or held push is not a send, and the job holds until the next
 run tries again. ``dry_run=True`` (the default) never calls ``push`` and never writes. Nothing here reads the
@@ -17,11 +20,12 @@ clock: ``now`` comes from the caller. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import aw_reader, jobs, wake_proxy
+from . import aw_reader, jobs, send_gate, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, parse_ts
 from .window_chain import EventProvider, first_known
@@ -49,10 +53,27 @@ def delivered(result: object) -> bool:
     return result is True or result == DELIVERED
 
 
-def _push(push, title: str, text: str):
+def once_key(spec: jobs.JobSpec, trigger_at: float) -> str:
+    """The event key for one job's message: the job name and its trigger event time (whole seconds).
+
+    Nothing else goes in it (no habit words, no window values), so it carries no health digits and
+    no card ids, and every poll of one event (and any other sender for it) gets the same key.
+    """
+    return f"{spec.name}:{int(trigger_at)}"
+
+
+def _takes_once(push) -> bool:
+    try:
+        inspect.signature(push).bind("title", "body", once="key")
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _push(push, title: str, text: str, once: Optional[str] = None):
     """(delivered, how) for one push; an exception is a failed push, never a send."""
     try:
-        result = push(title, text)
+        result = push(title, text, once=once) if once is not None and _takes_once(push) else push(title, text)
     except Exception as e:  # noqa: BLE001 - a broken push must not stop the other jobs
         return False, f"push failed ({type(e).__name__})"
     return delivered(result), (result if isinstance(result, str) and result else "no delivery reported")
@@ -109,13 +130,16 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
         if action == jobs.DELIVER and not dry_run and push is not None:
-            ok, how = _push(push, spec.send_title, body(spec, habit))
+            key = once_key(spec, v.trigger_at) if v.trigger_at is not None else None
+            ok, how = _push(push, spec.send_title, body(spec, habit), key)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:
                     f.write(json.dumps(entry) + "\n")
                 sent.append(entry)               # later jobs in this run see it (daily cap)
                 reason = f"{reason}; sent"
+            elif send_gate.ONCE_DROP in how:
+                action, reason = jobs.DROP, f"{reason}; not sent: {send_gate.ONCE_DROP} by another sender"
             else:
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
