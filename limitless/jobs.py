@@ -42,8 +42,11 @@ class JobSpec:
     expires: str
     trigger_after: str = ""                  # "short_on": only a Sleep-mode off after a short on (a nap)
     answers: Tuple[str, ...] = ()            # 1-tap replies the message offers
+    stale_after_s: Optional[float] = None    # a trigger older than this drops the job: a late message is noise
 
     def __post_init__(self):
+        if self.stale_after_s is not None and not self.stale_after_s > 0:
+            raise ValueError(f"stale_after_s must be positive, got {self.stale_after_s!r}")
         if self.trigger_event not in EVENTS:
             raise ValueError(f"trigger_event must be one of {EVENTS}, got {self.trigger_event!r}")
         if self.expires not in EVENTS:
@@ -56,17 +59,24 @@ class JobSpec:
             raise ValueError(f"max_per_window must be a positive int, got {self.max_per_window!r}")
 
 
-WAKE_BRIEF = JobSpec("wake_brief", "wake", "anytime", "Wake-up brief", 1, "sleep_mode_on")
-NAP = JobSpec("nap", "sleep_mode_off", "anytime", "Back from nap", 1, "sleep_mode_on", trigger_after="short_on")
-MIQ = JobSpec("miq", "wind_down", "wind_down", "MIQ for tonight?", 1, "sleep_mode_on")
+WAKE_STALE_S = 3 * 3600      # the wake brief removes the first decisions of the day; hours later it is noise
+NAP_STALE_S = 3600           # "back from nap" only makes sense right after the nap
+MIQ_STALE_S = 3 * 3600       # the bedtime question belongs to this wind-down, not a later one
+HABIT_STALE_S = 3 * 3600     # the check-in asks about the first hour; much later the answer is a guess
+WAKE_BRIEF = JobSpec("wake_brief", "wake", "anytime", "Wake-up brief", 1, "sleep_mode_on",
+                     stale_after_s=WAKE_STALE_S)
+NAP = JobSpec("nap", "sleep_mode_off", "anytime", "Back from nap", 1, "sleep_mode_on", trigger_after="short_on",
+              stale_after_s=NAP_STALE_S)
+MIQ = JobSpec("miq", "wind_down", "wind_down", "MIQ for tonight?", 1, "sleep_mode_on", stale_after_s=MIQ_STALE_S)
 HABIT_CHECKIN = JobSpec("habit_checkin", "habit_cue", "anytime", "Habit check-in", 1, "sleep_mode_on",
-                        answers=("Done", "No", "Skip"))
+                        answers=("Done", "No", "Skip"), stale_after_s=HABIT_STALE_S)
 SPECS = {s.name: s for s in (WAKE_BRIEF, NAP, MIQ, HABIT_CHECKIN)}
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
     """The wake brief speaks in a peak window only when it carries a decision; else anytime."""
-    return JobSpec(WAKE_BRIEF.name, "wake", "peak", WAKE_BRIEF.send_title, 1, "sleep_mode_on") if decision \
+    return JobSpec(WAKE_BRIEF.name, "wake", "peak", WAKE_BRIEF.send_title, 1, "sleep_mode_on",
+                   stale_after_s=WAKE_BRIEF.stale_after_s) if decision \
         else WAKE_BRIEF
 
 
@@ -75,7 +85,7 @@ def habit_checkin(habit: Optional[dict]) -> JobSpec:
     cue = (habit or {}).get("cue") if isinstance(habit, dict) else None
     if cue in EVENTS and cue != HABIT_CHECKIN.trigger_event:
         return JobSpec(HABIT_CHECKIN.name, cue, "anytime", HABIT_CHECKIN.send_title, 1, "sleep_mode_on",
-                       answers=HABIT_CHECKIN.answers)
+                       answers=HABIT_CHECKIN.answers, stale_after_s=HABIT_CHECKIN.stale_after_s)
     return HABIT_CHECKIN
 
 
@@ -223,6 +233,8 @@ def should_fire(spec: JobSpec, events: list, window_state: Any, sent_log: list, 
     age_h = (now - trig) / 3600
     if age_h > MAX_AWAKE_H:
         return Verdict(DROP, f"the {label} event is {age_h:.0f} h old: missing data, not a long day", trig)
+    if spec.stale_after_s is not None and now - trig > spec.stale_after_s:
+        return Verdict(DROP, f"too late: the {label} event is {age_h:.1f} h old; a late message is noise", trig)
     sent = [s for s in (sent_log or ()) if isinstance(s, dict) and isinstance(s.get("t"), (int, float))]
     count = sum(1 for s in sent if s.get("job") == spec.name and trig <= s["t"] <= now)
     if count >= spec.max_per_window:
