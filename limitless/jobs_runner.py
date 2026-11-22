@@ -2,7 +2,8 @@
 
     rows = run_once(state_dir, now, push=push, dry_run=False)
 
-Events are the phone's Sleep-mode changes (``sleepmode.jsonl``). The window is
+Events are the phone's Sleep-mode changes (``sleepmode.jsonl``) plus any ``{"event", "at"}`` rows
+in ``events.jsonl`` (any name in ``jobs.EVENTS``; others are ignored). The window is
 ``first_known(GlideProvider, EventProvider)``; asleep comes from the EventProvider. Each job's
 verdict is ``jobs.should_fire`` against the sent log ``jobs-sent.jsonl`` in the state dir.
 
@@ -20,7 +21,7 @@ from typing import Callable, Mapping, Optional
 
 from . import jobs
 from .glide_provider import GlideProvider
-from .state_reader import StateReader
+from .state_reader import StateReader, parse_ts
 from .window_chain import EventProvider, first_known
 
 SENT_LOG = "jobs-sent.jsonl"
@@ -55,6 +56,16 @@ def _push(push, title: str, text: str):
     return delivered(result), (result if isinstance(result, str) and result else "no delivery reported")
 
 
+def events(reader: StateReader) -> list:
+    """Sleep-mode events plus the valid rows of events.jsonl, oldest first."""
+    out = jobs.events_from_sleepmode(reader.sleepmode())
+    for r in reader.events():
+        at = parse_ts(r.get("at"))
+        if at is not None and r.get("event") in jobs.EVENTS:
+            out.append({"event": r["event"], "at": at})
+    return sorted(out, key=lambda e: e["at"])
+
+
 def _specs(reader: StateReader) -> list:
     return [jobs.habit_checkin(reader.habit()) if name == jobs.HABIT_CHECKIN.name else spec
             for name, spec in jobs.SPECS.items()]
@@ -64,15 +75,15 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``."""
     reader = StateReader(Path(state_dir))
-    events = jobs.events_from_sleepmode(reader.sleepmode())
+    evs = events(reader)
     ev_provider = EventProvider.from_reader(reader, now)
     state = first_known(GlideProvider.from_config(env=env, home=home, now=now), ev_provider)
     window = {"cls": "asleep"} if ev_provider.asleep else state
-    sent = reader._jsonl(SENT_LOG)
+    sent = reader.jobs_sent()
     habit = reader.habit()
     rows = []
     for spec in _specs(reader):
-        v = jobs.should_fire(spec, events, window, sent, now)
+        v = jobs.should_fire(spec, evs, window, sent, now)
         action, reason = v.action, v.reason
         if action == jobs.DELIVER and not dry_run and push is not None:
             ok, how = _push(push, spec.send_title, body(spec, habit))

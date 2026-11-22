@@ -9,6 +9,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   habit.json           {"week_of": date, "habit", "start", "checkins": {date: Done|No|Skipped}}
   sleepmode.jsonl      {"at", "on"} phone Sleep-mode changes; sleepmode-poll.json {"at", "ok"}
   unlocks.jsonl        {"at"} phone unlocks
+  events.jsonl         {"event", "at"} other job events (wind_down, habit_cue, focus_end, ...)
+  jobs-sent.jsonl      {"t", "k", "job"} job messages really delivered (written by jobs_runner only)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -151,3 +153,9 @@ class StateReader:
 
     def last_unlock(self) -> Optional[dict]:
         return self._last_row("unlocks.jsonl")
+
+    def events(self) -> list:
+        return self._jsonl("events.jsonl")
+
+    def jobs_sent(self) -> list:
+        return self._jsonl("jobs-sent.jsonl")

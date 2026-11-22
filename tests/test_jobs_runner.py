@@ -172,5 +172,62 @@ class Idempotent(Base):
         self.assertEqual(len(self.sent_rows()), 2)
 
 
+class EventsAndWindow(Base):
+    def glide(self, data):
+        path = self.root / "attention.json"
+        path.write_text(json.dumps(data))
+        self.env["LIMITLESS_GLIDE_ATTENTION"] = str(path)
+
+    def test_events_jsonl_wakes_the_habit_check_in_with_its_habit(self):
+        self.awake_after_night()
+        (self.st / "habit.json").write_text(json.dumps({"habit": "Stretch for two minutes", "checkins": {}}))
+        write_rows(self.st / "events.jsonl", [{"event": "habit_cue", "at": NOW - 60},
+                                              {"event": "not_an_event", "at": NOW - 30},
+                                              {"event": "habit_cue", "at": "not a time"}, ["junk"]])
+        push = FakePush()
+        rows = self.once(push=push, dry_run=False)
+        self.assertEqual(self.by_job(rows)["Habit check-in"]["action"], jobs.DELIVER)
+        bodies = dict(push.calls)
+        self.assertIn("Stretch for two minutes", bodies["Habit check-in"])
+        self.assertIn("Done, No or Skip", bodies["Habit check-in"])
+
+    def test_wind_down_job_needs_the_glide_wind_down_window(self):
+        self.awake_after_night()
+        write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": NOW - 60}])
+        self.assertEqual(self.by_job(self.once())["MIQ for tonight?"]["action"], jobs.HOLD)
+        self.glide({"block": None, "resume": {"saved": NOW - 120}})
+        self.assertEqual(self.by_job(self.once())["MIQ for tonight?"]["action"], jobs.DELIVER)
+
+    def test_glide_focus_block_holds_every_ask(self):
+        self.awake_after_night()
+        self.glide({"block": {"start": NOW - 600, "end": NOW + 600, "minutes": 20}})
+        push = FakePush()
+        row = self.by_job(self.once(push=push, dry_run=False))["Wake-up brief"]
+        self.assertEqual(row["action"], jobs.HOLD)
+        self.assertIn("focus block", row["reason"])
+        self.assertEqual(push.calls, [])
+
+    def test_glide_path_from_config(self):
+        self.awake_after_night()
+        write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": NOW - 60}])
+        att = self.root / "attention.json"
+        att.write_text(json.dumps({"resume": {"saved": NOW - 120}}))
+        cfg = self.root / "config.json"
+        cfg.write_text(json.dumps({"glide_attention": str(att)}))
+        self.env["LIMITLESS_CONFIG"] = str(cfg)
+        self.assertEqual(self.by_job(self.once())["MIQ for tonight?"]["action"], jobs.DELIVER)
+
+    def test_asleep_holds_even_when_glide_knows_a_window(self):
+        write_rows(self.st / "sleepmode.jsonl", [{"at": NOW - 9 * H, "on": True}, {"at": NOW - 1 * H, "on": False},
+                                                 {"at": NOW - 0.1 * H, "on": True}])
+        (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": NOW - 60, "ok": True}))
+        # A habit cue after Sleep mode went on: triggered, not expired, but the person is asleep.
+        write_rows(self.st / "events.jsonl", [{"event": "habit_cue", "at": NOW - 60}])
+        self.glide({"resume": {"saved": NOW - 0.5 * H}})
+        row = self.by_job(self.once())["Habit check-in"]
+        self.assertEqual(row["action"], jobs.HOLD)
+        self.assertIn("asleep", row["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()
