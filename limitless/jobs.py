@@ -22,6 +22,7 @@ from .window import MAX_AWAKE_H
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end")
 TRIGGER_AFTER = ("", "short_on")
 NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
+SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake_proxy) carries less
 DELIVER, HOLD, DROP, NOT_TRIGGERED = "deliver", "hold", "drop", "not_triggered"
 ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
