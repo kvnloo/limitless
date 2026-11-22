@@ -2,7 +2,8 @@
 
     rows = run_once(state_dir, now, push=push, dry_run=False)
 
-Events are the phone's Sleep-mode changes (``sleepmode.jsonl``) plus any ``{"event", "at"}`` rows
+Events are the phone's Sleep-mode changes (``sleepmode.jsonl``), screen-event wakes from
+``screen-events.jsonl`` and the optional ActivityWatch DB (``aw_reader``), plus any ``{"event", "at"}`` rows
 in ``events.jsonl`` (any name in ``jobs.EVENTS``; others are ignored). The window is
 ``first_known(GlideProvider, EventProvider)``; asleep comes from the EventProvider. Each job's
 verdict is ``jobs.should_fire`` against the sent log ``jobs-sent.jsonl`` in the state dir.
@@ -19,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import jobs, wake_proxy
+from . import aw_reader, jobs, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, parse_ts
 from .window_chain import EventProvider, first_known
@@ -56,11 +57,27 @@ def _push(push, title: str, text: str):
     return delivered(result), (result if isinstance(result, str) and result else "no delivery reported")
 
 
-def events(reader: StateReader) -> list:
-    """Sleep-mode events, screen-event wakes Sleep mode does not cover (and their habit cues), plus the
-    valid rows of events.jsonl, oldest first."""
+def person_rows(reader: StateReader, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None) -> list:
+    """Screen-event rows plus the ActivityWatch DB's unlocks and app-span starts (when configured),
+    with rows of the same time (in seconds) and type kept once."""
+    seen, out = set(), []
+    for r in reader.screen_events() + aw_reader.person_rows(reader.aw_db_path(env, home)):
+        t = wake_proxy._ts_s(r)
+        key = (t, r.get("type")) if t is not None else None
+        if key is not None and key in seen:
+            continue
+        if key is not None:
+            seen.add(key)
+        out.append(r)
+    return out
+
+
+def events(reader: StateReader, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
+    """Sleep-mode events, screen-event wakes (screen-events.jsonl and the ActivityWatch DB) Sleep mode
+    does not cover (and their habit cues), plus the valid rows of events.jsonl, oldest first."""
     out = jobs.merged_events(jobs.events_from_sleepmode(reader.sleepmode()),
-                             wake_proxy.events_from_screen(reader.screen_events()))
+                             wake_proxy.events_from_screen(person_rows(reader, env, home)))
     for r in reader.events():
         at = parse_ts(r.get("at"))
         if at is not None and r.get("event") in jobs.EVENTS:
@@ -77,7 +94,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``."""
     reader = StateReader(Path(state_dir))
-    evs = events(reader)
+    evs = events(reader, env=env, home=home)
     ev_provider = EventProvider.from_reader(reader, now)
     state = first_known(GlideProvider.from_config(env=env, home=home, now=now), ev_provider)
     window = {"cls": "asleep"} if ev_provider.asleep else state

@@ -14,6 +14,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   events.jsonl         {"event", "at"} other job events (wind_down, habit_cue, focus_end, ...)
   jobs-sent.jsonl      {"t", "k", "job"} job messages really delivered (written by jobs_runner only)
   screen-events.jsonl  {"ts": epoch_ms, "type", "pkg"} Android screen events (wake_proxy.events_from_screen)
+  ActivityWatch DB     optional SQLite copy at $LIMITLESS_AW_DB, else config "aw_db" (relative to the
+                       state dir); read only through aw_reader.person_rows (aw_db_path)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -170,6 +172,16 @@ class StateReader:
 
     def sleepmode_poll(self) -> Optional[dict]:
         return self._json("sleepmode-poll.json")
+
+    def aw_db_path(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+        """The ActivityWatch DB copy: $LIMITLESS_AW_DB, else config ``aw_db``; a relative path is in the
+        state dir. None when neither is set (there is no default file name)."""
+        env = os.environ if env is None else env
+        v = env.get("LIMITLESS_AW_DB") or config(env, home).get("aw_db")
+        if not isinstance(v, str) or not v:
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")
