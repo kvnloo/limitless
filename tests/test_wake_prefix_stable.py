@@ -4,13 +4,17 @@ Property (durations only, no time-of-day rule): for rows R and any cut time c, e
 ``events_from_screen(rows with ts <= c)`` emits is also emitted, with the same ``at`` and ``gap_from``,
 by ``events_from_screen(R)``. Synthetic rows only; T0 is an arbitrary epoch.
 """
+import json
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from limitless import wake_proxy  # noqa: E402
+from limitless import jobs, jobs_runner, wake_proxy  # noqa: E402
+from limitless.state_reader import StateReader  # noqa: E402
 
 T0 = 2_000_000_000.0
 H = 3600.0
@@ -104,6 +108,50 @@ class PrefixStable(unittest.TestCase):
             evs = wake_proxy.events_from_screen(DAYS[name])
             self.assertEqual(len(evs), 1, (name, evs))
             self.assertNotIn("short", evs[0])
+
+
+class RunnerPollsOneDay(unittest.TestCase):
+    """The runner polls every 15 min on the rows seen so far: a short night 2.0 -> 5.2 h, then a longer
+    daytime break 12.0 -> 15.6 h. The Wake-up brief is about one fixed wake and is spoken once."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.st = self.root / "state"
+        self.st.mkdir()
+        self.env = {"LIMITLESS_CONFIG": str(self.root / "no-config.json")}
+        self.rows = day(-20, 20, [(2.0, 3.2), (12.0, 3.6)], step_h=0.5)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _poll(self, now):
+        seen = [r for r in self.rows if wake_proxy._ts_s(r) <= now]
+        (self.st / "screen-events.jsonl").write_text("".join(json.dumps(r) + "\n" for r in seen))
+        row = {r["job"]: r for r in jobs_runner.run_once(self.st, now, env=self.env, home=self.root)}["Wake-up brief"]
+        # run_once's own inputs, to read the trigger time its verdict is about
+        sent = StateReader(self.st).jobs_sent()
+        v = jobs.should_fire(jobs.WAKE_BRIEF, jobs_runner.events(StateReader(self.st), env=self.env, home=self.root),
+                             None, sent, now)
+        return row, v.trigger_at
+
+    def test_the_wake_brief_trigger_never_changes_and_it_speaks_once(self):
+        first, delivered = None, []
+        for i in range(int(4 / 0.25), int(19 / 0.25) + 1):
+            now = T0 + i * 0.25 * H
+            row, trig = self._poll(now)
+            if row["action"] == jobs.DELIVER:
+                delivered.append(i * 0.25)
+                # what a real delivery appends; run_once itself stays a dry run and writes nothing
+                with open(self.st / jobs_runner.SENT_LOG, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(jobs.sent_entry(jobs.WAKE_BRIEF, trig, now)) + "\n")
+            if first is None and trig is not None:
+                first = trig
+            with self.subTest(now_h=i * 0.25):
+                if first is not None:
+                    self.assertEqual(trig, first, row)
+        self.assertEqual(first, T0 + 5.2 * H)
+        self.assertEqual(len(delivered), 1, delivered)
 
 
 if __name__ == "__main__":
