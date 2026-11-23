@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""limitless-call-brief write [--out PATH]: write today's state card as a brief a voice call opens with.
+
+The brief (limitless/call_brief.py) is a TLDR line (window class, asks label) and at most three short
+lines of the T2 card's coarse labels, under one header comment with a `generated` UTC stamp:
+
+    <!-- limitless call brief; generated: 2030-01-15T12:00:00Z -->
+    TLDR: peak window; asks waiting
+    sleep short (proxy); readiness low (imported)
+
+No numbers, no card ids, no message content. The body passes tier_audit.gate (hook "call_brief"): a
+digit refuses the write (exit 2, nothing written). The file is written atomically (a temp file in the
+same directory, then rename) with mode 0600, and only when the body changed: the same body again leaves
+the file and its mtime as they are ("unchanged"), so a timer can run this often.
+
+--out defaults to config "call_brief_file" (a relative path is in the state dir). With neither: exit 0,
+"not configured". Exit 0 also when written, unchanged or there is no state dir; exit 1 when the brief
+cannot be built or written; exit 2 when refused, or with a usage line on stderr for bad arguments. One
+line on stdout says why. It never sends and never prints a traceback.
+"""
+import sys
+import time
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import call_brief  # noqa: E402
+
+USAGE = "usage: limitless-call-brief write [--out PATH]"
+NAME = "limitless-call-brief"
+
+
+def parse(args):
+    """{"out": PATH or None} or None for bad arguments."""
+    if not args or args[0] != "write":
+        return None
+    rest = list(args[1:])
+    if not rest:
+        return {"out": None}
+    if len(rest) == 2 and rest[0] == "--out" and rest[1]:
+        return {"out": rest[1]}
+    return None
+
+
+def main(argv) -> int:
+    args = argv[1:]
+    if args in (["-h"], ["--help"]):
+        print(USAGE)
+        return 0
+    opts = parse(args)
+    if opts is None:
+        print(USAGE, file=sys.stderr)
+        return 2
+    try:
+        now = time.time()
+        code, why = call_brief.write(opts["out"], now, date.fromtimestamp(now))
+    except Exception as e:  # noqa: BLE001 - one line, never a traceback
+        code, why = 1, f"could not write the call brief: {type(e).__name__}"
+    print(f"{NAME}: {why}")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
