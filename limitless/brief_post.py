@@ -1,5 +1,6 @@
 """Wake-brief post-processing: the folded 'Asks waiting on you' digest becomes one plain line, and the
-ideas bedtime capture saved last night one more ("Saved last night: N ideas")."""
+ideas bedtime capture saved last night one more ("Saved last night: N ideas"), and the overnight work
+queue's landed line (overnight.landed_for: "Overnight: a few done, one failed") one more when given."""
 from __future__ import annotations
 
 import json
@@ -39,6 +40,6 @@ def saved_line(n) -> str | None:
     return f"Saved last night: {n} idea" + ("" if n == 1 else "s")
 
 
-def finalize(text: str, asks: dict | None, now: float, saved: int = 0) -> str:
-    lines = [scrub(text)] + [ln for ln in (asks_line(asks, now), saved_line(saved)) if ln]
+def finalize(text: str, asks: dict | None, now: float, saved: int = 0, overnight: str = "") -> str:
+    lines = [scrub(text)] + [ln for ln in (asks_line(asks, now), saved_line(saved), scrub(overnight or "")) if ln]
     return "\n".join(lines)

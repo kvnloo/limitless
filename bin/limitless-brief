@@ -3,7 +3,8 @@
 build: write state/brief-latest.md from real state. send: build + deliver via kevin-push (Telegram).
 show: print the latest file. Before delivery the text is finalized: card ids removed and the folded
 'Asks waiting on you' digest (kevin-push asks-latest.json) added as one line, and "Saved last night: N
-ideas" when bedtime capture saved any (bedtime.saved_last_night).
+ideas" when bedtime capture saved any (bedtime.saved_last_night), and one overnight line when a work queue
+is configured (overnight.landed_for: done and failed since the wind-down event, in count words).
 send passes this wake's event key (jobs_runner.event_key, the key bin/limitless-jobs passes) to kevin-push
 as $KEVIN_PUSH_ONCE, so one wake gets one brief whichever sender goes first. With no wake trigger (or
 unreadable state) it sends as before, with no key; a KEVIN_PUSH_ONCE from outside is never passed on.
@@ -17,7 +18,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import bedtime, brief_post, jobs_runner  # noqa: E402
+from limitless import bedtime, brief_post, jobs_runner, overnight  # noqa: E402
 from limitless.state_reader import state_dir  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("limitless_loop", os.path.expanduser("~/.local/lib/limitless_loop.py"))
@@ -42,6 +43,14 @@ def saved_last_night(now):
         return 0
 
 
+def landed_overnight(now):
+    """The overnight work queue's landed line; "" with no queue configured or unreadable state."""
+    try:
+        return overnight.landed_for(state_dir(), now)
+    except Exception:  # noqa: BLE001 - a broken state dir must not stop the brief
+        return ""
+
+
 def notify(cfg, text, once=None):
     env = dict(os.environ, CIRCADIAN_CLASS=os.environ.get("CIRCADIAN_CLASS", "digest"))
     env.pop("KEVIN_PUSH_ONCE", None)          # the key is this wake's, never one left in the env
@@ -57,7 +66,8 @@ def main(argv):
     day = date.fromisoformat(argv[argv.index("--date") + 1]) if "--date" in argv else None
     out = L.build(cfg, day=day)
     now = time.time()
-    text = brief_post.finalize(out["notif"], brief_post.load_asks(ASKS), now, saved=saved_last_night(now))
+    text = brief_post.finalize(out["notif"], brief_post.load_asks(ASKS), now, saved=saved_last_night(now),
+                               overnight=landed_overnight(now))
     if cmd in ("send", "--send"):
         rc, msg = notify(cfg, text, once=wake_key(time.time()))
         print(json.dumps({"path": out["path"], "notify_rc": rc, "notify": msg, "notif_text": text}, indent=1, default=str))
