@@ -54,6 +54,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
+from . import feed_reflex as _feed_reflex
 from . import delivery_audit as _delivery, habit_catalogue, idea_ledger as _idea_ledger, prediction as _prediction
 from . import anki as _anki, aw_desktop, aw_reader, blocks as _blocks, body_calibration as _body_calibration, feeds_evidence, flow_ledger as _flow_ledger, \
     flow_metrics as _flow_metrics, flow_week, \
@@ -91,7 +92,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
          anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "",
          wind_down_line: str = "", rule_line: str = "", presleep_line: str = "", ideas_line: str = "",
-         experiment_line: str = "", delivery_line: str = "") -> str:
+         experiment_line: str = "", delivery_line: str = "", reflex_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -101,6 +102,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     weekly target in words (weekly_target.review_line: "habit: target reached this week" or "habit: on the way";
     nothing with no Done day), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
     (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
+    ``reflex_line`` (week_feed_reflex: how often a feed was the first app after an unlock, in words), then
     ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
     proxy, in words), then ``presleep_line`` (week_presleep_hr: the wearable's pre-sleep heart rate against the
@@ -125,7 +127,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
                                       one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
-                                      passive, flow, fragment, body_line,
+                                      passive, flow, fragment, reflex_line, body_line,
                                       rides_line, sleep_line, presleep_line, naps_line, anki_line, ideas_line,
                                       delivery_line, experiment_line, rule_line,
                                       one_tap.choices_line(spec.answers))
@@ -150,6 +152,7 @@ def week_review_body(state_dir, habit: Optional[dict], synced: Optional[dict] = 
                 rides_line=week_rides(state_dir, env, home, today),
                 sleep_line=week_sleep(state_dir, env, home, today, tz),
                 fragment=week_flow_metrics(state_dir, habit, env, home, tz),
+                reflex_line=week_feed_reflex(state_dir, habit, env, home, tz),
                 anki_line=week_anki(state_dir, habit, env, home, tz, today),
                 target_days=weekly_target.target_days(env, home),
                 naps_line=week_naps(state_dir, env, home, today, tz), rule_line=week_rule(habit, synced, env, home),
@@ -428,6 +431,31 @@ def week_flow_metrics(state_dir, habit: Optional[dict], env: Optional[Mapping[st
         return _flow_metrics.review_line(_flow_metrics.label(got["pool"], th=got["thresholds"]))
     except Exception:  # noqa: BLE001 - broken activity data must not stop the review
         return ""
+
+
+def _week_reflex(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[dict]:
+    """feed_reflex.read_for over the habit week's seven local days; None with no week named. Read-only."""
+    start = jobs._week_start(habit)
+    if start is None:
+        return None
+    lo = flow_week._day_start(start, tz)
+    hi = flow_week._day_start(start + timedelta(days=jobs.HABIT_WEEK_DAYS), tz)
+    return _feed_reflex.read_for(StateReader(Path(state_dir)), lo, hi, env, home, tz)
+
+
+def week_feed_reflex(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
+                     home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
+    """The week review's one optional feed-reflex line (feed_reflex.review_line of the habit week: "Phone: a feed
+    was often the first thing opened after unlocking this week."), through tier_audit.gate (hook
+    ``week_review:feed_reflex``); "" with no week, no feed apps, no DB, too few unlocks or broken data (unknown
+    is never a line). Read-only; it never blocks an app."""
+    try:
+        got = _week_reflex(state_dir, habit, env, home, tz)
+        line = _feed_reflex.review_line(got["label"]) if got else ""
+    except Exception:  # noqa: BLE001 - broken activity data must not stop the review
+        return ""
+    return _gated("week_review:feed_reflex", line, env, home)
 
 
 def week_body(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
@@ -722,15 +750,22 @@ def week_experiment(state_dir, habit: Optional[dict], today: Optional[date] = No
 
 
 def week_next(state_dir, habit: Optional[dict], decision, env: Optional[Mapping[str, str]] = None,
-              home: Optional[Path] = None) -> str:
+              home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
     """After a Drop at the week review, the one words line habit_catalogue.review_line gives ("Next up, if you
     want it: <name>."), through tier_audit.gate (hook ``week_review:next``); "" after Keep, for an unknown
     decision, when the list is exhausted or the state cannot be read. It only suggests: no push, no job, and
-    no habit starts (that is the person's yes and habit_start)."""
+    no habit starts (that is the person's yes and habit_start). When the habit week's feed reflex
+    (feed_reflex) is "often", the line may name the circuit breaker instead (habit_catalogue.CIRCUIT_BREAKER).
+    """
     if decision != "Drop":
         return ""
     try:
-        line = habit_catalogue.review_line(decision, _stop_rule.loop_rows(state_dir), habit)
+        got = _week_reflex(state_dir, habit, env, home, tz)
+        often = got is not None and got["label"] == _feed_reflex.OFTEN
+    except Exception:  # noqa: BLE001 - broken activity data never stops the line; it reads as not often
+        often = False
+    try:
+        line = habit_catalogue.review_line(decision, _stop_rule.loop_rows(state_dir), habit, reflex_often=often)
     except Exception:  # noqa: BLE001 - a broken ledger must not stop the decision being logged
         return ""
     return _gated("week_review:next", line, env, home)

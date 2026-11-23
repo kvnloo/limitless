@@ -481,16 +481,25 @@ HABIT_NEXT_NOTE = ("a suggestion only: nothing was started; the person starts it
                    "limitless_habit start runs with their yes")
 
 
-def habit_next(state_dir, now: float, today: date) -> dict:
+def habit_next(state_dir, now: float, today: date, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None, tz=None) -> dict:
     """limitless_habit_next: habit_catalogue.next_habit over the weekly loop rows (stop_rule.loop_rows) and the
     running week (habit.json, while jobs.habit_week_gate is None), as a derived envelope: value ``{id, name,
     cue, start}``, ``age_h`` None, the evidence_tier of the newest decision used (self-reported; ``none`` before
     any week was decided) and the digit-free T1 label "next habit: <name>". Null with a plain reason when the
-    list is exhausted. It only suggests: read-only, nothing is written, sent or started."""
-    h = StateReader(Path(state_dir)).habit()
+    list is exhausted. When the last seven days' feed reflex (feed_reflex) is "often", the circuit breaker may
+    come first (habit_catalogue.next_habit ``reflex_often``). It only suggests: read-only, nothing is written,
+    sent or started."""
+    reader = StateReader(Path(state_dir))
+    h = reader.habit()
     running = isinstance(h, dict) and jobs.habit_week_gate(h, today) is None
     rows = _stop_rule.loop_rows(state_dir)
-    n = _habit_catalogue.next_habit(rows, current=h if running else None)
+    try:
+        got = _feed_reflex.read_for(reader, now - _feed_reflex.LOOKBACK_DAYS * 86400.0, now, env, home, tz)
+        often = got["label"] == _feed_reflex.OFTEN
+    except Exception:  # noqa: BLE001 - broken activity data reads as not often, never as a failure
+        often = False
+    n = _habit_catalogue.next_habit(rows, current=h if running else None, reflex_often=often)
     if n.habit is None:
         out = missing(n.reason)
     else:
