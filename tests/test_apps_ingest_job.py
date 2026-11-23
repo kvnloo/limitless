@@ -347,5 +347,38 @@ class Doctor(Base):
         self.assertFalse(doctor.strict_failed(live + [r]))
 
 
+class T1Line(Base):
+    def test_a_write_returns_one_plain_t1_line_and_sends_nothing(self):
+        self.config(apps_ingest="write")
+        self.runs(sync(NOW - H))
+        pushed = []
+        rows = jobs_runner.run_once(self.st, NOW, push=lambda *a, **k: pushed.append(a), dry_run=False,
+                                    env=self.env, home=self.dir, tz=UTC)
+        r = self.row(rows)
+        self.assertEqual(r["line"], "app lists set from your reply")
+        self.assertEqual(pushed, [], "the job sends nothing")
+        self.assertFalse((self.st / jobs_runner.SENT_LOG).exists())
+        self.assertEqual(jobs_runner.apps_ingest_label(self.st),
+                         {"label": "app lists set from your reply", "tier": "T1", "modality": "derived"})
+
+    def test_no_label_unless_the_last_run_wrote(self):
+        self.assertIsNone(jobs_runner.apps_ingest_label(self.st))
+        self.config(apps_ingest="dry_run")
+        self.runs(sync(NOW - H))
+        self.once()
+        self.assertIsNone(jobs_runner.apps_ingest_label(self.st))
+        self.config(apps_ingest="write")
+        self.runs(sync(NOW - H), sync(NOW))
+        self.once(NOW + 60)
+        self.assertIsNotNone(jobs_runner.apps_ingest_label(self.st))
+        self.runs(sync(NOW - H), sync(NOW), sync(NOW + 90))
+        self.once(NOW + 120)          # nothing new after the write: the lists were not set by this run
+        self.assertIsNone(jobs_runner.apps_ingest_label(self.st))
+
+    def test_the_line_is_digit_free_and_names_nothing(self):
+        self.assertNotRegex(jobs.APPS_LINE, r"\d")
+        self.assertNoNames(jobs.APPS_LINE)
+
+
 if __name__ == "__main__":
     unittest.main()

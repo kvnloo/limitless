@@ -967,6 +967,13 @@ def apps_ingest_line(state_dir) -> str:
     return jobs.APPS_LINE if load_apps_mark(state_dir).get("action") == _apps_reply.WRITE else ""
 
 
+def apps_ingest_label(state_dir) -> Optional[dict]:
+    """apps_ingest_line as a T1 label (``{"label", "tier": "T1", "modality": "derived"}``) a later wake brief may
+    show; None unless the last apps ingest run wrote the app lists. Read-only; sends nothing."""
+    line = apps_ingest_line(state_dir)
+    return {"label": line, "tier": "T1", "modality": "derived"} if line else None
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
