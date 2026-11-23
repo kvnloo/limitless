@@ -630,6 +630,36 @@ def brief_outage_told(state_dir, now: float, env: Optional[Mapping[str, str]] = 
         return False
 
 
+def brief_apps_ask(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> str:
+    """The wake brief's app-lists ask (apps_ask.ask_lines): "Reply with this to set your app lists (edit
+    freely):" and the pre-filled "work apps: ... / feed apps: ..." reply, while both lists are unset and the ask
+    was not delivered in the last seven days, through tier_audit.gate (hook ``brief:apps_ask``; a name with a
+    digit blocks it, so it is left out). "" when off (config ``apps_ask``), a list is set, told recently, the
+    candidates are unknown, or unreadable. Read-only: the sender calls brief_apps_ask_told once the brief went
+    out. It rides in the brief: no push or job of its own. The app names are only in the returned text."""
+    from . import apps_ask as _apps_ask
+    try:
+        cfg = config(env, home)
+        return _gated("brief:apps_ask", "\n".join(_apps_ask.ask_lines(cfg, state_dir, now, env, home)), env, home)
+    except Exception:  # noqa: BLE001 - unreadable activity must not stop the brief
+        return ""
+
+
+def brief_apps_ask_told(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                        home: Optional[Path] = None) -> bool:
+    """Mark the app-lists ask told (apps_ask.tell: apps-ask.json, an epoch only), after a delivered brief that
+    carried it, so it is asked at most once in seven days. False when off or a list is set; never raises."""
+    from . import apps_ask as _apps_ask
+    try:
+        cfg = config(env, home)
+        if not _apps_ask.enabled(cfg) or _apps_ask.lists_set(cfg, state_dir, env):
+            return False
+        return _apps_ask.tell(state_dir, now)
+    except Exception:  # noqa: BLE001 - a failed mark must not stop the sender
+        return False
+
+
 def week_naps(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
               today: Optional[date] = None, tz: Optional[tzinfo] = None) -> str:
     """The week review's naps line (naps.week_line over the seven local days before ``today``), digit-free, through

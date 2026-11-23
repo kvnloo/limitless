@@ -3,8 +3,9 @@ ideas bedtime capture saved last night one more ("Saved last night: N ideas"), a
 queue's landed line (overnight.landed_for: "Overnight: a few done, one failed") one more when given, then
 yesterday's work (jobs_runner.brief_flow_ledger: "Yesterday's work: no long blocks.") when known, and
 yesterday's naps (jobs_runner.brief_naps: "Naps yesterday: one short nap (phone Sleep mode)") when known, and
-the input-outage line (jobs_runner.brief_outage: "Not recording: wearable (since about two days ago).") last,
-when an input stopped recording and was not yet told."""
+the input-outage line (jobs_runner.brief_outage: "Not recording: wearable (since about two days ago).") when an
+input stopped recording and was not yet told, and the app-lists ask (jobs_runner.brief_apps_ask: a prompt and the
+pre-filled "work apps: / feed apps:" reply) last, while both lists are unset and it was not told this week."""
 from __future__ import annotations
 
 import json
@@ -45,7 +46,8 @@ def saved_line(n) -> str | None:
 
 
 def finalize(text: str, asks: dict | None, now: float, saved: int = 0, overnight: str = "", naps: str = "",
-             work: str = "", outage: str = "") -> str:
+             work: str = "", outage: str = "", apps_ask: str = "") -> str:
     lines = [scrub(text)] + [ln for ln in (asks_line(asks, now), saved_line(saved), scrub(overnight or ""),
-                                           scrub(work or ""), scrub(naps or ""), scrub(outage or "")) if ln]
+                                           scrub(work or ""), scrub(naps or ""), scrub(outage or ""),
+                                           scrub(apps_ask or "")) if ln]
     return "\n".join(lines)
