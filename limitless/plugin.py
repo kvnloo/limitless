@@ -147,6 +147,10 @@ def _feed_reflex(args, now):
     return tools.feed_reflex(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _app_candidates(args, now):
+    return tools.app_candidates(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _ideas(args, now):
     return tools.ideas(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
@@ -478,6 +482,19 @@ feed_reflex_rarely_share, feed_reflex_min_unlocks) are shares of the person's ow
 wording only. A proxy: an app opened first is not a feed read. The words only; the counts need the person's \
 raw opt-in. It never blocks, closes or delays an app: it only observes, and the person decides. No score, no \
 streak, no target. Read-only; nothing is written or sent."), _feed_reflex, "🔓"),
+    "limitless_app_candidates": (_schema(
+        "limitless_app_candidates",
+        "Proposes the person's work-app and feed-app lists (config flow_work_apps and feed_apps, which the \
+focus blocks, flow metrics, flow week, break nudge and feed reflex need) from the last seven days of observed app \
+time in the phone's and the desktop's ActivityWatch (either is enough): time per app, split by a small built-in \
+map of well-known apps (feeds such as Instagram, TikTok, X, Reddit, YouTube; work such as code editors, \
+terminals, GitHub; browsers are ambiguous and never work by default). Apps already in config are kept, never \
+dropped; up to config app_candidates_max new apps per list. The value is {label, work, feed} in words such as \
+work and feed app lists proposed, three apps, one kept; unknown with the reason when no source is set or \
+readable, or there is too little app activity (never empty lists). App names are the person's own data: the \
+ready-to-send reply (work apps: A, B and feed apps: C, D) and the lists need the raw opt-in; offer the reply \
+for the person to send back. A proxy: an app in the foreground is not work. It only suggests: it never writes \
+config or any file and never sends."), _app_candidates, "🗂️"),
     "limitless_ideas": (_schema(
         "limitless_ideas",
         "The idea ledger's last seven days (config idea_ledger: the one record every capture lands in, appended \

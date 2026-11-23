@@ -54,6 +54,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | How broken up was my work this week? | limitless_flow_metrics |
 | What did yesterday's deep work look like? | limitless_flow_ledger |
 | Do I open a feed straight after unlocking? | limitless_feed_reflex |
+| Which apps are my work apps and feed apps? | limitless_app_candidates |
 | What ran in the overnight work queue? | limitless_overnight |
 | Are pushes muted right now? | limitless_quiet |
 | Which recurring check-ins exist and what wakes them? | limitless_schedule |

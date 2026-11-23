@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration as _body_calibration,
+from . import (anki as _anki, app_candidates as _app_candidates, asks as _asks, blocks as _blocks, body_calibration as _body_calibration,
                delivery_audit as _delivery,
                explain_back as _explain_back,
                feed_reflex as _feed_reflex, feeds_evidence,
@@ -1042,6 +1042,47 @@ def feed_reflex(reader: StateReader, now: float, raw: bool = False, env: Optiona
         value.update(unlocks=got["unlocks"], feed_first=got["feed_first"], gap_s=got["gap_s"],
                      days=[dict(d) for d in got["days"]])
     out = envelope(value, _feed_reflex.MODALITY, max(0.0, now - got["newest"]) / 3600)
+    out["label"] = label
+    return out
+
+
+_COUNT = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def _apps_words(entries) -> str:
+    n, kept = len(entries), sum(1 for e in entries if e.get("kept"))
+    words = (_COUNT[n] if n < len(_COUNT) else "more than ten") + (" app" if n == 1 else " apps")
+    if kept:
+        words += ", " + (_COUNT[kept] if kept < len(_COUNT) else "more than ten") + " kept"
+    return words
+
+
+def app_candidates(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> dict:
+    """limitless_app_candidates: the work-app and feed-app lists proposed from the last
+    app_candidates.LOOKBACK_DAYS days of observed app time (app_candidates.read_for), read-only.
+
+    An envelope whose value is ``{label, work, feed}`` in words (which lists are proposed; how many apps each
+    holds and how many are already kept), with the T1 label beside it; modality proxy, aged by the newest
+    row. App names are the person's own data: the ready-to-send ``reply`` and the lists (``work``, ``feed``,
+    ``other`` with names, seconds and kept) appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No source,
+    no rows, too little activity or no work or feed app is value None with the reason, never empty lists.
+    It only suggests: it never writes config or any file and never sends.
+    """
+    got = _app_candidates.read_for(reader, now, env, home)
+    word = got["label"]
+    label = {"tier": "T1", "modality": _app_candidates.MODALITY, "label": word}
+    if word not in _app_candidates.WORDS:
+        out = envelope(None, _app_candidates.MODALITY, None, reason=f"app candidates {word}")
+        out["label"] = label
+        return out
+    value = {"label": word, "work": _apps_words(got["work"]), "feed": _apps_words(got["feed"])}
+    if raw:
+        lists = {k: [{"name": e["name"], "seconds": e["seconds"], "kept": e["kept"]} for e in got[k]]
+                 for k in ("work", "feed", "other")}
+        value.update(lists, reply=_app_candidates.reply_line(got), sources=list(got["sources"]),
+                     total_s=got["total_s"], max_n=got["max_n"])
+    out = envelope(value, _app_candidates.MODALITY, max(0.0, now - got["newest"]) / 3600)
     out["label"] = label
     return out
 

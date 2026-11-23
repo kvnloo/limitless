@@ -33,7 +33,11 @@ Python 3.9+.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Iterable, Mapping, Optional
+
+from . import aw_desktop, blocks, feeds_evidence, flow_week
+from .state_reader import config
 
 LOOKBACK_DAYS = 7
 MAX_N, MAX_CONFIG = 5, "app_candidates_max"
@@ -42,10 +46,13 @@ MODALITY = "proxy"               # an app in the foreground is not work or a fee
 WORK, FEED, OTHER = "work", "feed", "other"
 TITLE = "title:"
 
+NO_SOURCE = "no ActivityWatch source set (aw_db, desktop_aw_url or desktop_aw_export)"
 NO_ROWS = "no app activity rows"
 TOO_LITTLE = "too little app activity to propose lists"
 NO_KNOWN = "no well-known work or feed app seen"
-REASONS = (NO_ROWS, TOO_LITTLE, NO_KNOWN)
+REASONS = (NO_SOURCE, NO_ROWS, TOO_LITTLE, NO_KNOWN, blocks.NO_DB, aw_desktop.NO_ANSWER, aw_desktop.NO_WINDOW,
+           aw_desktop.NO_AFK, aw_desktop.NO_EXPORT)
+PHONE, DESKTOP = blocks.PHONE, aw_desktop.SOURCE
 
 BOTH = "work and feed app lists proposed"
 WORK_ONLY = "work app list proposed"
@@ -238,7 +245,8 @@ def label(c: Optional[Mapping]) -> str:
     """The T1 words: which lists are proposed, or "unknown: <why>". Digit-free; never an app name."""
     if not isinstance(c, Mapping) or c.get("work") is None or c.get("feed") is None:
         why = c.get("why") if isinstance(c, Mapping) else None
-        return UNKNOWN_PREFIX + (why if why in REASONS else NO_ROWS)
+        ok = isinstance(why, str) and why and not any(ch.isdigit() for ch in why)
+        return UNKNOWN_PREFIX + (why if ok else NO_ROWS)
     if c["work"] and c["feed"]:
         return BOTH
     return WORK_ONLY if c["work"] else FEED_ONLY
@@ -251,3 +259,51 @@ def reply_line(c: Optional[Mapping]) -> str:
         return ""
     lines = [f"{k} apps: " + ", ".join(e["name"] for e in c[k]) for k in (WORK, FEED) if c[k]]
     return "\n".join(lines)
+
+
+def max_n_of(cfg: Mapping) -> int:
+    """Config ``app_candidates_max``: a whole number of at least one; anything else is MAX_N."""
+    v = cfg.get(MAX_CONFIG) if isinstance(cfg, Mapping) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else MAX_N
+
+
+def read_rows(reader, lo: float, hi: float, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None) -> tuple:
+    """``(rows, sources, why)`` for [lo, hi): the phone DB's rows (reader.aw_db_path, blocks.read_rows) and
+    the desktop's (aw_desktop.for_config), each optional. A source that is set and cannot be read is left
+    out; ``rows`` None (with the first plain reason) only when no source is set or none can be read."""
+    rows, sources, whys = [], [], []
+    db = reader.aw_db_path(env, home)
+    if db is not None:
+        got = blocks.read_rows(db, lo, hi)
+        if got is None:
+            whys.append(blocks.NO_DB)
+        else:
+            rows += [dict(r, source=PHONE) for r in got]
+            sources.append(PHONE)
+    desk = aw_desktop.for_config(env, home, lo, hi)
+    if desk["state"] != aw_desktop.OFF:
+        got = aw_desktop.rows(desk)
+        if got is None:
+            whys.append(desk["why"])
+        else:
+            rows += got
+            sources.append(DESKTOP)
+    if not sources:
+        return None, [], (whys[0] if whys else NO_SOURCE)
+    return sorted(rows, key=lambda r: (r["start"], r["end"])), sources, ""
+
+
+def read_for(reader, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """candidates over the LOOKBACK_DAYS days up to ``now`` from config: both ActivityWatch sources
+    (read_rows), the kept lists (flow_week.work_apps, feeds_evidence.feed_apps) and ``app_candidates_max``;
+    plus ``sources``, ``max_n`` and ``label``. Read-only: nothing is written, nothing is sent."""
+    lo = now - LOOKBACK_DAYS * 86400.0
+    n = max_n_of(config(env, home))
+    rows, sources, why = read_rows(reader, lo, now, env, home)
+    if rows is None:
+        got = _unknown(why)
+    else:
+        got = candidates(rows, work_apps=flow_week.work_apps(env, home), feed_apps=feeds_evidence.feed_apps(env, home),
+                         max_n=n, lo=lo, hi=now)
+    return dict(got, sources=sources, max_n=n, label=label(got))
