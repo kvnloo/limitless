@@ -26,6 +26,7 @@ Per local day in ``tz`` (None = this machine's zone), only days with at least on
 over every return), plus ``days`` and ``work_days``. ``label(m)`` turns one day or a pool into T1 words,
 digit-free: "work stayed in long blocks", "work was broken up", "mixed" or "unknown: <why>". The words
 describe observed app activity only; they are not a measure of attention, concentration or output.
+``review_line(word)`` is the week review's one digit-free line for a known word, "" for unknown.
 
 Thresholds (``thresholds(env, home)``; config keys, documented defaults, wording only and not targets):
 
@@ -165,6 +166,14 @@ def label(m, why: str = NO_DATA, th: Optional[dict] = None) -> str:
     if share >= th["long_share"] and rate <= th["calm_switches_per_h"]:
         return LONG
     return MIXED
+
+
+REVIEW_LINE = "Work pattern this week (observed app activity, not attention): {}."
+
+
+def review_line(word) -> str:
+    """The week review's one line for a known label word, digit-free; "" when unknown (no line at all)."""
+    return REVIEW_LINE.format(word) if word in LABELS else ""
 
 
 def thresholds(env=None, home=None) -> dict:

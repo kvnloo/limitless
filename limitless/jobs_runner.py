@@ -45,7 +45,8 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, \
+from . import aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
+    jobs, overnight as _overnight, \
     passive_habit, one_tap, quiet as _quiet, rides as _rides, send_gate, sleep as _sleep, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
@@ -73,14 +74,15 @@ _BODY[jobs.BREAK_NUDGE.name] = BREAK_BODY
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
-         overnight: str = "", rides_line: str = "", sleep_line: str = "") -> str:
+         overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
     a hint, no counts, times or app names; the answer stays the person's tap. The week review is
     jobs.week_review_text: the habit and "N of M logged days" (``synced``: StateReader.habit_days()), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
-    (flow_week.review_line), then ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
+    (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
+    ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
     proxy, in words), each as one more line when given, then ``Reply: Keep / Drop``. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
@@ -89,8 +91,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     if spec.name == jobs.MIQ.name:
         return "\n".join(x for x in (_BODY[spec.name], overnight, one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
-        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, body_line, rides_line,
-                                      sleep_line, one_tap.choices_line(spec.answers)) if x)
+        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, fragment, body_line,
+                                      rides_line, sleep_line, one_tap.choices_line(spec.answers)) if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
@@ -351,6 +353,23 @@ def week_flow(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]]
     return flow_week.review_line(this, last)
 
 
+def week_flow_metrics(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
+                      home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
+    """The week review's flow-metrics line (flow_metrics.review_line of the habit week's seven local days),
+    digit-free; "" when no week is named or the words are unknown (no DB, no work apps, no work time).
+    Read-only."""
+    start = jobs._week_start(habit)
+    if start is None:
+        return ""
+    try:
+        lo = flow_week._day_start(start, tz)
+        hi = flow_week._day_start(start + timedelta(days=jobs.HABIT_WEEK_DAYS), tz)
+        got = _flow_metrics.read_for(StateReader(Path(state_dir)), lo, hi, env, home, tz)
+        return _flow_metrics.review_line(_flow_metrics.label(got["pool"], th=got["thresholds"]))
+    except Exception:  # noqa: BLE001 - broken activity data must not stop the review
+        return ""
+
+
 def week_body(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
               today: Optional[date] = None) -> str:
     """The week review's body line (body.review_line of body.trend up to ``today``), digit-free; "" when no
@@ -447,8 +466,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 plan = _overnight.plan_for(state_dir, now, env, home) if spec.name == jobs.MIQ.name else ""
                 rides_line = week_rides(state_dir, env, home, today) if review else ""
                 sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
+                fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
-                            body_line, plan, rides_line, sleep_line)
+                            body_line, plan, rides_line, sleep_line, fragment)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)

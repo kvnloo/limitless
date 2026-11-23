@@ -99,8 +99,10 @@ class WeekReview(unittest.TestCase):
         self.cfg.write_text(json.dumps({"aw_db": "aw.db", "flow_work_apps": ["editor"]}))
         bodies = self.review()
         self.assertEqual(len(bodies), 1)
-        first, flow = bodies[0].split("\n")
+        first, flow, fragment = bodies[0].split("\n")
         self.assertEqual(first, jobs.week_review_text(self.habit))
+        self.assertEqual(fragment, "Work pattern this week (observed app activity, not attention): "
+                                   "work stayed in long blocks.")
         self.assertEqual(flow, "Flow (measured, 2 of 7 days): deep work 180 min (last week 60); "
                                "feed leak unknown (no focus blocks).")
 

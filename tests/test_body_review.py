@@ -88,10 +88,11 @@ class Review(unittest.TestCase):
         self.configure(body_file="body.jsonl", aw_db="aw.db", flow_work_apps=["editor"])
         self.write_body(body_rows())
         lines = self.review()
-        self.assertEqual(len(lines), 3)
+        self.assertEqual(len(lines), 4)
         self.assertTrue(lines[1].startswith("Flow ("), lines)
-        self.assertEqual(lines[2], "Body fat trending down (calibrated estimate).")
-        self.assertEqual(re.findall(r"\d", lines[2]), [])
+        self.assertTrue(lines[2].startswith("Work pattern this week"), lines)   # flow_metrics, one hour: short
+        self.assertEqual(lines[3], "Body fat trending down (calibrated estimate).")
+        self.assertEqual(re.findall(r"\d", lines[3]), [])
 
     def test_no_body_file_or_no_rows_leaves_the_review_unchanged(self):
         self.write_body(body_rows())
