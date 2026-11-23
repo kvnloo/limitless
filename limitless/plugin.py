@@ -91,6 +91,10 @@ def _sleep(args, now):
     return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _naps(args, now):
+    return tools.naps(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _quiet(args, now):
     return tools.quiet(state_dir(), now)
 
@@ -233,6 +237,15 @@ measured only when the wearable covers the newest night, else proxy; a night wit
 zero. regularity says how regular sleep times have been over two weeks, the source named: sleep times steady, \
 vary a lot, drifting later or drifting earlier, or unknown with too few nights; never a clock time. A quiet \
 phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
+    "limitless_naps": (_schema(
+        "limitless_naps",
+        "Yesterday's naps from phone Sleep mode (on, then off): a Sleep-mode period shorter than config nap_max_h \
+(default two hours) that is not the longest sleep of its day. Plain words: naps yesterday: none, one short nap or \
+a few short naps, with close to the night when a nap ended within config nap_near_night_h (default four hours; \
+wording only) of the night's start; unknown when Sleep mode did not change yesterday, never none. A proxy: Sleep \
+mode is a phone switch, not a sleep sensor. The words only; start and end times need the person's raw opt-in. \
+Observation only: no target, no streak, no advice on when or how long to nap. Read-only; nothing is written, \
+sent or switched."), _naps, "💤"),
     "limitless_quiet": (_schema(
         "limitless_quiet",
         "Whether pushes to the person's phone are muted now: mode on, off (until they reply on), quiet \

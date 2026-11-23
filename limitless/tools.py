@@ -7,6 +7,7 @@ from typing import Mapping, Optional
 
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
                flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
+               naps as _naps,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
@@ -607,4 +608,34 @@ def flow_metrics(reader: StateReader, now: float, raw: bool = False, env: Option
     if out["evidence_tier"] != "stale":
         out["evidence_tier"] = _flow_metrics.EVIDENCE_TIER
     out["label"] = dict(label, label=word)
+    return out
+
+
+NAPS_UNKNOWN = "naps unknown: no phone Sleep-mode change yesterday"
+
+
+def naps(reader: StateReader, now: float, today: date, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+         home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_naps: yesterday's naps from phone Sleep mode (naps.day over sleepmode.jsonl), read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: naps yesterday: none, one short nap or a few short naps,
+    with ", close to the night" when one ended within config nap_near_night_h of the night's start) with the T1
+    label beside it; modality proxy (Sleep mode is a phone switch, not a sensor), aged by the newest Sleep-mode
+    change. The start and end seconds (``naps``) and the close count (``close``) are T0 and appear only with
+    ``raw`` (LIMITLESS_RAW_IN_PROMPT). No Sleep-mode change yesterday is value None with a reason and the label
+    "naps yesterday: unknown", never none. No target, no advice. Nothing is written or sent.
+    """
+    cfg = config(env, home)
+    evs = jobs.events_from_sleepmode(reader.sleepmode())
+    got = _naps.day(evs, today - timedelta(days=1), _naps.nap_max_h(cfg), _naps.near_night_h(cfg), tz)
+    if got["naps"] is None:
+        out = envelope(None, _naps.MODALITY, None, reason=NAPS_UNKNOWN)
+        out["label"] = got["label"]
+        return out
+    newest = _naps.newest_at(evs, now)
+    value = {"label": got["label"]["label"]}
+    if raw:
+        value.update(naps=got["naps"], close=got["close"])
+    out = envelope(value, _naps.MODALITY, None if newest is None else max(0.0, now - newest) / 3600)
+    out["label"] = got["label"]
     return out

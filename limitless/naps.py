@@ -213,3 +213,9 @@ def week_line(w) -> str:
     else:
         key = ("few", "none" if close == 0 else "all" if close >= len(ns) else "some")
     return f"Naps this week: {_WEEK[key]}{SOURCE}"
+
+
+def newest_at(events, now: float) -> Optional[float]:
+    """Epoch seconds of the newest Sleep-mode event at or before ``now``; None when there is none."""
+    ts = [t for t, _ in _sleep_events(events) if t <= now]
+    return ts[-1] if ts else None
