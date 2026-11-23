@@ -15,6 +15,11 @@ Every rule is an event or a state, never a clock time: there is no time of day a
 nothing here reads the clock. The words are digit-free, and ``because`` cites the label names, never a
 number. Pure: nothing here writes, sends, schedules or starts anything. It only suggests; the agent asks
 the person before doing anything. Stdlib only, Python 3.9+.
+
+The tool (``limitless_propose``, tools.propose) wraps the result in ``derived(result, tiers)``: an envelope
+with modality ``derived`` (computed from other tools' labels, not measured), ``age_h`` None, and the weakest
+``evidence_tier`` of the labels the rule used (direct > indirect > stale > none). The default has no
+evidence, so it takes the weakest tier among the inputs that were known, or none when nothing was known.
 """
 from __future__ import annotations
 
@@ -73,6 +78,33 @@ def _holds(value: Any, allowed) -> bool:
 
 def _matches(rule: Mapping, state: Mapping) -> bool:
     return all(k in state and _holds(state[k], allowed) for k, allowed in rule["when"].items())
+
+
+MODALITY = "derived"
+NOTE = "a suggestion only: nothing was done; ask the person before doing anything"
+TIERS = ("direct", "indirect", "stale", "none")   # strongest first
+
+
+def _weakest(tiers) -> str:
+    known = [t for t in tiers if t in TIERS]
+    return max(known, key=TIERS.index) if known else "none"
+
+
+def label(result: Mapping) -> dict:
+    """The T1 label: the action words, or "no suggestion"."""
+    act = result.get("action") if isinstance(result, Mapping) else None
+    word = act if act in ACTIONS and act != NO_SUGGESTION else "no suggestion"
+    return {"label": word, "tier": "T1", "modality": MODALITY}
+
+
+def derived(result: Mapping, tiers: Mapping) -> dict:
+    """``result`` (from propose) as a derived evidence envelope with NOTE, its tier and its T1 label."""
+    tiers = tiers if isinstance(tiers, Mapping) else {}
+    used = list(result.get("evidence") or ())
+    tier = _weakest(tiers.get(k) for k in used) if used else \
+        _weakest(t for t in tiers.values() if t != "none")
+    return {"value": dict(result, note=NOTE), "modality": MODALITY, "age_h": None, "evidence_tier": tier,
+            "label": label(result)}
 
 
 def propose(state: Any) -> dict:

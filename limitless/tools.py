@@ -8,7 +8,7 @@ from typing import Mapping, Optional
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
                flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
-               prediction as _prediction,
+               prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
                sleep as _sleep, weekly_target as _weekly_target)
 from .envelope import STALE_H, envelope, missing, with_label
@@ -608,3 +608,91 @@ def flow_metrics(reader: StateReader, now: float, raw: bool = False, env: Option
         out["evidence_tier"] = _flow_metrics.EVIDENCE_TIER
     out["label"] = dict(label, label=word)
     return out
+
+
+_PEAK_WORDS = {_peak.OPEN: "open", _peak.IN_USE: "in use", _peak.CLOSED: "closed"}
+_HELD_QUIET = {_quiet.OFF: "off", _quiet.TONIGHT: "quiet tonight", _quiet.SNOOZED: "snoozed"}
+
+
+def peak_ask_label(rows: Optional[list], wake: Optional[float]) -> Optional[str]:
+    """``waiting`` (a pending, non-urgent peak ask and none delivered since the wake), ``spent`` (one was
+    delivered since the wake: one decision per peak window), ``none`` (no pending peak ask), or None
+    (unknown) when there is no queue configured (``rows`` None)."""
+    if rows is None:
+        return None
+    todo = [r for r in _asks.pending(rows) if r.get("urgent") is not True and _asks.classify(r) == _asks.PEAK]
+    if not todo:
+        return "none"
+    return "spent" if _asks.delivered_since(rows, wake) else "waiting"
+
+
+def _guard(fn, default):
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 - one unreadable source is unknown, never a traceback
+        return default
+
+
+def propose_state(reader: StateReader, now: float, today: date, bands: Optional[Mapping] = None,
+                  env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None):
+    """``(state, tiers)`` for propose.propose: each of propose.STATE_KEYS as a known value or None (unknown),
+    built read-only from the labels the other tools already compute, and the evidence_tier of each.
+    Nothing is written or sent."""
+    state = {k: None for k in _propose.STATE_KEYS}
+    tiers = {k: "none" for k in _propose.STATE_KEYS}
+    if not Path(reader.path).is_dir():
+        return state, tiers   # no state dir: every label unknown
+
+    def put(key, value, tier):
+        if value is not None and value in _propose.STATE_KEYS[key]:
+            state[key], tiers[key] = value, tier
+
+    # the window chain, as asks_view reads it: asleep from events; Glide first, then the event classifier
+    events = _guard(lambda: EventProvider.from_reader(reader, now, bands), None)
+    if events is not None:
+        cls = events.classification
+        ev_tier = cls.get("evidence_tier", "none")
+        if cls.get("value") == "asleep":
+            put("asleep", True, ev_tier)
+        elif cls.get("value") in ("peak", "trough", "anytime", "wind_down"):
+            put("asleep", False, ev_tier)
+        if not events.asleep:
+            glide = _guard(lambda: GlideProvider.from_config(env, home, now=now), None)
+            win = first_known(glide, events)
+            put("window", win.cls, ev_tier if win.source == "events" else "indirect")
+            if win.hold_asks:
+                put("focus_block", "in a block", "indirect")
+    if state["focus_block"] is None:
+        b = _guard(lambda: blocks(reader, now, env, home), {})
+        v = b.get("value") if isinstance(b, dict) else None
+        if isinstance(v, dict) and isinstance(v.get("in_block"), bool):
+            put("focus_block", "in a block" if v["in_block"] else "between blocks", b.get("evidence_tier"))
+    put("mode", _guard(lambda: _modes.load(reader.path), None), "direct")
+    q = _guard(lambda: quiet(reader.path, now, env, home), {})
+    qv = q.get("value") if isinstance(q, dict) else None
+    if isinstance(qv, dict):
+        put("quiet", _HELD_QUIET.get(qv.get("mode"), "on") if qv.get("held") is True else "on",
+            q.get("evidence_tier"))
+    pk = _guard(lambda: post_wake_peak(reader, now, env, home), {})
+    put("post_wake_peak", _PEAK_WORDS.get(((pk or {}).get("label") or {}).get("label")), "indirect")
+    qp = _guard(lambda: _asks.queue_path(env, home), None)
+    rows = None if qp is None else _guard(lambda: _asks.read(qp), None)
+    put("peak_ask", peak_ask_label(rows, _guard(lambda: wake_at(reader.sleepmode()), None)), "direct")
+    put("anki", "set" if _guard(lambda: _anki.collection_path(env, home), None) is not None else "not set",
+        "direct")
+    h = _guard(lambda: _habit_week(reader, now, today, env, home), {})
+    hv = h.get("value") if isinstance(h, dict) else None
+    if isinstance(hv, dict) and hv.get("habit"):
+        put("habit_week", "running", h.get("evidence_tier"))
+        put("habit_today", hv.get("today"), h.get("evidence_tier"))
+    elif isinstance(h, dict) and (h.get("reason") or isinstance(hv, dict)):
+        put("habit_week", "not running", h.get("evidence_tier") if hv else "direct")
+    return state, tiers
+
+
+def propose(reader: StateReader, now: float, today: date, bands: Optional[Mapping] = None,
+            env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """limitless_propose: propose.propose over propose_state, as propose.derived's envelope. Read-only: it
+    only suggests; nothing is written, sent, scheduled or started."""
+    state, tiers = propose_state(reader, now, today, bands, env, home)
+    return _propose.derived(_propose.propose(state), tiers)
