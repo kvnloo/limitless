@@ -53,12 +53,17 @@ _BODY = {
 }
 
 
-def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None) -> str:
+def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
+         synced: Optional[dict] = None) -> str:
     """The plain-words message for one job. The habit check-in names this week's habit and its taps.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
-    a hint, no counts, times or app names; the answer stays the person's tap.
+    a hint, no counts, times or app names; the answer stays the person's tap. The week review is
+    jobs.week_review_text: the habit, "N of M logged days" (``synced``: StateReader.habit_days()) and
+    "Reply Keep or Drop."
     """
+    if spec.name == jobs.WEEK_REVIEW.name:
+        return jobs.week_review_text(habit, synced)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
@@ -140,8 +145,9 @@ def events(reader: StateReader, env: Optional[Mapping[str, str]] = None, home: O
 
 
 def _specs(reader: StateReader) -> list:
-    return [jobs.habit_checkin(reader.habit()) if name == jobs.HABIT_CHECKIN.name else spec
-            for name, spec in jobs.SPECS.items()]
+    habit = reader.habit()
+    per_habit = {jobs.HABIT_CHECKIN.name: jobs.habit_checkin, jobs.WEEK_REVIEW.name: jobs.week_review}
+    return [per_habit[name](habit) if name in per_habit else spec for name, spec in jobs.SPECS.items()]
 
 
 class _Pass(NamedTuple):
@@ -151,6 +157,7 @@ class _Pass(NamedTuple):
     sent: list
     habit: Optional[dict]
     specs: list
+    synced: dict
 
 
 def _read_pass(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
@@ -160,7 +167,7 @@ def _read_pass(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
     state = first_known(GlideProvider.from_config(env=env, home=home, now=now), ev_provider)
     return _Pass(evs=events(reader, env=env, home=home),
                  window={"cls": "asleep"} if ev_provider.asleep else state,
-                 sent=reader.jobs_sent(), habit=reader.habit(), specs=_specs(reader))
+                 sent=reader.jobs_sent(), habit=reader.habit(), specs=_specs(reader), synced=reader.habit_days())
 
 
 def night_date(evs: list, at: float, tz: Optional[tzinfo] = None) -> str:
@@ -175,11 +182,35 @@ def night_date(evs: list, at: float, tz: Optional[tzinfo] = None) -> str:
     return datetime.fromtimestamp(wakes[-1] if wakes else at, tz).date().isoformat()
 
 
-def _key(spec: jobs.JobSpec, v: jobs.Verdict, evs: list, tz: Optional[tzinfo] = None) -> Optional[str]:
+def reviewed_days(sent: list, tz: Optional[tzinfo] = None) -> list:
+    """The local dates of the week reviews in the sent log, for jobs.week_review_gate."""
+    return [datetime.fromtimestamp(s["t"], tz).date() for s in sent or ()
+            if isinstance(s, dict) and s.get("job") == jobs.WEEK_REVIEW.name
+            and isinstance(s.get("t"), (int, float)) and not isinstance(s.get("t"), bool)]
+
+
+def week_review_verdict(v: jobs.Verdict, habit: Optional[dict], sent: list,
+                        tz: Optional[tzinfo] = None) -> jobs.Verdict:
+    """should_fire's verdict for the week review, narrowed by jobs.week_review_gate for its cue's date."""
+    if v.trigger_at is None:
+        return v
+    gate = jobs.week_review_gate(habit, datetime.fromtimestamp(v.trigger_at, tz).date(), reviewed_days(sent, tz))
+    return v if gate is None else gate._replace(trigger_at=v.trigger_at)
+
+
+def week_key(habit: Optional[dict]) -> str:
+    """The week review's event key: one per week, ``week_review:<week_of>``."""
+    return f"{jobs.WEEK_REVIEW.name}:{(habit or {}).get('week_of')}"
+
+
+def _key(spec: jobs.JobSpec, v: jobs.Verdict, evs: list, tz: Optional[tzinfo] = None,
+         habit: Optional[dict] = None) -> Optional[str]:
     """The event key for one verdict: once_key of its trigger (for a night job, the trigger's night
-    key), or None when nothing triggered it."""
+    key; for the week review, the week's key), or None when nothing triggered it."""
     if v.trigger_at is None:
         return None
+    if spec.name == jobs.WEEK_REVIEW.name:
+        return week_key(habit)
     if spec.name in NIGHT_JOBS:
         return f"{spec.name}:{night_date(evs, v.trigger_at, tz)}"
     return once_key(spec, v.trigger_at)
@@ -199,7 +230,12 @@ def event_key(state_dir, now: float, job: str = jobs.WAKE_BRIEF.name, env: Optio
     spec = next((s for s in p.specs if s.name == job), None)
     if spec is None:
         raise ValueError(f"job must be one of {sorted(jobs.SPECS)}, got {job!r}")
-    k = _key(spec, jobs.should_fire(spec, p.evs, p.window, p.sent, now), p.evs, tz)
+    v = jobs.should_fire(spec, p.evs, p.window, p.sent, now)
+    if spec.name == jobs.WEEK_REVIEW.name:
+        v = week_review_verdict(v, p.habit, p.sent, tz)
+        if v.action == jobs.NOT_TRIGGERED or v.reason == jobs.NO_WEEK:
+            return None                          # no day-seven cue of a started week: no key
+    k = _key(spec, v, p.evs, tz, p.habit)
     if k is not None and spec.name in NIGHT_JOBS and k != f"{spec.name}:{night_date(p.evs, now, tz)}":
         return None
     return k
@@ -268,6 +304,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
         gate = jobs.habit_week_gate(p.habit, today) if spec.name == jobs.HABIT_CHECKIN.name else None
         if gate is not None and v.action != jobs.NOT_TRIGGERED:
             v = gate._replace(trigger_at=v.trigger_at)      # a cue came, but no started week: drop, never send
+        if spec.name == jobs.WEEK_REVIEW.name and v.action != jobs.NOT_TRIGGERED:
+            v = week_review_verdict(v, p.habit, sent, tz)   # only a cue from day seven on, once per week
         action, reason = v.action, v.reason
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
@@ -278,8 +316,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             if own:
                 ok, how = _send_brief(brief)       # the whole brief, same event key; never the placeholder
             else:
-                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home))
-                ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz))
+                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced)
+                ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:
