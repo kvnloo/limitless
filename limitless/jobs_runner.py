@@ -35,6 +35,11 @@ Break nudge: the ActivityWatch DB's focus blocks (blocks.read_for: config ``flow
 ``break:<block start>`` (break_key), so one block gets one nudge whoever polls; jobs.break_verdict drops it
 once the block ended a while ago. Unknown blocks (no DB, no work apps) say so in the row; they are never "no
 block".
+
+NOOP export: with config ``noop_export`` dry_run or write, one more row (noop_export_row). When the newest runs.jsonl
+row says the sync copied the NOOP database and the mark ``noop-export.json`` has not seen that row, a pass that is
+not a dry run calls ``noop_export.main`` in-process and writes the mark; nothing is pushed or logged as sent, and
+no process is started. Off (the default): no row, nothing read.
 """
 from __future__ import annotations
 
@@ -698,6 +703,9 @@ NOOP_DONE, NOOP_NOTHING, NOOP_NOT_WRITTEN, NOOP_FAILED = "done", "nothing to exp
     "failed"
 _NOOP_NOTHING = (_noop_export.NO_DB, _noop_export.NO_FILE, _noop_export.NOT_NOOP)
 _DIGITS = re.compile(r"\d+(?:[.,:]\d+)*")
+# the CLI's dry-run hint, said the way the job is switched to writing
+_NOOP_CLI_HINT = "(run with --write to write them)"
+_NOOP_JOB_HINT = f'(config {jobs.NOOP_CONFIG} "{jobs.NOOP_WRITE}" writes them)'
 
 
 def _epoch(v) -> Optional[float]:
@@ -742,7 +750,8 @@ def _write_noop_mark(state_dir, mark: dict) -> None:
 def _noop_words(text: str) -> list:
     """noop_export.main's printed lines, digit-free (it prints counts in words and never a path, a device or a
     reading; a number from anywhere else becomes "a number")."""
-    return [_DIGITS.sub("a number", ln).strip() for ln in text.splitlines() if ln.strip()]
+    return [_DIGITS.sub("a number", ln.replace(_NOOP_CLI_HINT, _NOOP_JOB_HINT)).strip()
+            for ln in text.splitlines() if ln.strip()]
 
 
 def run_noop_export(state_dir, row_at: float, now: float, mode: str, env: Optional[Mapping[str, str]] = None,

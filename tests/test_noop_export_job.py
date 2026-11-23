@@ -173,6 +173,8 @@ class DryRunMode(Base):
         self.assertEqual(m["outcome"], "done")
         self.assertIn("four nights of wearable sleep", " ".join(m["said"]))
         self.assertIn("four nights of wearable sleep", r["reason"])
+        self.assertIn('nothing written (config noop_export "write" writes them)', r["reason"])
+        self.assertNotIn("--write", self.mark.read_text())
 
 
 class WriteMode(Base):

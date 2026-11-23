@@ -1,5 +1,6 @@
 """Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in,
-the week review, the break nudge.
+the week review, the break nudge; and the NOOP export (NOOP_EXPORT), which sends nothing and wakes on a sync that
+copied the NOOP database (noop_export_verdict).
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no

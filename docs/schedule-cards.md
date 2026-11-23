@@ -53,6 +53,14 @@ more card last: `schedule_cards.ledger_card()`, id `idea_ledger`, on the `wind_d
 mode goes on, sender `local`, budget zero. It runs `limitless-ledger-append --write` (in `words.runs`) and sends
 nothing. It is not a `jobs.SPECS` job, so `limitless-jobs` never runs it ([idea-ledger.md](idea-ledger.md)).
 
+## The NOOP export's card
+
+When config `noop_export` is `dry_run` or `write`, `cards(noop=True)` adds one more card last:
+`schedule_cards.noop_export_card()`, id `noop_export`, on the `noop_copy` event ("after a sync that copied the
+NOOP database"), ending at the next such sync, sender `local`, budget zero, once-key `noop_export:<sync run
+time>`. `limitless-jobs --send` runs it (in `words.runs`); it sends nothing, so no decision window holds it. It
+is not a `jobs.SPECS` job: the message jobs' cards stay as they were ([noop-export.md](noop-export.md#as-an-event-job)).
+
 ## Host registration
 
 `register(ctx)` checks the host for a schedule-card method with

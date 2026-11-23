@@ -15,6 +15,10 @@ Otherwise the wake brief is sent by `limitless-brief send` (the whole brief, sam
 one-line placeholder: $LIMITLESS_BRIEF_BIN, else `limitless-brief` on PATH, else this repo's
 bin/limitless-brief. If it is missing or fails, the failure goes to stderr, nothing is sent and the job
 holds until the next run.
+
+NOOP export: with config "noop_export" set to "dry_run" or "write", one more line. After a sync whose runs.jsonl
+row says it copied the NOOP database, --send runs the NOOP export once for that row, in-process (write mode
+merges the sleep and pre-sleep heart-rate files), and records it in noop-export.json; it pushes nothing.
 """
 import json
 import os

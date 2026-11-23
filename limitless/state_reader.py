@@ -3,7 +3,8 @@
 Location: $LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG (default ~/.config/limitless/config.json),
 else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthetic examples):
   inputs.json          {"at": iso, "ageHours": {name: hours | "down" | null}}
-  runs.jsonl           one row per pipeline run; only the last valid row is used
+  runs.jsonl           one row per pipeline run; only the last valid row is used. A run that copied the NOOP
+                       DB says so in its "noop" field (true, "copied", or {"copied": true}; jobs.noop_copied)
   digests.jsonl        {"date", "at", "metrics": {name: {"value", "modality"}}}
   asks-latest.json     {"at": epoch, "count", "lines"}
   habit.json           {"week_of": date, "habit", "start", "at", "checkins": {date: Done|No|Skipped}}
@@ -52,7 +53,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        measured rows)
   NOOP DB              optional copy of the NOOP app's SQLite DB, config "noop_db" (relative to the state
                        dir; none by default); read only by noop_export.py, which writes the sleep file and
-                       the pre-sleep HR file from it (bin/limitless-noop-export --write)
+                       the pre-sleep HR file from it (bin/limitless-noop-export --write, or the NOOP export
+                       job on a sync that copied it: config "noop_export", its mark noop-export.json)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
