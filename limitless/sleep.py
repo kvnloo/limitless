@@ -3,6 +3,8 @@
     ns = nights(wearable_rows, proxy_gaps, today, days=7, tz=None)
     # [{"night": "YYYY-MM-DD", "wearable": asleep_s | None, "proxy": gap_s | None}, ...] oldest first
     lab = label(ns, modality)   # T1 dict: "sleep: wearable on most nights; phone proxy says longer"
+    ts = timed_nights(wearable_rows, proxy_gaps, today, days=14, tz=None)
+    # [{"night", "wearable": (start_s, end_s) | None, "proxy": (start_s, end_s) | None}, ...] for regularity.py
 
 A night is named by the evening it began (local date). The nights are the ``days`` before ``today``.
 ``wearable_rows`` are StateReader.sleep_rows(): ``{"night", "asleep_s", "source"}``; when two sources describe
@@ -31,6 +33,7 @@ from typing import Optional
 from . import wake_proxy
 
 DAYS = 7
+REGULARITY_DAYS = 14         # regularity reads the last two weeks of nights (timed_nights)
 EVENING_FROM_H = 12          # a gap that starts at or after local noon belongs to that date's night
 MAX_GAP_S = 24 * 3600        # a quiet span this long is missing data, not a night
 ABOUT_SAME_S = 30 * 60       # proxy and wearable within this (median over nights with both) say the same
@@ -73,25 +76,53 @@ def _evening_night(start: float, tz: Optional[tzinfo]) -> Optional[str]:
     return dt.date().isoformat() if dt.hour >= EVENING_FROM_H else None
 
 
-def nights(wearable_rows, proxy_gaps, today: date, days: int = DAYS, tz: Optional[tzinfo] = None) -> list:
-    """One ``{night, wearable, proxy}`` per night in the ``days`` before ``today``, oldest first; never raises."""
+def _names(today, days) -> list:
     if not isinstance(today, date) or isinstance(days, bool) or not isinstance(days, int) or days < 1:
         return []
-    names = [(today - timedelta(days=a)).isoformat() for a in range(days, 0, -1)]
-    wanted = set(names)
-    wear, proxy = {}, {}
+    return [(today - timedelta(days=a)).isoformat() for a in range(days, 0, -1)]
+
+
+def _wear_rows(wearable_rows, wanted) -> dict:
+    """night -> its first valid wearable row (a positive int ``asleep_s``)."""
+    wear = {}
     for r in wearable_rows if isinstance(wearable_rows, (list, tuple)) else ():
         if not isinstance(r, dict) or r.get("night") not in wanted or r["night"] in wear:
             continue
         s = r.get("asleep_s")
         if not isinstance(s, bool) and isinstance(s, int) and s > 0:
-            wear[r["night"]] = s
+            wear[r["night"]] = r
+    return wear
+
+
+def _proxy_spans(proxy_gaps, wanted, tz) -> dict:
+    """night -> its proxy: the longest valid gap that starts in the evening half of its date."""
+    proxy = {}
     for g in proxy_gaps if isinstance(proxy_gaps, (list, tuple)) else ():
         g = _gap(g)
         n = _evening_night(g[0], tz) if g is not None else None
-        if n in wanted:
-            proxy[n] = max(proxy.get(n, 0), int(round(g[1] - g[0])))
-    return [{"night": n, "wearable": wear.get(n), "proxy": proxy.get(n)} for n in names]
+        if n in wanted and (n not in proxy or g[1] - g[0] > proxy[n][1] - proxy[n][0]):
+            proxy[n] = g
+    return proxy
+
+
+def nights(wearable_rows, proxy_gaps, today: date, days: int = DAYS, tz: Optional[tzinfo] = None) -> list:
+    """One ``{night, wearable, proxy}`` per night in the ``days`` before ``today``, oldest first; never raises."""
+    names = _names(today, days)
+    wear, proxy = _wear_rows(wearable_rows, set(names)), _proxy_spans(proxy_gaps, set(names), tz)
+    return [{"night": n, "wearable": wear[n]["asleep_s"] if n in wear else None,
+             "proxy": int(round(proxy[n][1] - proxy[n][0])) if n in proxy else None} for n in names]
+
+
+def timed_nights(wearable_rows, proxy_gaps, today: date, days: int = REGULARITY_DAYS,
+                 tz: Optional[tzinfo] = None) -> list:
+    """When each night ran, for regularity.regularity: ``{night, wearable, proxy}`` with each a ``(start_s,
+    end_s)`` span or None, per night in the ``days`` before ``today``, oldest first; never raises. The wearable
+    span is the night's first valid row's ``span`` (StateReader.sleep_rows; None when that row has no times),
+    the proxy span the same gap ``nights`` measures."""
+    names = _names(today, days)
+    wear, proxy = _wear_rows(wearable_rows, set(names)), _proxy_spans(proxy_gaps, set(names), tz)
+    return [{"night": n, "wearable": _gap(wear[n].get("span")) if n in wear else None, "proxy": proxy.get(n)}
+            for n in names]
 
 
 def _valid(ns) -> list:
