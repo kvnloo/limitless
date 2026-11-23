@@ -3,9 +3,11 @@
     mode = load(state_dir)          # "brainstorm" | "pm" | "copilot" | "focused" | "none"
     save(state_dir, "focused")      # atomic, mode 0600; "off" (or "none") returns to none
     line(mode)                      # the one card line for a mode, or None
+    apply(window, mode)             # focused: the window with hold_asks set, as a focus block does
 
 A mode adds one short digit-free line (LINES) at the end of the pre_llm_call card, after the cached card and
-before tier_audit.gate, so the line is audited with the card.
+before tier_audit.gate, so the line is audited with the card. ``focused`` also holds every non-urgent ask the
+way a focus block does (asks.py ``hold_asks``, via tools.asks_view); the other modes change no plan.
 
 ``mode.json`` in the state dir is ``{"mode": <one of MODES or "none">}``. ``none`` (no file) is the behaviour
 from before modes existed. A missing, unreadable or malformed file, or an unknown mode, is ``none``: this
@@ -38,6 +40,23 @@ def _word(v):
 def line(mode):
     """The card line for ``mode``; None for none, off or anything that is not a mode."""
     return LINES.get(_word(mode))
+
+
+def apply(window, mode):
+    """The window the asks plan sees: for ``focused``, the same window with ``hold_asks`` set, exactly what a
+    focus block provider (e.g. Glide) gives, so asks.plan holds every non-urgent ask with its focus-block
+    reason; no new gate. Asleep stays asleep (it holds anyway). Any other mode returns ``window`` itself."""
+    if _word(mode) != FOCUSED:
+        return window
+    from dataclasses import replace
+
+    from . import decision_window, jobs
+    state, asleep = jobs._window(window)
+    if asleep:
+        return window
+    if state is None:
+        state = decision_window.WindowState(cls=decision_window.UNKNOWN, source="mode")
+    return replace(state, hold_asks=True)
 
 
 def load(state_dir) -> str:
