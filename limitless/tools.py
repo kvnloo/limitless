@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
-               habit_catalogue as _habit_catalogue,
+               habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
@@ -875,6 +875,28 @@ def propose(reader: StateReader, now: float, today: date, bands: Optional[Mappin
     return _propose.derived(_propose.propose(state), tiers)
 
 
+def ideas(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+          home: Optional[Path] = None) -> dict:
+    """limitless_ideas: the idea ledger's last seven days (idea_ledger.week), read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: "a few new ideas this week, none triaged") with the T1
+    label beside it; modality self_report (the person's own captures), aged by the newest idea row. The counts
+    and each idea's id, time, text, source and status are T0 and appear only with ``raw``
+    (LIMITLESS_RAW_IN_PROMPT). No ledger set is value None with the reason "no idea ledger set". No triage, no
+    ranking, no advice: the person triages in a review. Nothing is written or sent.
+    """
+    if reader.idea_ledger_path(env, home) is None:
+        return envelope(None, _idea_ledger.MODALITY, None, reason=_idea_ledger.NO_LEDGER)
+    w = _idea_ledger.week(reader.idea_ledger_rows(env, home), now)
+    lab = _idea_ledger.t1(w)
+    value = {"label": lab["label"]}
+    if raw:
+        value.update(recorded=w["recorded"], triaged=w["triaged"], ideas=[dict(x) for x in w["ideas"]])
+    out = envelope(value, _idea_ledger.MODALITY, None if w["newest_at"] is None else (now - w["newest_at"]) / 3600)
+    out["label"] = lab
+    return out
+
+
 def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
              home: Optional[Path] = None) -> dict:
     """limitless_schedule: every job's schedule card (schedule_cards.cards), read-only.
@@ -882,10 +904,12 @@ def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] =
     ``value: {cards}`` holds the raw cards (ids, event names, stale_after_s, budget). Outside it only plain
     words: ``lines`` (one card description each) and the T1 ``label``, both through tier_audit.gate (hook
     tool:limitless_schedule, never opted in); a digit there drops both and says why. The habit cards follow
-    habit.json's cue; ``external_jobs`` marks jobs another sender owns. Modality derived, age_h None.
+    habit.json's cue; ``external_jobs`` marks jobs another sender owns; a configured idea ledger adds its card.
+    Modality derived, age_h None.
     Nothing is written, sent, scheduled or registered.
     """
-    cards = _schedule_cards.cards(external=jobs_runner.external_jobs(env, home), habit=reader.habit())
+    cards = _schedule_cards.cards(external=jobs_runner.external_jobs(env, home), habit=reader.habit(),
+                                  ledger=reader.idea_ledger_path(env, home) is not None)
     lines = [c["description"] for c in cards]
     word = _schedule_cards.label(len(cards))
     out = {"value": {"cards": cards}, "modality": _schedule_cards.MODALITY, "age_h": None, "evidence_tier": "direct"}

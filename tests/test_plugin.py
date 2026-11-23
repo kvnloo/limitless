@@ -21,7 +21,7 @@ FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_ledger", "limitless_flow_metrics",
-         "limitless_habit", "limitless_habit_next", "limitless_loop", "limitless_naps", "limitless_overnight",
+         "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_overnight",
          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
@@ -238,6 +238,11 @@ class Wiring(unittest.TestCase):
                 (st / "ledger").mkdir()
                 env = {"LIMITLESS_STATE": str(st / "ledger"),
                        "LIMITLESS_CONFIG": str(blocks_config(st / "ledger", at=NOW - 86400))}
+            if name == "limitless_ideas":   # a synthetic idea ledger with one idea before NOW
+                ideas = st / "ideas.jsonl"
+                ideas.write_text(json.dumps({"kind": "idea", "id": "idea_synthetic", "at": "2030-01-15T11:00:00+00:00",
+                                             "text": "a synthetic idea", "source": "hermes", "status": "new"}) + "\n")
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_IDEA_LEDGER": str(ideas)}
             if name == "limitless_loop":   # one synthetic decided week
                 from limitless import stop_rule
                 (st / "loop").mkdir()

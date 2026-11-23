@@ -15,6 +15,10 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   jobs-sent.jsonl      {"t", "k", "job"} job messages really delivered (written by jobs_runner only)
   captures.jsonl       {"at", "text", "source"} captures (written by capture.py only; source "bedtime"
                        for a message saved by bedtime capture)
+  idea ledger          optional JSONL, the one record every idea lands in: $LIMITLESS_IDEA_LEDGER, else config
+                       "idea_ledger" (relative to the state dir; none by default, no default file name), one
+                       row per idea {"kind": "idea", "id", "at", "text", "source", "status"}; appended only by
+                       idea_ledger.append, read here through idea_ledger_rows (idea_ledger_path)
   screen-events.jsonl  {"ts": epoch_ms, "type", "pkg"} Android screen events (wake_proxy.events_from_screen)
   ActivityWatch DB     optional SQLite copy at $LIMITLESS_AW_DB, else config "aw_db" (relative to the
                        state dir); read only through aw_reader.person_rows (aw_db_path)
@@ -73,6 +77,8 @@ RIDE_KINDS_CONFIG = "ride_kinds"
 RIDE_KINDS = ("biking_stationary", "rehit")
 SLEEP_CONFIG = "sleep_file"
 PRESLEEP_HR_CONFIG = "presleep_hr_file"
+IDEA_LEDGER_ENV = "LIMITLESS_IDEA_LEDGER"
+IDEA_LEDGER_CONFIG = "idea_ledger"
 MAX_ASLEEP_S = 24 * 3600   # a nightly summary longer than a day is not a night
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -501,6 +507,27 @@ class StateReader:
         except Exception:  # noqa: BLE001 - unreadable data is no rows, never a traceback
             return []
         return [{k: r.get(k) for k in ("night", "bpm", "modality")} for r in rows]
+
+    def idea_ledger_path(self, env: Optional[Mapping[str, str]] = None,
+                         home: Optional[Path] = None) -> Optional[Path]:
+        """The idea ledger: $LIMITLESS_IDEA_LEDGER, else config ``idea_ledger``; a relative path is in the state
+        dir. None when neither is set: there is no default file name."""
+        env = os.environ if env is None else env
+        v = env.get(IDEA_LEDGER_ENV) or config(env, home).get(IDEA_LEDGER_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v.strip()).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def idea_ledger_rows(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
+        """The idea ledger's object rows in file order; [] when it is not set, missing or unreadable."""
+        p = self.idea_ledger_path(env, home)
+        if p is None:
+            return []
+        try:
+            return _rows(p.read_text(errors="replace"))
+        except (OSError, ValueError):
+            return []
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")
