@@ -188,6 +188,15 @@ class Current(OutageCase):
                          "not recording: wearable (since about two days ago)")
         self.assertEqual(outage.label([], NOW), "every input is recording")
 
+    def test_label_groups_inputs_by_their_own_since(self):
+        self.inputs(NOW, {"wearable": 50.0, "band": 52.0, "phone": "down"})
+        self.assertEqual(outage.label(outage.current(self.st, NOW, {}), NOW),
+                         "not recording: band and wearable (since about two days ago) and phone (since just now)")
+
+    def test_under_an_hour_is_just_now(self):
+        self.inputs(NOW, {"phone": "down"})
+        self.assertEqual(self.poll(NOW), "Not recording: phone (since just now).")
+
 
 if __name__ == "__main__":
     unittest.main()

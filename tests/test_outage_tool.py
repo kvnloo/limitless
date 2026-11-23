@@ -53,8 +53,8 @@ class Tool(unittest.TestCase):
     def test_current_outages_in_words(self):
         self.inputs(NOW, {"wearable": 50.0, "phone_screen": "down", "laptop": 1.0})
         res = self.call()
-        self.assertEqual(res["value"], {"label": "not recording: phone screen and wearable (since about two days "
-                                                 "ago)", "inputs": ["phone screen", "wearable"]})
+        self.assertEqual(res["value"], {"label": "not recording: wearable (since about two days ago) and phone "
+                                                 "screen (since just now)", "inputs": ["phone screen", "wearable"]})
         self.assertEqual((res["modality"], res["age_h"]), ("derived", None))
         self.assertEqual(res["label"], {"label": res["value"]["label"], "tier": "T1", "modality": "derived"})
         self.assertIsNone(re.search(r"\d", json.dumps(res["value"])))

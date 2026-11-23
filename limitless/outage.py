@@ -179,9 +179,23 @@ def _and(parts: list) -> str:
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
+def since_words(since: float, now: float) -> str:
+    """"since about two days ago" (doctor.age_words); under an hour is "since just now"."""
+    words = doctor.age_words(max(0.0, now - since) / 3600)
+    return "since just now" if words == doctor.age_words(0) else f"since {words}"
+
+
 def _what(outs: list, now: float) -> str:
-    oldest = min(o["since"] for o in outs)
-    return f"{_and([name_words(o['name']) for o in outs])} (since {doctor.age_words(max(0.0, now - oldest) / 3600)})"
+    """Names and since for the oldest of them: the brief's one phrase."""
+    return f"{_and([name_words(o['name']) for o in outs])} ({since_words(min(o['since'] for o in outs), now)})"
+
+
+def _each(outs: list, now: float) -> str:
+    """Names grouped by their own since: "wearable (since about three days ago) and phone (since just now)"."""
+    groups = {}
+    for o in sorted(outs, key=lambda o: (o["since"], o["name"])):
+        groups.setdefault(since_words(o["since"], now), []).append(name_words(o["name"]))
+    return _and([f"{_and(names)} ({w})" for w, names in groups.items()])
 
 
 def line(new: list, cfg: Mapping, now: float) -> str:
@@ -198,8 +212,9 @@ def line(new: list, cfg: Mapping, now: float) -> str:
 
 
 def label(outs: list, now: float) -> str:
-    """The tool's phrase: "not recording: <names> (since about <age>)" or "every input is recording"."""
-    return doctor.words(f"not recording: {_what(outs, now)}") if outs else NONE_DOWN
+    """The tool's phrase: "not recording: <names> (since about <age>)", grouped by each input's own since when they
+    differ, or "every input is recording"."""
+    return doctor.words(f"not recording: {_each(outs, now)}") if outs else NONE_DOWN
 
 
 # --- limitless_outages: read-only ---------------------------------------------------------------------------
