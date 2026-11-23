@@ -89,7 +89,7 @@ class Card(unittest.TestCase):
         r = ui_card.render(ui_card.TITLES["skill_tree"], skill_tree.lines(skill_tree.tree(CAT, {})), "skill_tree")
         chips = [c for _, c in r["chips"]]
         self.assertEqual(chips[0], ui_card.KNOWN)
-        self.assertEqual(chips[1:3], [ui_card.HELD, ui_card.HELD])
+        self.assertEqual(chips[1:], [ui_card.HELD] * (len(skill_tree.LAYERS) - 1))
 
     def test_the_same_tree_is_the_same_file(self):
         a = self.view(LIMITLESS_CARD_DIR=str(self.cards))["value"]["path"]

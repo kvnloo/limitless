@@ -44,7 +44,8 @@ class Words(unittest.TestCase):
         self.assertIn(f"{CAT[3]['name']} not tried", ls[0])
         self.assertTrue(ls[1].startswith("Learning open: "), ls[1])
         self.assertTrue(ls[2].startswith("Flow later"), ls[2])
-        self.assertEqual(ls[3], "Enhancement later: no habits on the list yet")
+        self.assertEqual(ls[3], "Enhancement later, waiting for a kept habit in every earlier layer: "
+                                "no habits on the list yet")
         for ln in ls:
             self.assertEqual(re.findall(r"\d", ln), [], ln)
 

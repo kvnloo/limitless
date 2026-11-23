@@ -95,11 +95,11 @@ def _count(n: int, noun: str) -> str:
 
 def lines(t) -> list:
     """One line per layer: "Foundation open: <habit> kept; <habit> not tried", "Flow later, waiting for a kept
-    habit in every earlier layer: ...", "Enhancement later: no habits on the list yet". Digit-free words."""
+    habit in every earlier layer: ...", "Enhancement open: no habits on the list yet". Digit-free words."""
     out = []
     for layer in t or ():
         head = f"{layer['name']} {'open' if layer['open'] else 'later'}"
-        if not layer["open"] and layer["habits"]:
+        if not layer["open"]:
             head += f", {WAITING}"
         body = "; ".join(f"{h['name']} {h['state']}" for h in layer["habits"]) or EMPTY
         out.append(f"{head}: {body}")
