@@ -13,6 +13,10 @@ the DB has an ``afkstatus`` bucket for the week. Overlapping spans count once.
   ``(start_s, end_s)`` pairs or Glide-style ``{"start", "end"}`` dicts; no block in the covered days =
   leak unknown. Leak per block-hour is feed minutes over block hours; a clean block is 0, not unknown.
 
+Words: ``review_line(this, last)`` is the week review's one line with numbers (Telegram only, never a
+prompt); ``t1_label(this, last)`` is the card's digit-free label (T1), e.g. "deep work up on last week
+(measured)" or "not recording". ``for_week(reader, week_of, tz, env, home)`` reads every input from config.
+
 Nothing here judges the numbers: no score, no target, no grade. The DB is opened read-only
 (``mode=ro``); nothing here writes, creates or locks it. Stdlib only, Python 3.9+.
 """
