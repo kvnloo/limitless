@@ -21,12 +21,26 @@ A claim is a small dict; every key is optional and anything unreadable counts as
     citation   non-empty text: an outside source for the claim (replicated). Only this key reaches
                replicated; the person's own data never does, however many weeks supported it.
 
-Fewer than three logged days never climb. A ``rung`` key in the claim is ignored. Pure: nothing here reads a
-clock, a file or sends. Stdlib only, Python 3.9+.
+Fewer than three logged days never climb. A ``rung`` key in the claim is ignored. ``strength_of`` is pure.
+
+    strength.habit_claim(state_dir, "Walk after lunch")    -> {"weeks": [...]}   (the claim, from the ledger)
+    strength.habit_strength(state_dir, "Walk after lunch") -> strength_of(habit_claim(...))
+
+read the habit's weeks from the existing prediction ledger (predictions.jsonl, prediction.rows), read-only:
+each first prediction row of a week is a locked week, its receipt (prediction.receipt_for) gives the verdict
+(``pending`` with none yet), and the week belongs to the habit that habit-<week_of>.json or habit.json
+(prediction.week_habit) or that week's loop row names, compared without case or outer spaces. With no habit
+name, only ``week_of``'s own week counts. A logged-days receipt's outcome gives its logged days; a state-metric
+receipt was only judged with three logged days (prediction._state_verdict), so its verdict stands for them.
+The ledger never carries a citation: replicated is never reached from it. Nothing here writes, sends or reads
+a clock. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import Any, Optional
+
+from . import prediction as _prediction
 
 LADDER = ("measured", "derived", "association", "preregistered", "repeated", "replicated")
 MEASURED, DERIVED, ASSOCIATION, PREREGISTERED, REPEATED, REPLICATED = LADDER
@@ -91,4 +105,58 @@ def strength_of(claim: Any) -> dict:
         return _out(DERIVED, "computed from readings", "a value worked out from readings, not one reading")
     if readings:
         return _out(MEASURED, "read directly", "a reading as it was taken, nothing worked out or judged")
+    if bad:
+        return _out(None, f"no rung yet: {_weeks(len(bad))} did not bear it out",
+                    "a locked week that did not support it never climbs")
     return _out(None, "no evidence yet", "nothing measured, judged or cited")
+
+
+_LOGGED_OUTCOME = re.compile(r"^\d+ of (\d+) logged days$")
+
+
+def _name(v: Any) -> Optional[str]:
+    return " ".join(v.split()).casefold() if isinstance(v, str) and v.strip() else None
+
+
+def _week_name(state_dir, week_of: str, loops: dict) -> Optional[str]:
+    start = _prediction._day(week_of)
+    h = _prediction.week_habit(state_dir, start) if start is not None else None
+    return _name(h.get("habit")) if isinstance(h, dict) and _name(h.get("habit")) else loops.get(week_of)
+
+
+def _logged_days(p: dict, r: Optional[dict]) -> int:
+    if not isinstance(r, dict):
+        return 0
+    m = _LOGGED_OUTCOME.match(str(r.get("outcome") or ""))
+    if p.get("metric") == _prediction.LOGGED:
+        return int(m.group(1)) if m else 0
+    return MIN_DAYS if r.get("verdict") == SUPPORTS else 0
+
+
+def habit_claim(state_dir, habit: Optional[str], week_of: Optional[str] = None) -> dict:
+    """``{"weeks": [{week_of, locked, verdict, logged_days}]}`` for ``habit`` from the prediction ledger, oldest
+    first (see the module doc); with no habit name, only ``week_of``'s week. Read-only."""
+    rows = _prediction.rows(state_dir)
+    loops = {}
+    for r in rows:
+        if r.get("kind") == "loop" and isinstance(r.get("week_of"), str) and r["week_of"] not in loops:
+            loops[r["week_of"]] = _name(r.get("habit"))
+    want, seen, weeks = _name(habit), set(), []
+    for p in rows:
+        w = p.get("week_of")
+        if p.get("kind") != "prediction" or not isinstance(w, str) or w in seen:
+            continue
+        seen.add(w)
+        mine = w == week_of if want is None else _week_name(state_dir, w, loops) == want
+        if not mine:
+            continue
+        r = _prediction.receipt_for(state_dir, w)
+        verdict = r.get("verdict") if isinstance(r, dict) and isinstance(r.get("verdict"), str) else \
+            (_prediction.PENDING if r is None else _prediction.INCONCLUSIVE)
+        weeks.append({"week_of": w, "locked": True, "verdict": verdict, "logged_days": _logged_days(p, r)})
+    return {"weeks": weeks}
+
+
+def habit_strength(state_dir, habit: Optional[str], week_of: Optional[str] = None) -> dict:
+    """strength_of(habit_claim(...)): the habit's rung from its locked weeks, in words. Read-only."""
+    return strength_of(habit_claim(state_dir, habit, week_of))
