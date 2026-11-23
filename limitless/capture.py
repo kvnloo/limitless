@@ -5,7 +5,8 @@ in a review, by the person.
 
 A row is ``{"at", "text", "source"}``; ``kind`` (one of KINDS) is added only when given, and ``unknowns`` (a
 list of the person's own phrases, verbatim) only when there are any. An explain-back answer (explain_back.reply)
-is ``kind: "explain_back"``; like every capture it reaches the idea ledger when one is set.
+is ``kind: "explain_back"``; like every capture it reaches the idea ledger when one is set. An MIQ answered by
+voice in a z0live call (voice_miq.run) is ``kind: "miq_answer"``, source ``"z0live"``.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from .envelope import envelope, missing
 
 MAX_CHARS = 4000
 FILE = "captures.jsonl"
-KINDS = ("explain_back",)
+KINDS = ("explain_back", "miq_answer")
 
 
 def capture(state: Path, text: str, now: float, source: str = "hermes", kind=None, unknowns=None) -> dict:
