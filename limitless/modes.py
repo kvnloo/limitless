@@ -2,6 +2,10 @@
 
     mode = load(state_dir)          # "brainstorm" | "pm" | "copilot" | "focused" | "none"
     save(state_dir, "focused")      # atomic, mode 0600; "off" (or "none") returns to none
+    line(mode)                      # the one card line for a mode, or None
+
+A mode adds one short digit-free line (LINES) at the end of the pre_llm_call card, after the cached card and
+before tier_audit.gate, so the line is audited with the card.
 
 ``mode.json`` in the state dir is ``{"mode": <one of MODES or "none">}``. ``none`` (no file) is the behaviour
 from before modes existed. A missing, unreadable or malformed file, or an unknown mode, is ``none``: this
@@ -18,10 +22,22 @@ MODE_FILE = "mode.json"
 BRAINSTORM, PM, COPILOT, FOCUSED = "brainstorm", "pm", "copilot", "focused"
 MODES = (BRAINSTORM, PM, COPILOT, FOCUSED)
 NONE, OFF = "none", "off"
+# one short digit-free line per mode, added last to the pre_llm_call card (presentation only)
+LINES = {
+    BRAINSTORM: "brainstorm mode: offer options, defer decisions",
+    PM: "pm mode: status, blockers, next step",
+    COPILOT: "copilot mode: do the step, report the result",
+    FOCUSED: "focused mode: answer briefly, hold non-urgent asks",
+}
 
 
 def _word(v):
     return v.strip().lower() if isinstance(v, str) else None
+
+
+def line(mode):
+    """The card line for ``mode``; None for none, off or anything that is not a mode."""
+    return LINES.get(_word(mode))
 
 
 def load(state_dir) -> str:
