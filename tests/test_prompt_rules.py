@@ -13,7 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test_coach_skill import CLOCK, DOSING  # noqa: E402
+from skill_checks import CLOCK, DOSING  # noqa: E402
 from test_plugin import FakeCtx, load_plugin, manifest_list  # noqa: E402
 
 from limitless import prompt_rules, schedule_cards  # noqa: E402
@@ -115,8 +115,8 @@ class NoDrift(unittest.TestCase):
 
     def test_the_coach_skill_it_names_is_the_registered_one(self):
         from limitless import coach_skill
-        self.assertEqual(coach_skill.NAME, "coach")
-        self.assertEqual(coach_skill.PATH.resolve(), SKILL.resolve())
+        self.assertIn("coach", coach_skill.NAMES)
+        self.assertEqual(coach_skill.path("coach").resolve(), SKILL.resolve())
         manifest = (SKILL.parents[2] / "plugin.yaml").read_text()
         self.assertIn("name: limitless\n", manifest)
 
@@ -265,7 +265,7 @@ class Register(unittest.TestCase):
                 self.assertNotIn(str(exc), prompt_rules.HOST_FAILED)
                 self.assert_rest_registered(ctx)
                 self.assertEqual(ctx.cards, schedule_cards.cards())
-                self.assertEqual(ctx.skills, ["coach"])
+                self.assertEqual(ctx.skills, ["coach", "learn"])
 
     def test_a_duplicate_id_is_caught(self):
         ctx = PluginSectionCtx()
