@@ -23,6 +23,11 @@ Every delivered message is then held to its shape (limitless/message_shape.py): 
 config message_max_lines lines (default 6) and message_max_line_chars characters a line (default 160), extra
 middle lines folded into one "and N more lines in the plugin" line in words, the Reply and Why-now lines kept.
 When anything was folded or cut, one content-free tier_audit row (counts only) is written.
+A message Sleep mode holds goes to held.jsonl for the 'Back from nap' message once, not once per retry
+(limitless/held.py): rows with the same --once key, else the same dedupe key (the message without its why
+line), are one message; the newest copy replaces the older one, rows stay in order of their newest hold, and
+the file is replaced whole (mode 0600). Every hold still writes its own log row ("held (sleep mode)"), so
+the delivery audit sees each attempt. held.rows() is the reader: it lists each held message once.
 """
 import json
 import os
@@ -34,6 +39,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import held  # noqa: E402
 from limitless import message_shape  # noqa: E402
 from limitless import quiet as q  # noqa: E402
 from limitless import send_gate as g  # noqa: E402
@@ -126,8 +132,8 @@ def main(argv):
         lines = [ln for ln in body.splitlines() if ln.strip()]
         (ST / "asks-latest.json").write_text(json.dumps({"at": int(now), "count": len(lines), "lines": lines[:20]}))
     elif verdict == "hold":
-        with open(ST / "held.jsonl", "a") as f:  # delivered inside the 'Back from nap' message
-            f.write(json.dumps({"at": int(now), "tag": tag, "title": title, "body": body[:1000]}) + "\n")
+        # delivered inside the 'Back from nap' message; one row per message (once key, else dedupe key)
+        held.add(ST / "held.jsonl", {"at": int(now), "tag": tag, "title": title, "body": body[:1000]}, once)
     elif verdict == "send":
         reason = why if why is not None else os.environ.get("KEVIN_PUSH_WHY", "")
         text = g.outgoing(body, g.why_line(reason if reason.strip() else g.why_reason(cls, title)))

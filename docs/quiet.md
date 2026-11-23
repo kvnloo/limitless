@@ -27,6 +27,18 @@ no times of day and no durations anywhere in this.
   any message source, and a quiet night whose wake events cannot be read: it fails open, never mutes forever
   by accident. `quiet` (off) is the one setting that lasts until `on`.
 
+## Held by Sleep mode, kept once
+
+Without quiet, Sleep mode holds a non-critical push instead of dropping it: `bin/kevin-push` keeps it in
+`held.jsonl` (kevin-push state dir) for the "Back from nap" message. Senders retry every pass (the wake brief
+retries every sync until it goes out), so `limitless/held.py` keeps one row per message: the same `--once KEY`,
+else the send gate's dedupe key (title and body without the why-now line, card ids removed). The newest copy
+replaces the older one, rows stay in order of their newest hold, and the file is replaced whole (temp file,
+mode 0600). A different message is never dropped. Each hold still writes its own `"held (sleep mode)"` row to
+`log.jsonl`, so the delivery audit sees every attempt. `held.rows()` lists each held message once, also from
+a file an older version wrote with repeats; a line it cannot read is skipped there and kept as it is on the
+next hold, never a traceback.
+
 ## Why now
 
 Every message that goes out ends with exactly one plain line, `Why now: ...`. `limitless-jobs` passes the
