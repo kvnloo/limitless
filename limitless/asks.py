@@ -27,10 +27,16 @@ removed with the send gate's ``scrub``.
 The queue is JSONL, one ask per line, at ``$LIMITLESS_ASKS`` or config ``asks_path``:
 
     {"id", "kind": decision|approval|fyi, "effort": deep|light, "title", "at", "urgent": bool,
+     "answers": ["Approve", "Deny", "Later"],   # optional one-tap replies; default Yes / No / Later
      "delivered_at": epoch | iso}   # set by the host once the ask really reached the person
 
 This module only reads it. A missing, unreadable or malformed file is an empty plan; a bad line
 is skipped. A row with ``delivered_at`` is done and is not planned again.
+
+One tap: ``render(ask)`` is the ask as the person sees it, its title then one choices line from its own
+``answers`` field (2-4 one-word options), default ``Reply: Yes / No / Later``. ``reply(ask, text)`` reads
+a reply back whole (one_tap.parse, as the habit replies are read): an option is ``answered``; ``Later``
+or anything else leaves the ask ``waiting``, never a no.
 
 The window comes from the decision-window chain (``window_chain.first_known``), a
 ``decision_window.WindowState`` or a ``window.py`` envelope; nothing here reads a clock.
@@ -44,7 +50,7 @@ import os
 from pathlib import Path
 from typing import Any, Iterable, List, Mapping, Optional, Tuple
 
-from . import decision_window, jobs
+from . import decision_window, jobs, one_tap
 from .send_gate import scrub
 from .state_reader import config, parse_ts
 
@@ -138,10 +144,48 @@ def plan(asks: Optional[Iterable], window: Any, sent_this_window: Any = 0) -> Li
     return [out[i] for i in range(len(rows))]
 
 
-def _reason(ask: Any, why: str) -> str:
+def _title(ask: Any) -> str:
     title = ask.get("title") if isinstance(ask, dict) else None
-    title = " ".join(scrub(title).split()).strip(" :")[:TITLE_MAX] if isinstance(title, str) else ""
+    return " ".join(scrub(title).split()).strip(" :")[:TITLE_MAX] if isinstance(title, str) else ""
+
+
+def _reason(ask: Any, why: str) -> str:
+    title = _title(ask)
     return scrub(f"{title}: {why}" if title else why)
+
+
+# One tap (L14): an ask the person sees ends in its own choices line; a reply is read back whole.
+NO_TITLE = "Something is waiting on you"
+LATER = "Later"
+ANSWERED, WAITING = "answered", "waiting"
+
+
+def answers(ask: Any) -> tuple:
+    """The ask's one-tap replies: its own ``answers`` field when that is 2-4 one-word options
+    (one_tap.options_ok), else Yes / No / Later."""
+    own = ask.get("answers") if isinstance(ask, dict) else None
+    if isinstance(own, (list, tuple)) and one_tap.options_ok(own):
+        return tuple(own)
+    return one_tap.YES_NO_LATER
+
+
+def render(ask: Any) -> str:
+    """The text the person gets for one ask: its title in plain words (card ids removed, one line), then its
+    choices line, so one_tap.is_one_tap holds. Pure: the host sends it, through the send gate."""
+    return f"{_title(ask) or NO_TITLE}\n{one_tap.choices_line(answers(ask))}"
+
+
+def reply(ask: Any, text: Any) -> dict:
+    """``{id, answer, action, reason}`` for one reply to a rendered ask: ``answered`` with the option the whole
+    reply names (one_tap.parse), else ``waiting``. Later is always waiting, never a no; any other reply
+    changes nothing. Pure: never echoes the reply, never writes the queue (the host sets ``delivered_at``)."""
+    aid = ask.get("id") if isinstance(ask, dict) else None
+    got = one_tap.parse(text, answers(ask))
+    if got is None:
+        return {"id": aid, "answer": None, "action": WAITING, "reason": "not one of its choices: the ask stays waiting"}
+    if got.lower() == LATER.lower():
+        return {"id": aid, "answer": got, "action": WAITING, "reason": "Later: the ask stays waiting, never a no"}
+    return {"id": aid, "answer": got, "action": ANSWERED, "reason": "a whole reply that names one of its choices"}
 
 
 def queue_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[str]:
