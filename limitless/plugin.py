@@ -2,7 +2,8 @@
 ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=None, is_async=False,
 description="", emoji="", override=False), ctx.register_hook(hook_name, callback) and, when the host has it,
 ctx.register_command(name, handler, description="", args_hint="") for the ``/limitless mode`` slash command
-(attention modes, modes.py). Hooks: pre_llm_call (the state card) and post_gateway_admission (bedtime capture,
+(attention modes, modes.py) and, when the host has it, ctx.register_schedule_card(card) for each job's schedule card
+(schedule_cards.py; a proposed name, not in the published API yet). Hooks: pre_llm_call (the state card) and post_gateway_admission (bedtime capture,
 bedtime.py).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
@@ -11,16 +12,19 @@ result is recorded by tier_audit (content-free).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from datetime import date
 from typing import Callable
 
-from . import bedtime, capture, card, catchup, labeler, modes, scorecard, stop_rule, tier_audit, tools
+from . import (bedtime, capture, card, catchup, jobs_runner, labeler, modes, schedule_cards, scorecard, stop_rule,
+               tier_audit, tools)
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
 TOOLSET = "limitless"
+logger = logging.getLogger(__name__)
 _ENVELOPE = ("Returns an evidence envelope {value, modality (measured|imported|proxy|self_report|messages), age_h, "
              "evidence_tier}; value null means no data and comes with a reason. Never guess a missing value.")
 
@@ -114,6 +118,10 @@ def _flow_metrics(args, now):
 
 def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
+
+
+def _schedule(args, now):
+    return tools.schedule(_reader(), now)
 
 
 def _loop(args, now):
@@ -315,6 +323,14 @@ never trigger a rule; no rule uses a clock time. The value is {action, because, 
 names used), note}, digit-free; modality derived, evidence_tier the weakest of the labels used. It only \
 suggests: the agent must ask the person before doing anything. Read-only; nothing is written, sent, \
 scheduled or started."), _propose, "🪶"),
+    "limitless_schedule": (_schema(
+        "limitless_schedule",
+        "Every recurring Limitless job (wake brief, back from nap, the bedtime question, the habit check-in, \
+the week review, the break nudge) as one Hermes schedule card: the event that wakes it (never a clock time), \
+the event that ends it, its decision window, how late its trigger may be (stale_after_s), its once-per-event \
+key in words, the send gate's daily cap and whether limitless-jobs or another sender sends it. `lines` and the \
+label are plain words; the raw fields are only in value. Read-only: nothing is written, sent, scheduled or \
+registered."), _schedule, "🗓️"),
 }
 
 
@@ -324,6 +340,21 @@ def _mode_command(raw_args: str) -> str:
         return modes.command(raw_args, state_dir())
     except Exception:  # noqa: BLE001 - a slash command must never raise into the session
         return modes.NOT_SET
+
+
+def _register_cards(ctx) -> None:
+    """Each job's schedule card to a host whose ctx has register_schedule_card (feature detection), one call
+    per card. Without it nothing is registered and one content-free line is logged; a host that raises gets
+    one content-free line too. Never raises: register goes on either way."""
+    method = getattr(ctx, schedule_cards.HOST_METHOD, None) if hasattr(ctx, schedule_cards.HOST_METHOD) else None
+    if not callable(method):
+        logger.info(schedule_cards.NO_HOST)
+        return
+    try:
+        for c in schedule_cards.cards(external=jobs_runner.external_jobs()):
+            method(c)
+    except Exception:  # noqa: BLE001 - a host's card API must never break plugin registration
+        logger.warning(schedule_cards.HOST_FAILED)
 
 
 def register(ctx) -> None:
@@ -341,3 +372,5 @@ def register(ctx) -> None:
     # bedtime capture (off unless config bedtime_capture is "on"): an admitted message in an asleep or
     # wind_down window is saved for tomorrow and acknowledged; any error lets it through to the agent
     ctx.register_hook("post_gateway_admission", bedtime.make_post_gateway_admission(clock=lambda: time.time()))
+    # every recurring job as a Hermes schedule card, when the host can take them (schedule_cards.py)
+    _register_cards(ctx)
