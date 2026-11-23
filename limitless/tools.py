@@ -14,7 +14,7 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, e
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
                scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
-               weekly_target as _weekly_target)
+               weekly_target as _weekly_target, wind_down)
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            PRESLEEP_HR_CONFIG, RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
@@ -738,6 +738,45 @@ def presleep_hr(reader: StateReader, now: float, raw: bool = False, env: Optiona
     out = envelope(value, got["modality"], got["age_h"])
     out["label"] = got["label"]
     return out
+
+
+BREATHING_MODALITY = "derived"     # from config and inputs.json's wearable age, not a measure of breathing
+BREATHING_HIDDEN = "a link is set"
+BREATHING_NOT_USED = ("a link is configured but not used: it must be one link with a scheme such as example://, "
+                      "no space and no digit")
+BREATHING_NOTE = ("a suggestion only: the wind-down line offers the person's own app by its link; nothing here "
+                  "opens it, counts breaths, sets a pace or sends")
+
+
+def breathing(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None) -> dict:
+    """limitless_breathing: whether the wind-down line offers slow breathing in the person's own app (config
+    ``wind_down_breathing_link``, wind_down.breathing_link) and whether live heart data backs it.
+
+    ``value: {link_set, heart_data}``: ``heart_data`` is "with live heart data" only when inputs.json says the
+    wearable is recording now (wind_down.wearable_live, the rule limitless_status uses), else "without heart
+    data". With a link set, ``link`` is the link itself only with ``raw`` (LIMITLESS_RAW_IN_PROMPT), otherwise
+    "a link is set"; a configured value that cannot ride in the line gets a ``note`` and is never echoed.
+    Modality derived; ``age_h`` the wearable input's age (None when down or unknown); evidence_tier that of a
+    measured input of that age. A digit-free T1 label. No breath count, pace, heart rate or heart rate
+    variability value. Read-only; nothing is written or sent.
+    """
+    cfg = config(env, home)
+    link = wind_down.breathing_link(cfg)
+    inputs = reader.inputs()
+    age = wind_down.wearable_age_h(inputs, now)
+    words = wind_down.breathing_words(wind_down.wearable_live(inputs, now))
+    value = {"link_set": link is not None, "heart_data": words}
+    if link is not None:
+        value["link"] = link if raw else BREATHING_HIDDEN
+    else:
+        v = cfg.get(wind_down.BREATHING_KEY)
+        if v is not None and not (isinstance(v, str) and not v.strip()):
+            value["note"] = BREATHING_NOT_USED
+    label = f"breathing link set, {words}" if link is not None else "breathing link off"
+    return {"value": value, "modality": BREATHING_MODALITY, "age_h": age,
+            "evidence_tier": _envelope_tier("measured", age), "label": _t1(label, BREATHING_MODALITY),
+            "note": BREATHING_NOTE}
 
 
 def quiet(state_dir, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:

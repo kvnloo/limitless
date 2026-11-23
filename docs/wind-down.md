@@ -61,6 +61,10 @@ Your wind-down has started. Do you know the one thing that matters most tomorrow
 Reply: Yes / No / Later
 ```
 
+Optional breathing choice: config `wind_down_breathing_link` (off by default) adds one more choice to this
+same line, "or slow breathing in your app (with live heart data | without heart data): <link>", still one line
+and no new push ([breathing-link.md](breathing-link.md)).
+
 Tests: `tests/test_wind_down.py` (choice, off, Glide nudged, wording) and `tests/test_wind_down_miq.py` (body
 order, one send-gate call per wind-down, the same gate calls with and without the line, quiet and Sleep mode
 hold the whole push, the tier audit row).
