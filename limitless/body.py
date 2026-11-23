@@ -12,6 +12,8 @@ in either window is "not enough measurements": unknown, never a guess.
 
 Modality: "measured" when every row in both windows is calibrated (the app's estimate is fitted against
 reference scans), else "proxy". The label says which: "(calibrated estimate)" or "(uncalibrated estimate)".
+body_calibration wraps this: it fits the scale rows to reference scans in the same file and passes the
+corrected rows here; its words then say "(calibrated against reference scans)".
 
 Tiers: the numbers here are T0 and stay in code; ``label`` and ``review_line`` are T1 words with no digit.
 No score, no target, no goal, no advice: a direction only. Nothing here reads the clock, writes or sends.
@@ -33,8 +35,10 @@ FLAT_POINTS = 0.5
 FLAT_CONFIG = "body_flat_points"
 NOT_ENOUGH = "not enough measurements"
 CALIBRATED, UNCALIBRATED = "calibrated estimate", "uncalibrated estimate"
+REFERENCE_CALIBRATED = "calibrated against reference scans"   # body_calibration fitted the scale rows
 DIRECTIONS = ("down", "flat", "up")
-LABELS = (NOT_ENOUGH,) + tuple(f"body fat trending {d} ({c})" for d in DIRECTIONS for c in (CALIBRATED, UNCALIBRATED))
+LABELS = (NOT_ENOUGH,) + tuple(f"body fat trending {d} ({c})" for d in DIRECTIONS
+                               for c in (CALIBRATED, UNCALIBRATED, REFERENCE_CALIBRATED))
 
 
 def _num(v) -> Optional[float]:

@@ -12,7 +12,9 @@ scans, so the trend is worth seeing once a week; the raw numbers are tier T0 and
   A change under `body_flat_points` (config, default 0.5 points) is flat. Fewer than three visits in either
   window is `not enough measurements`.
 - **Modality**: `measured` when every row in both windows is calibrated, else `proxy`; the words say
-  `(calibrated estimate)` or `(uncalibrated estimate)`.
+  `(calibrated estimate)` or `(uncalibrated estimate)`. With reference scans (DXA) in the same file the
+  scale rows are fitted to them first and the words say `(calibrated against reference scans)`; see
+  [body-calibration.md](body-calibration.md).
 - **Tool** `limitless_body`: an envelope whose value is the counts and the label; the medians and the change
   appear only with `LIMITLESS_RAW_IN_PROMPT=1` (the card's opt-in). No file or no valid row is
   `value: null` with a reason: unknown, not zero. tier_audit logs the label like any other tool result.

@@ -345,7 +345,7 @@ over catchup_after_h, default a day) or not away. Read-only; nothing is sent."),
         "limitless_body",
         "The body fat trend from the body-composition file (config body_file): the median of the last two \
 weeks against the two weeks before, in plain words: trending down, flat or up (calibrated or uncalibrated \
-estimate), or not enough measurements. Counts and the label only; raw numbers need the person's raw opt-in. \
+estimate, or calibrated against reference scans when the file holds them), or not enough measurements. Counts and the label only; raw numbers need the person's raw opt-in. \
 A direction only: no score, no goal, no advice. Read-only; nothing is sent."), _body, "⚖️"),
     "limitless_overnight": (_schema(
         "limitless_overnight",
