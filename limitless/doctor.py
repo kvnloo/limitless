@@ -8,7 +8,8 @@ last sync run's age in words from runs.jsonl, one row per tool in plugin.yaml, f
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
 open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
 its mark noop-export.json) and, before both, the context packet's row (config context_packet_path: off, live
-when written within STALE_H, else stale; read from the packet's own generated_at).
+when written within STALE_H, else stale; read from the packet's own generated_at), with the voice MIQ's row
+(config voice_miq, its mark voice-miq.json) just before it.
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -142,6 +143,30 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     if outcome == jobs_runner.NOOP_NOTHING:
         return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}: {said}")
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
+
+
+VOICE_MIQ_ROW = "job voice MIQ"
+_VOICE_MODE_WORDS = {"dry_run": "dry run mode (nothing written)", "write": "write mode"}
+
+
+def voice_miq_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
+    """The voice MIQ (voice_miq.run, config ``voice_miq``) from config and its mark voice-miq.json: off by config;
+    missing without the call sessions dir (config ``voice_miq_sessions``); else live, with the mode and when the
+    last spoken MIQ answer was captured. Never reads a call. Words only."""
+    from . import voice_miq   # voice_miq -> jobs_runner -> card
+    mode = voice_miq.mode(cfg)
+    if mode == voice_miq.OFF:
+        return _row(VOICE_MIQ_ROW, "job", OFF, f"the voice MIQ is off (config {voice_miq.CONFIG_KEY})")
+    sessions = voice_miq.sessions_dir(cfg)
+    if sessions is None:
+        return _row(VOICE_MIQ_ROW, "job", MISSING, f"on, but the call sessions dir is not configured (config "
+                                                   f"{voice_miq.SESSIONS_KEY})")
+    if not sessions.is_dir():
+        return _row(VOICE_MIQ_ROW, "job", MISSING, "on, but the call sessions dir does not exist")
+    at = voice_miq.load_mark(reader.path).get("captured_at")
+    said = "no spoken MIQ answer captured yet" if at is None else \
+        f"last spoken MIQ answer captured {age_words(max(0.0, now - at) / 3600)}"
+    return _row(VOICE_MIQ_ROW, "job", LIVE, f"{_VOICE_MODE_WORDS[mode]}: {said}")
 
 
 PACKET_ROW = "export context packet"
@@ -308,7 +333,7 @@ def tool_row(name: str, now: float) -> dict:
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), then the NOOP export job
-    (noop_export_row).
+    (noop_export_row). The voice MIQ's row (voice_miq_row) comes just before the context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -316,6 +341,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
+    rows += [voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
