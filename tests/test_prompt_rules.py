@@ -70,6 +70,57 @@ class Content(unittest.TestCase):
             self.assertNotIn(banned, src)
 
 
+SKILL = Path(__file__).resolve().parents[1] / "skills" / "coach" / "SKILL.md"
+# each rule line of the section -> the phrases of the matching rule in skills/coach/SKILL.md (whitespace folded)
+DRIFT = {
+    "- Quote the tools' labels, not raw numbers, unless the person opted in.":
+        ["Quote the tools' digit-free labels", "not raw numbers, unless the person opted in"],
+    "- A null value is unknown: unknown is never zero and never a no.":
+        ["A null value with a `reason` is unknown", "Unknown is never zero and never a no"],
+    "- Explain, suggest and prepare; commit only on the person's yes in this turn.":
+        ["- Explain:", "- Suggest:", "- Prepare:", "only after the person says yes in this turn"],
+    "- One habit a week; a skipped day is unlogged, never a miss.":
+        ["One habit a week", "A skipped or unanswered day is unlogged", "never a miss"],
+    "- Cues are events, never a clock time.":
+        ["Cues are events", "never a clock time"],
+    "- Nudges go only through the plugin's own jobs and send gate; never schedule one yourself.":
+        ["goes only through the plugin's own jobs", "its send gate", "never a reminder you schedule yourself"],
+    "- Never advise on drugs, medicines, vitamins or amounts to take; never diagnose; no capability score.":
+        ["Never advise on drugs, medicines, pills, vitamins or any amount of anything to take", "Never diagnose",
+         "Never give a capability score"],
+    "- For coaching, open the limitless:coach skill.":
+        ["name: coach", "# Limitless coach"],
+}
+
+
+def rule_lines(content=None):
+    return [ln for ln in (content or prompt_rules.CONTENT).splitlines() if ln.startswith("- ")]
+
+
+def fold(s):
+    return " ".join(s.split())
+
+
+class NoDrift(unittest.TestCase):
+    """Every rule line of the section has a matching rule in the coach skill."""
+
+    def test_every_rule_line_is_mapped(self):
+        self.assertEqual(rule_lines(), list(DRIFT))
+        self.assertEqual(len(prompt_rules.CONTENT.splitlines()), len(DRIFT) + 1)   # plus the heading
+
+    def test_every_rule_line_has_its_rule_in_the_coach_skill(self):
+        skill = fold(SKILL.read_text())
+        missing = [(ln, p) for ln in rule_lines() for p in DRIFT.get(ln, ["<unmapped>"]) if fold(p) not in skill]
+        self.assertEqual(missing, [])
+
+    def test_the_coach_skill_it_names_is_the_registered_one(self):
+        from limitless import coach_skill
+        self.assertEqual(coach_skill.NAME, "coach")
+        self.assertEqual(coach_skill.PATH.resolve(), SKILL.resolve())
+        manifest = (SKILL.parents[2] / "plugin.yaml").read_text()
+        self.assertIn("name: limitless\n", manifest)
+
+
 class SectionCtx:
     """A host with register_system_prompt_section(id, content, *, position, max_chars) and its checks."""
 

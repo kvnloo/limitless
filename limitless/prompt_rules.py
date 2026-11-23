@@ -7,7 +7,14 @@ short lines, into every new session's system prompt, so any agent in the profile
 CONTENT is a constant: it reads no state, no config and no clock, holds no digit (so it is T1 by the
 tier_audit rule), no clock time and no host data, and is the same bytes every session (prompt-cache
 friendly). The state card stays the only data path. Every rule line has a matching rule in the coach skill
-(tests/test_prompt_rules.py checks there is no drift). Stdlib only, Python 3.9+.
+(tests/test_prompt_rules.py checks there is no drift).
+
+Host registration (plugin.register, last): config ``prompt_rules`` false (or "off") registers nothing and logs
+one content-free line, DISABLED. A host ctx with a callable ``register_system_prompt_section`` (HOST_METHOD;
+Hermes ``register_system_prompt_section(id, content, *, position="after_memory", max_chars=...)``) gets one call
+with SECTION_ID, CONTENT, POSITION and MAX_CHARS. A host without it gets nothing and one content-free line,
+NO_HOST; a host that raises (a duplicate id, anything) gets one, HOST_FAILED, and register goes on. No tool, no
+job, no write. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
