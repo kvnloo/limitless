@@ -43,6 +43,7 @@ NO_LINK = "no memory palace link set"
 OFF, FITS, NOT_NOW = "off", "fits now", "not now"
 MUTED = "pushes are muted (or quiet could not be read), so this waits until quiet ends"
 ANKI = "an Anki review was offered in this trough, and one learning offer per trough is enough"
+BROKEN = "the inputs could not be read, so this waits"
 TODAY = "already offered since you woke (or it is not clear when you woke), so not again until the next wake"
 
 

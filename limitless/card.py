@@ -26,6 +26,10 @@ The same trough, once per wake event and only after work landed in the work queu
 adds the explain-back offer "Explain back: say what landed in one breath. Reply: Voice / Later" on a line of its
 own after the card (outside MAX_LINES, so the Reply choices stay whole); once the gate lets that card through,
 the hook marks the wake as offered (explain-back.json). build() adds it only when given ``explain_offer``.
+The same trough, with config ``palace_link`` set, no Anki offer on this card, not muted and once per wake event
+(palace.for_turn), adds "A short memory palace walk fits now. <link>" on a line of its own after the card
+(outside MAX_LINES, so the link stays whole); once the gate lets that card through, the hook marks the wake as
+offered (palace.json). build() adds it only when given ``palace_offer``.
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
 MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -40,6 +44,7 @@ from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Optional
 
 from . import anki as _anki, bedtime, explain_back as _explain_back, flow_week, modes, peak as _peak, phase as _phase
+from . import palace as _palace
 from . import labeler as _labeler
 from . import tier_audit, tools
 from . import weekly_target as _weekly_target
@@ -217,11 +222,23 @@ def explain_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapp
         return None, None
 
 
+def palace_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapping[str, str]] = None,
+                 anki_line: Optional[str] = None) -> dict:
+    """palace.for_turn in the window anki_offer sees, with this turn's Anki offer: ``{line, wake, word, reason,
+    words}``. Read-only; never raises (an error is no offer)."""
+    try:
+        return _palace.for_turn(reader, now, _trough_state(reader, now, win, env), anki_line or "", env)
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return {"line": None, "wake": None, "word": _palace.NOT_NOW, "reason": _palace.BROKEN,
+                "words": f"{_palace.NOT_NOW}: {_palace.BROKEN}"}
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
-          explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET) -> dict:
+          explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET,
+          palace_offer: Optional[str] = None) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
@@ -285,6 +302,8 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
         else:
             lines[1] += f"; {lit}"
     lines = lines[:MAX_LINES]
+    if palace_offer:
+        lines.append(palace_offer)    # its own line, outside MAX_LINES: the link stays whole
     if explain_offer:
         lines.append(explain_offer)   # its own last line, outside MAX_LINES: the Reply choices stay whole
     if not raw and MASK_DIGITS and mask:
@@ -310,6 +329,7 @@ class CardCache:
     def __init__(self):
         self._key, self._text, self.builds = None, None, 0
         self.wake = None   # the wake event of the last get's explain-back offer, for the hook's mark
+        self.palace = None   # (line, wake) of the last get's memory palace offer, for the hook's mark
 
     def get(self, reader: StateReader, now: float, today: date, raw: bool = False,
             bands: Optional[Mapping] = None, labeler: Optional[Callable] = None,
@@ -320,13 +340,15 @@ class CardCache:
         offer = anki_offer(reader, now, win, env)   # Glide's block and the mode change it too: part of the key
         lit = light_line(reader, now, env)   # the light part ends with time since the wake: part of the key
         explain, self.wake = explain_offer(reader, now, win, env)   # the mark and landed work change it too
+        pal = palace_offer(reader, now, win, env, offer)   # quiet and its mark change it too: part of the key
+        self.palace = (pal["line"], pal["wake"]) if pal["line"] else None
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env), word, offer, lit, explain)
+               _passive_mtime(reader, env), word, offer, lit, explain, pal["line"])
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
-                               explain_offer=explain)["text"]
+                               explain_offer=explain, palace_offer=pal["line"])["text"]
             self._key = key
             self.builds += 1
         return self._text
@@ -355,6 +377,8 @@ def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[
             return None
         if cache.wake is not None and _explain_back.OFFER in text.splitlines():
             _explain_back.mark(reader.path, cache.wake, now)   # offered once for this wake event
+        if cache.palace is not None and cache.palace[1] is not None and cache.palace[0] in text.splitlines():
+            _palace.mark(reader.path, cache.palace[1], now)   # the one palace offer for this wake event
         return {"context": text}
 
     return pre_llm_call
