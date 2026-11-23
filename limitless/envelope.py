@@ -1,11 +1,12 @@
 """Evidence envelope: the one shape every limitless tool result takes.
 
-    {"value": ..., "modality": measured|imported|proxy|self_report, "age_h": float|None,
+    {"value": ..., "modality": measured|imported|proxy|self_report|messages, "age_h": float|None,
      "evidence_tier": direct|indirect|stale|none}
 
 Missing data is ``value: None`` plus a ``reason``; nothing is ever filled in by a guess.
 evidence_tier is a label for how the value was obtained, not a score:
-direct = measured, imported or self-reported and at most STALE_H old; indirect = a fresh proxy;
+direct = measured, imported, self-reported or read from message timestamps (``messages``: when the
+person last wrote to an agent) and at most STALE_H old; indirect = a fresh proxy;
 stale = older than STALE_H or of unknown age; none = no value.
 
 A result may also carry ``label``: a T1 label (labeler.py) next to the value, added by with_label only
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-MODALITIES = ("measured", "imported", "proxy", "self_report")
+MODALITIES = ("measured", "imported", "proxy", "self_report", "messages")
 STALE_H = 24.0
 
 

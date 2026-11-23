@@ -16,8 +16,8 @@ class Envelope(unittest.TestCase):
         self.assertEqual(env["modality"], "proxy")
         self.assertEqual(env["age_h"], 3.2)  # one decimal
 
-    def test_modality_is_one_of_four(self):
-        self.assertEqual(e.MODALITIES, ("measured", "imported", "proxy", "self_report"))
+    def test_modality_is_one_of_five(self):
+        self.assertEqual(e.MODALITIES, ("measured", "imported", "proxy", "self_report", "messages"))
         for m in e.MODALITIES:
             self.assertEqual(e.envelope(1, m, 0)["modality"], m)
         with self.assertRaises(ValueError):
