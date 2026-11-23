@@ -139,13 +139,16 @@ def habit_week_gate(habit: Optional[dict], today: date) -> Optional[Verdict]:
 
     Started: habit.json names a habit and its ``week_of`` is today or up to six days back (days one to
     seven). No habit, no valid week_of or a week_of after today: "no habit week started". From day
-    eight on: "habit week over", so the check-in never runs past its week without a new start.
+    eight on: "habit week over", so the check-in never runs past its week without a new start. A week
+    with a Keep or Drop decision (the reply to its week review) is finished: "habit week closed".
     """
     start = _week_start(habit)
     if start is None or start > today:
         return Verdict(DROP, NO_WEEK)
     if today >= start + timedelta(days=HABIT_WEEK_DAYS):
         return Verdict(DROP, "habit week over")
+    if habit_decision(habit) is not None:
+        return Verdict(DROP, "habit week closed")
     return None
 
 
