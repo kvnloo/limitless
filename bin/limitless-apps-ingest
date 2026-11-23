@@ -12,7 +12,6 @@ set it reads nothing and says so. The state dir is $LIMITLESS_STATE, else "state
 Nothing here sends.
 """
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
@@ -35,15 +34,8 @@ def main(argv):
               f"\"{habit_replies.CONFIG_KEY}\"): nothing read, nothing written")
         return 0
     replies = habit_replies.replies_from_hermes_db(db, apps_reply.read_after(state, now))
-    got = apps_reply.ingest(state, replies, now, dry_run=not args.write)
-    for r in got["rows"]:
-        lists = f"{', '.join(r['lists'])}: " if r["lists"] else ""
-        print(f"{r['reply_at'] or 'no reply'}: {r['action']}: {lists}{r['reason']}")
-    if got["apps"] is not None:
-        verb = "wrote" if args.write else "would write"
-        print(f"{verb} {apps_reply.APPS_FILE}: {json.dumps(got['apps'])}")
-    if not args.write:
-        print(f"dry run: nothing written (--write writes {apps_reply.APPS_FILE})")
+    for line in apps_reply.lines(apps_reply.ingest(state, replies, now, dry_run=not args.write), args.write):
+        print(line)
     return 0
 
 

@@ -235,3 +235,17 @@ def host_list(key: str, env: Optional[Mapping[str, str]] = None, home: Optional[
     """list_for with the host config (state_reader.config) and state dir (state_reader.state_dir)."""
     from .state_reader import config, state_dir
     return list_for(key, config(env, home), state_dir(env, home), env)[0]
+
+
+def lines(got: dict, written: bool) -> list:
+    """The CLI's plain lines for an ingest() result: one per row, then what it wrote or would write (the
+    one place a name is shown, to the person running it), then the dry-run note."""
+    out = []
+    for r in got["rows"]:
+        lists = f"{', '.join(r['lists'])}: " if r["lists"] else ""
+        out.append(f"{r['reply_at'] or 'no reply'}: {r['action']}: {lists}{r['reason']}")
+    if got["apps"] is not None:
+        out.append(f"{'wrote' if written else 'would write'} {APPS_FILE}: {json.dumps(got['apps'])}")
+    if not written:
+        out.append(f"dry run: nothing written (--write writes {APPS_FILE})")
+    return out
