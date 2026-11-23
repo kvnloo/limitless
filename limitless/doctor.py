@@ -414,7 +414,7 @@ def apps_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> dict:
 
 APPS_ASK_ROW = "apps ask"
 APPS_ASK_WORDS = {   # apps_ask.state -> (status, reason); never an app name, a count or a date
-    "off": (OFF, "off: the wake brief never asks for the app lists (config apps_ask)"),
+    "off": (OFF, "the wake brief never asks for the app lists (config apps_ask)"),
     "waiting": (LIVE, "waiting: the next wake brief proposes the app lists once app time names a work or feed app"),
     "told recently": (LIVE, "told recently: asked in a delivered brief this week; asked again after a week if "
                             "both lists stay unset"),

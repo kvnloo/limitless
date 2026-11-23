@@ -37,7 +37,8 @@ class Row(unittest.TestCase):
 
     def test_off(self):
         r = self.row(apps_ask="off")
-        self.assertEqual((r["status"], r["reason"].split(":")[0]), (doctor.OFF, "off"))
+        self.assertEqual((r["status"], r["reason"]), (doctor.OFF, doctor.APPS_ASK_WORDS["off"][1]))
+        self.assertEqual(doctor.text([r]), "apps ask: off: the wake brief never asks for the app lists (config apps_ask)")
 
     def test_waiting(self):
         r = self.row()
