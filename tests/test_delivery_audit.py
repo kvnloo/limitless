@@ -117,5 +117,189 @@ class Parsing(unittest.TestCase):
             self.assertEqual(da.read_log(p), ([row(0)], 1))
 
 
+class Cap(unittest.TestCase):
+    def test_default_cap_is_the_send_gates_own(self):
+        self.assertEqual(da.push_cap({}), send_gate.DAILY_CAP)
+        self.assertEqual(run([row(0)])["cap"], send_gate.DAILY_CAP)
+
+    def test_config_push_cap_is_read_and_bad_values_fall_back(self):
+        self.assertEqual(da.push_cap({"push_cap": 3}), 3)
+        for bad in (0, -1, True, "4", 2.5, None, [3]):
+            self.assertEqual(da.push_cap({"push_cap": bad}), send_gate.DAILY_CAP, bad)
+        self.assertEqual(da.push_cap(None), send_gate.DAILY_CAP)
+
+    def test_days_over_the_cap(self):
+        cap = send_gate.DAILY_CAP
+        out = run([row(0)] * (cap + 1) + [row(1)] * cap + [row(2, how="log")] * (cap + 3))
+        self.assertTrue(day(out, 0)["over_cap"])
+        self.assertFalse(day(out, 1)["over_cap"])
+        self.assertFalse(day(out, 2)["over_cap"])
+        self.assertEqual(out["over_cap_days"], [TODAY.isoformat()])
+        self.assertEqual(out["labels"]["push"], "over the push limit on some days")
+
+    def test_a_lower_configured_cap_is_used(self):
+        out = run([row(0)] * 3, cap=2)
+        self.assertEqual(out["over_cap_days"], [TODAY.isoformat()])
+
+    def test_within_the_limit_every_day(self):
+        out = run([row(n) for n in range(7)])
+        self.assertEqual(out["over_cap_days"], [])
+        self.assertEqual(out["labels"]["push"], "within the push limit every day this week")
+
+    def test_within_the_limit_on_the_logged_days_only(self):
+        self.assertEqual(run([row(0)])["labels"]["push"], "within the push limit on every logged day")
+
+
+class WakeBrief(unittest.TestCase):
+    def wake(self, *ago):
+        return [TODAY - timedelta(days=n) for n in ago]
+
+    def test_brief_delivered_on_every_wake_day(self):
+        out = run([brief(0), brief(1)], wake_days=self.wake(0, 1))
+        self.assertEqual((out["wake"]["wake_days"], out["wake"]["brief_delivered"]), (2, 2))
+        self.assertTrue(day(out, 0)["brief"])
+        self.assertEqual(out["labels"]["brief"], "brief reached you on every wake day")
+
+    def test_a_held_or_failed_brief_is_not_delivered(self):
+        out = run([brief(0), brief(1, how="held (sleep mode)"), brief(2, how="log (telegram rc=1)"), brief(3)],
+                  wake_days=self.wake(0, 1, 2, 3))
+        self.assertEqual(out["wake"]["brief_delivered"], 2)
+        self.assertFalse(day(out, 1)["brief"])
+        self.assertEqual(out["labels"]["brief"], "brief reached you on some wake days")
+
+    def test_most_wake_days(self):
+        out = run([brief(0), brief(1), row(2)], wake_days=self.wake(0, 1, 2))
+        self.assertEqual(out["labels"]["brief"], "brief reached you on most wake days")
+        self.assertAlmostEqual(out["wake"]["brief_share"], 2 / 3)
+
+    def test_no_brief_on_any_wake_day(self):
+        out = run([row(0)], wake_days=self.wake(0))
+        self.assertEqual(out["labels"]["brief"], "brief did not reach you on any wake day")
+
+    def test_a_wake_day_with_no_log_rows_is_unknown(self):
+        out = run([brief(0)], wake_days=self.wake(0, 1))
+        self.assertIsNone(day(out, 1)["brief"])
+        self.assertEqual((out["wake"]["wake_days"], out["wake"]["unknown_wake_days"]), (1, 1))
+        self.assertEqual(out["labels"]["brief"], "brief reached you on every wake day")
+
+    def test_no_wake_days_known_is_unknown(self):
+        for wd in (None, [], self.wake(30)):
+            out = run([brief(0)], wake_days=wd)
+            self.assertEqual(out["labels"]["brief"], "brief: unknown, no wake days known", wd)
+            self.assertIsNone(out["wake"]["brief_share"])
+        self.assertIsNone(day(run([brief(0)]), 0)["wake_day"])
+
+    def test_wake_days_may_be_iso_strings_and_bad_ones_are_ignored(self):
+        out = run([brief(0)], wake_days=[TODAY.isoformat(), "someday", 7, None])
+        self.assertEqual(out["wake"]["wake_days"], 1)
+
+    def test_a_brief_on_a_day_that_was_no_wake_day_does_not_count(self):
+        out = run([brief(0), row(1)], wake_days=self.wake(1))
+        self.assertEqual(out["wake"]["brief_delivered"], 0)
+
+
+class ActionLine(unittest.TestCase):
+    def test_a_delivery_without_a_reply_line_is_counted(self):
+        out = run([row(0), row(0, body=f"Decision: keep the loop\n{WHY}"), brief(0)])
+        self.assertEqual(out["no_action"], 2)
+        self.assertEqual(day(out, 0)["no_action"], 2)
+        self.assertEqual(out["labels"]["action"], "some pushes had no reply line")
+
+    def test_message_shapes_reply_line_counts(self):
+        bodies = ["Keep it?\nReply: Keep / Drop\n" + WHY, "Asks\nA1: one\nReply in any bot chat with the id\n" + WHY,
+                  "Keep it?\nReply: Yes / No / Later"]
+        out = run([row(0, body=b) for b in bodies])
+        self.assertEqual(out["no_action"], 0)
+        self.assertEqual(out["labels"]["action"], "every push had a reply line")
+
+    def test_only_deliveries_are_judged(self):
+        out = run([row(0, how="log", body="fyi"), row(0, how="held (sleep mode)", body="later")])
+        self.assertEqual(out["no_action"], 0)
+        self.assertEqual(out["labels"]["action"], "")
+
+    def test_a_body_cut_by_the_log_is_unknown_not_missing(self):
+        long = "Head\n" + "x " * 1200 + "\nReply: Yes / No"
+        cut = long[:da.LOG_BODY_CHARS]
+        out = run([row(0, body=cut), row(0, body=None)])
+        self.assertEqual((out["no_action"], out["action_unknown"]), (0, 1))
+        self.assertEqual(out["labels"]["action"], "every push with a known body had a reply line")
+
+
+class Labels(unittest.TestCase):
+    def test_the_label_joins_the_clauses_in_words(self):
+        out = run([brief(0), row(0)], wake_days=[TODAY])
+        self.assertEqual(out["label"]["label"], "within the push limit on every logged day; "
+                                                "brief reached you on every wake day; some pushes had no reply line")
+        self.assertEqual(out["label"]["tier"], "T1")
+
+    def test_digit_walk_over_every_label(self):
+        cap = send_gate.DAILY_CAP
+        cases = [[], [row(0)], [row(n) for n in range(7)], [row(0)] * (cap + 1), [brief(0), row(0, how="log")],
+                 [row(0, body="x" * da.LOG_BODY_CHARS)], ["junk"]]
+        seen = set()
+        for rows in cases:
+            for wd in (None, [TODAY], [TODAY - timedelta(days=n) for n in range(7)]):
+                for d in (1, 7, 14):
+                    out = run(rows, wake_days=wd, days=d)
+                    words = [out["label"]["label"], *out.get("labels", {}).values()]
+                    for w in words:
+                        self.assertFalse(any(c.isdigit() for c in w), (w, rows, wd))
+                        seen.add(w)
+        seen.add(da.NO_LOG)
+        self.assertFalse(any(c.isdigit() for w in seen for c in w))
+        self.assertIn("unknown: no push log set", seen)
+
+    def test_audit_is_pure(self):
+        rows = [row(0), brief(1)]
+        before = json.dumps(rows)
+        with tempfile.TemporaryDirectory() as d:
+            cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                run(rows, wake_days=[TODAY])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(os.listdir(d), [])
+        self.assertEqual(json.dumps(rows), before)
+
+
+class RealShape(unittest.TestCase):
+    """Rows written by bin/kevin-push itself (fake transport on PATH, temp HOME): nothing reaches a phone."""
+
+    def test_rows_kevin_push_writes_are_audited(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            fakebin = home / "fakebin"
+            fakebin.mkdir()
+            hermes = fakebin / "hermes"
+            hermes.write_text("#!/bin/sh\nexit 0\n")
+            hermes.chmod(hermes.stat().st_mode | stat.S_IEXEC)
+            env = dict(os.environ, HOME=str(home), PATH=f"{fakebin}:{os.environ['PATH']}",
+                       LIMITLESS_SLEEPMODE=str(home / "none.jsonl"), LIMITLESS_STATE=str(home / "st"),
+                       LIMITLESS_CONFIG=str(home / "none.json"))
+            cli = ROOT / "bin" / "kevin-push"
+            for tag, title, body, cls in [("x", "Pick one", "Keep the loop?\nReply: Yes / No", "decision"),
+                                          ("x", "Note", "fyi", "report"),
+                                          ("asks", "Asks waiting on you", "A1: one", "decision"),
+                                          ("limitless", jobs.WAKE_BRIEF.send_title, "Good morning.", "report")]:
+                r = subprocess.run([sys.executable, "-I", str(cli), tag, title, body], timeout=30,
+                                   env=dict(env, CIRCADIAN_CLASS=cls), capture_output=True, text=True)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            got = da.read_log(home / ".local/state/kevin-push/log.jsonl")
+        rows, skipped = got
+        self.assertEqual(skipped, 0)
+        self.assertEqual(set(rows[0]), {"at", "tag", "cls", "title", "body", "how"})
+        when = datetime.fromtimestamp(rows[0]["at"]).date()
+        out = da.audit(rows, wake_days=[when], today=when)
+        self.assertEqual(out["days"][-1]["delivered"], 2)
+        self.assertEqual(out["wake"]["brief_delivered"], 1)
+        self.assertEqual(out["no_action"], 1)       # the wake brief has no reply line
+
+
+class Constants(unittest.TestCase):
+    def test_delivered_is_the_word_jobs_runner_reads(self):
+        self.assertEqual(da.DELIVERED, jobs_runner.DELIVERED)
+
+
 if __name__ == "__main__":
     unittest.main()
