@@ -237,9 +237,13 @@ def read_export(path, since, until) -> dict:
         return _unknown(NO_EXPORT)
 
 
-def _setting(env: Optional[Mapping[str, str]], home: Optional[Path], key: str) -> Optional[str]:
-    v = config(env, home).get(key)
+def _clean(cfg, key: str) -> Optional[str]:
+    v = cfg.get(key) if isinstance(cfg, Mapping) else None
     return v.strip() if isinstance(v, str) and v.strip() else None
+
+
+def _setting(env: Optional[Mapping[str, str]], home: Optional[Path], key: str) -> Optional[str]:
+    return _clean(config(env, home), key)
 
 
 def configured(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> bool:
@@ -252,7 +256,13 @@ def for_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
     """read_events on config ``desktop_aw_url``, else read_export on ``desktop_aw_export`` (a relative path is
     in the state dir), else off: no fetch, no file read. A server that did not answer reads unreachable,
     unasked, for HOLD_S (a desktop that is asleep must not slow every card build)."""
-    url = _setting(env, home, URL_CONFIG)
+    return from_settings(config(env, home), state_dir(env, home), lo, hi, fetch=fetch, timeout=timeout)
+
+
+def from_settings(cfg, state: Path, lo: float, hi: float, fetch: Optional[Fetch] = None,
+                  timeout: float = TIMEOUT_S) -> dict:
+    """for_config on a config mapping already read, with ``state`` the state dir."""
+    url = _clean(cfg, URL_CONFIG)
     if url is not None:
         base = _base(url) or url
         if _HOLD.get(base, -math.inf) > time.monotonic():
@@ -263,10 +273,10 @@ def for_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
         else:
             _HOLD.pop(base, None)
         return got
-    exp = _setting(env, home, EXPORT_CONFIG)
+    exp = _clean(cfg, EXPORT_CONFIG)
     if exp is not None:
         p = Path(exp).expanduser()
-        return read_export(p if p.is_absolute() else state_dir(env, home) / p, lo, hi)
+        return read_export(p if p.is_absolute() else Path(state) / p, lo, hi)
     return _result(None, OFF, OFF_WHY)
 
 
