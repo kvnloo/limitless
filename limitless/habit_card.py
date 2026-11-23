@@ -33,6 +33,7 @@ from typing import Any, Mapping, Optional, Tuple
 
 DONE, NO, SKIP = "Done", "No", "Skip"
 REPLIES = (DONE, NO, SKIP)
+DECISIONS = ("Keep", "Drop")    # the day-seven reply; the person's word decides, never the rule
 MAX_START_S = 120
 WEEK_DAYS = 7
 CHECKINS = "checkins"           # the card state's table: {ISO day: Done | No}
@@ -122,3 +123,10 @@ def week_number(card_state: Optional[Mapping], week_start: Any) -> Optional[dict
     days = [entry(card_state, start + timedelta(days=i)) for i in range(WEEK_DAYS)]
     done, logged = days.count(DONE), days.count(DONE) + days.count(NO)
     return {"done": done, "logged": logged, "unknown": WEEK_DAYS - logged}
+
+
+def verdict_inputs(card_state: Optional[Mapping], week_start: Any, rule: Optional[str] = None) -> Optional[dict]:
+    """What a Keep / Drop rule reads for the week: ``{done, logged, unknown, rule, decisions}``. ``rule`` is passed
+    on as given (the host validates and applies it); nothing here decides. None when there is no week."""
+    n = week_number(card_state, week_start)
+    return None if n is None else dict(n, rule=rule, decisions=DECISIONS)
