@@ -18,11 +18,16 @@ nothing scrolls sideways. The one motion (rows fade in) is CSS only and is off u
 """
 from __future__ import annotations
 
+import hashlib
 import html as _html
+import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
 from . import tier_audit
+from .state_reader import config
 
 KINDS = ("state", "week")
 TITLES = {"state": "Today", "week": "This week"}
@@ -32,6 +37,10 @@ CHIPS = (KNOWN, UNKNOWN, HELD)
 UNKNOWN_WORDS = ("unknown", "not recording", "no digest", "no data", "not enough", "none set")
 HELD_WORDS = ("held", "hold", "holds", "waiting", "muted", "snoozed", "quiet tonight", "paused")
 HOOK = "ui_card:{kind}"
+ENV_KEY = "LIMITLESS_CARD_DIR"
+CONFIG_KEY = "card_dir"
+NO_DIR = (f"no card dir: set {ENV_KEY} or \"{CONFIG_KEY}\" in config.json to keep a card file; "
+          "the card was rendered only, nothing was written")
 
 _CSS = """
 :root{color-scheme:light dark;--bg:#f3f0ea;--card:#fbfaf7;--ink:#33393d;--soft:#6f7478;--line:#e3ded5;
@@ -119,3 +128,41 @@ def render(title, lines, kind: str, env: Optional[Mapping[str, str]] = None, now
             f"<style>\n{_CSS}\n</style></head>\n"
             f'<body><main class="card {esc(kind)}"><h1>{name}</h1>\n<ul>\n{items}\n</ul></main></body></html>\n')
     return {"html": html, "rows": len(kept), "dropped": dropped, "chips": kept}
+
+
+def card_dir(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+    """$LIMITLESS_CARD_DIR, else config "card_dir"; None (render only, write nothing) by default."""
+    env = os.environ if env is None else env
+    v = env.get(ENV_KEY) or config(env, home).get(CONFIG_KEY)
+    return Path(v).expanduser() if isinstance(v, str) and v.strip() else None
+
+
+def name_for(html: str) -> str:
+    """The card's file name: a hash of its content, never a date or a clock time."""
+    return "card-" + hashlib.sha256(html.encode("utf-8")).hexdigest()[:16] + ".html"
+
+
+def write(out_dir, html: str) -> Optional[str]:
+    """Write ``html`` to ``out_dir``/name_for(html) atomically (temp file in out_dir, mode 0600, fsync, rename);
+    the path as a string. No ``out_dir`` writes nothing and returns None. The same card always gets the same
+    name, so writing it again replaces it in place. A failed write leaves no temp file and raises."""
+    if out_dir is None or (isinstance(out_dir, str) and not out_dir.strip()):
+        return None
+    d = Path(out_dir)
+    d.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target = d / name_for(html)
+    fd, tmp = tempfile.mkstemp(prefix=".card-", suffix=".tmp", dir=str(d))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(html)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return str(target)
