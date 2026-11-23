@@ -10,7 +10,8 @@ duration from the wake event; nothing here reads a time of day. A start counts w
 Missing data is unknown, never clean: ``seen`` is None when there is no wake, no feed list, no rows, or
 the newest row is older than the hour's end (the phone data stops inside the hour). The feed list is
 the person's own: env LIMITLESS_FEED_APPS (comma list), else config key ``feed_apps`` (a list or a comma
-string). The repo ships no list of app names, so with none set every hint is unknown.
+string), else ``apps.json`` set from a reply (apps_reply.list_for: config wins over a reply). The repo
+ships no list of app names, so with none set every hint is unknown.
 
 The hint is a proxy (an app opened is not a feed read) and it only suggests: Done / No / Skip stays the
 person's tap, and nothing here writes habit.json or sends. ``line()`` is the check-in's one plain line;
@@ -18,39 +19,27 @@ it has no count, time or app name (labels only, privacy tier T1). Stdlib only, P
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
+from typing import Mapping, Optional
 
-from . import aw_reader, jobs
-from .state_reader import StateReader, config
+from . import apps_reply, aw_reader, jobs
+from .state_reader import StateReader
 from .wake_proxy import _ts_s
 
-ENV_KEY = "LIMITLESS_FEED_APPS"
-CONFIG_KEY = "feed_apps"
+ENV_KEY = apps_reply.ENV_KEYS[apps_reply.FEED]          # "LIMITLESS_FEED_APPS"
+CONFIG_KEY = apps_reply.CONFIG_KEYS[apps_reply.FEED]    # "feed_apps"
 SEEN, NOT_SEEN, UNKNOWN = "seen", "not seen", "unknown"
 EVIDENCE_TIER = "proxy"     # an app opened is not a feed read: the hint is a proxy, never an answer
 _LINE = {SEEN: "Phone: a feed app was opened in that hour", NOT_SEEN: "Phone: no feed app seen in that hour"}
 
 
-def _clean(items: Iterable) -> tuple:
-    out = []
-    for v in items or ():
-        w = v.strip() if isinstance(v, str) else ""
-        if w and w not in out:
-            out.append(w)
-    return tuple(out)
+_clean = apps_reply.clean
 
 
 def feed_apps(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
-    """The person's feed apps: $LIMITLESS_FEED_APPS (comma list), else config ``feed_apps``; () when unset."""
-    env = os.environ if env is None else env
-    v = env.get(ENV_KEY)
-    if not (isinstance(v, str) and v.strip()):
-        v = config(env, home).get(CONFIG_KEY)
-    if isinstance(v, str):
-        v = v.split(",")
-    return _clean(v) if isinstance(v, (list, tuple)) else ()
+    """The person's feed apps: $LIMITLESS_FEED_APPS (comma list), else config ``feed_apps``, else apps.json
+    (set from a reply; apps_reply.list_for); () when unset."""
+    return apps_reply.host_list(apps_reply.FEED, env, home)
 
 
 def feeds_in_first_hour(app_starts, wake_at, feed_apps) -> dict:

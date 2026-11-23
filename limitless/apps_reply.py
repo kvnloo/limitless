@@ -25,7 +25,7 @@ import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Mapping, Optional, Tuple
 
 WORK, FEED = "work_apps", "feed_apps"
 MAX_NAMES, MAX_LEN = 20, 60
@@ -196,3 +196,42 @@ def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, dry_run:
     if not dry_run:
         write(state_dir, apps)
     return {"rows": rows, "apps": apps}
+
+
+# --- where each list comes from: env, then config, then apps.json --------------------------------------------
+
+ENV, CONFIG, REPLY = "env", "config", "reply"
+ENV_KEYS = {WORK: "LIMITLESS_FLOW_WORK_APPS", FEED: "LIMITLESS_FEED_APPS"}
+CONFIG_KEYS = {WORK: "flow_work_apps", FEED: "feed_apps"}
+
+
+def _listed(v) -> tuple:
+    if isinstance(v, str):
+        v = v.split(",")
+    return clean(v) if isinstance(v, (list, tuple)) else ()
+
+
+def list_for(key: str, cfg: Mapping, state_dir, env: Optional[Mapping[str, str]] = None) -> Tuple[tuple, Optional[str]]:
+    """``(names, source)`` for WORK or FEED: env ENV_KEYS (a comma list), else config CONFIG_KEYS (a list or a
+    comma string), else apps.json in ``state_dir`` (set from a reply); ``((), None)`` when none is set. A blank
+    or empty value at one step falls through to the next, so a list set in config always beats a reply."""
+    env = os.environ if env is None else env
+    got = _listed(env.get(ENV_KEYS[key]))
+    if got:
+        return got, ENV
+    got = _listed(cfg.get(CONFIG_KEYS[key]) if isinstance(cfg, Mapping) else None)
+    if got:
+        return got, CONFIG
+    got = stored(load(state_dir), key) if state_dir is not None else ()
+    return (got, REPLY) if got else ((), None)
+
+
+def lists_for(cfg: Mapping, state_dir, env: Optional[Mapping[str, str]] = None) -> dict:
+    """``{WORK: (names, source), FEED: (names, source)}`` (list_for for both lists)."""
+    return {k: list_for(k, cfg, state_dir, env) for k in (WORK, FEED)}
+
+
+def host_list(key: str, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
+    """list_for with the host config (state_reader.config) and state dir (state_reader.state_dir)."""
+    from .state_reader import config, state_dir
+    return list_for(key, config(env, home), state_dir(env, home), env)[0]

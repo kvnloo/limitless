@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional
 from urllib.parse import quote
 
-from . import aw_desktop, feeds_evidence, glide_provider
+from . import apps_reply, aw_desktop, feeds_evidence, glide_provider
 from .aw_reader import BUSY_TIMEOUT_S, CURRENT_WINDOW, NS
 from .state_reader import StateReader, config
 
@@ -319,19 +319,14 @@ def t1_label(this: Optional[dict], last: Optional[dict] = None) -> str:
 
 # --- config: where each input comes from ---------------------------------------------------------------
 
-WORK_ENV, WORK_CONFIG = "LIMITLESS_FLOW_WORK_APPS", "flow_work_apps"
+WORK_ENV, WORK_CONFIG = apps_reply.ENV_KEYS[apps_reply.WORK], apps_reply.CONFIG_KEYS[apps_reply.WORK]
 
 
 def work_apps(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
     """The person's work apps: $LIMITLESS_FLOW_WORK_APPS (comma list), else config ``flow_work_apps``
-    (a list or a comma string); () when unset. The repo ships no list, so deep work starts unknown."""
-    env = os.environ if env is None else env
-    v = env.get(WORK_ENV)
-    if not (isinstance(v, str) and v.strip()):
-        v = config(env, home).get(WORK_CONFIG)
-    if isinstance(v, str):
-        v = v.split(",")
-    return feeds_evidence._clean(v) if isinstance(v, (list, tuple)) else ()
+    (a list or a comma string), else apps.json set from a reply (apps_reply.list_for); () when unset. The
+    repo ships no list, so deep work starts unknown."""
+    return apps_reply.host_list(apps_reply.WORK, env, home)
 
 
 def glide_blocks(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[list]:
