@@ -146,6 +146,8 @@ OFF_WHEN = {
                             "no breathing link set (config wind_down_breathing_link)"),
     "limitless_palace": (lambda e: "why" in (e.get("value") or {}),
                          "no memory palace link set (config palace_link)"),
+    "limitless_outages": (lambda e: (e.get("value") or {}).get("label") == "off",
+                          "the input outage notice is off (config input_outage)"),
     "limitless_card_view": (lambda e: bool(e.get("note")),
                             "no card dir set (config card_dir): the card is rendered only"),
 }

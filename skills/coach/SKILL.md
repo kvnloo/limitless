@@ -25,6 +25,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | Question | Tool |
 | --- | --- |
 | Are my inputs recording? What is stale? | limitless_status |
+| Which input stopped recording, and since when? (suggest, never restart) | limitless_outages |
 | How am I today? | limitless_state |
 | Is now a good moment for a decision or a review? | limitless_window |
 | What part of the day am I in? | limitless_phase |

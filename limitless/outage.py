@@ -200,3 +200,27 @@ def line(new: list, cfg: Mapping, now: float) -> str:
 def label(outs: list, now: float) -> str:
     """The tool's phrase: "not recording: <names> (since about <age>)" or "every input is recording"."""
     return doctor.words(f"not recording: {_what(outs, now)}") if outs else NONE_DOWN
+
+
+# --- limitless_outages: read-only ---------------------------------------------------------------------------
+
+OFF_WHY = "the input outage notice is off"
+
+
+def tool(state_dir, now: float, cfg: Mapping) -> dict:
+    """limitless_outages: every current outage (told or not), in words. ``value: {label, inputs}`` with the label
+    "not recording: <names> (since about <age>)" or "every input is recording" and ``inputs`` the names in
+    words; off (config ``input_outage``) is ``{label: "off", why}``. No inputs.json is no value, with
+    limitless_status's reason. Modality derived (from limitless_status), age_h None, evidence_tier that of the
+    inputs snapshot (direct when fresh, stale when old). Digit-free. Nothing is written, marked or sent."""
+    def result(value, tier):
+        return {"value": value, "modality": MODALITY, "age_h": None, "evidence_tier": tier,
+                "label": {"label": value["label"], "tier": "T1", "modality": MODALITY}}
+    if not enabled(cfg):
+        return result({"label": "off", "why": OFF_WHY}, "direct")
+    env = tools.status(StateReader(Path(state_dir)), now)
+    if not isinstance(env, dict) or env.get("value") is None:
+        return env
+    outs = current(state_dir, now, cfg)
+    return result({"label": label(outs, now), "inputs": [name_words(o["name"]) for o in outs]},
+                  env.get("evidence_tier") or "stale")
