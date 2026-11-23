@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
     jobs, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
-    rides as _rides, send_gate, sleep as _sleep, wake_proxy
+    rides as _rides, send_gate, sleep as _sleep, wake_proxy, weekly_target
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -75,13 +75,15 @@ _BODY[jobs.BREAK_NUDGE.name] = BREAK_BODY
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
-         anki_line: str = "") -> str:
+         anki_line: str = "", target_days: Optional[int] = None) -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
     a hint, no counts, times or app names; the answer stays the person's tap. The week review is
-    jobs.week_review_text: the habit and "N of M logged days" (``synced``: StateReader.habit_days()), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
+    jobs.week_review_text: the habit and "N of M logged days" (``synced``: StateReader.habit_days()), then the
+    weekly target in words (weekly_target.review_line: "habit: target reached this week" or "habit: on the way";
+    nothing with no Done day), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
     (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
     ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
@@ -89,17 +91,23 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     when given, then ``Reply: Keep / Drop``. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
     what runs tonight, count words only) when given, then ``Reply: Yes / No / Later``.
+    Once this week's Done days reach the weekly target (weekly_target, ``target_days``: config
+    ``habit_target_days``, wording only) the check-in says so on one line after its question; nothing is
+    said before that, and No, Skip or no answer never shows.
     """
+    target = weekly_target.for_habit(habit, synced, target_days or weekly_target.DEFAULT_TARGET_DAYS)
     if spec.name == jobs.MIQ.name:
         return "\n".join(x for x in (_BODY[spec.name], overnight, one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
-        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, fragment, body_line,
+        return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
+                                      passive, flow, fragment, body_line,
                                       rides_line, sleep_line, anki_line, one_tap.choices_line(spec.answers))
                          if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
-        return "\n".join(x for x in (what, feeds_evidence.line(phone), one_tap.choices_line(spec.answers)) if x)
+        return "\n".join(x for x in (what, weekly_target.checkin_line(target), feeds_evidence.line(phone),
+                                      one_tap.choices_line(spec.answers)) if x)
     return _BODY.get(spec.name, spec.send_title)
 
 
@@ -489,7 +497,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
                 anki_line = week_anki(state_dir, p.habit, env, home, tz, today) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
-                            body_line, plan, rides_line, sleep_line, fragment, anki_line)
+                            body_line, plan, rides_line, sleep_line, fragment, anki_line,
+                            target_days=weekly_target.target_days(env, home))
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)

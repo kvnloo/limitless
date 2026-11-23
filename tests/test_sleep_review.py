@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from limitless import card, jobs, jobs_runner  # noqa: E402
+from limitless import card, jobs, jobs_runner, weekly_target  # noqa: E402
 
 KD = "\nReply: Keep / Drop"   # the week review's choices line (one_tap), always its last line
 from limitless.state_reader import StateReader  # noqa: E402
@@ -73,7 +73,7 @@ class Review(unittest.TestCase):
         return text[:-len(KD)].split("\n")
 
     def test_body_puts_the_sleep_line_after_the_rides_line(self):
-        text = jobs.week_review_text(self.habit)
+        text = jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, body_line="Body: y.", rides_line="Rides: z.",
                                           sleep_line="Sleep: w."),
                          text + "\nBody: y.\nRides: z.\nSleep: w." + KD)
@@ -87,7 +87,7 @@ class Review(unittest.TestCase):
         self.write("rides.jsonl", ride_rows())
         self.write("screen-events.jsonl", screen_rows((1, 2, 3)))
         lines = self.review()
-        self.assertEqual(lines[1:], ["Rides this week: two, more than last week.",
+        self.assertEqual(lines[1:], [weekly_target.REVIEW_ON_THE_WAY, "Rides this week: two, more than last week.",
                                      "Sleep: wearable on most nights; phone proxy says longer."])
         self.assertEqual(re.findall(r"\d", lines[-1]), [])
 
@@ -96,10 +96,10 @@ class Review(unittest.TestCase):
         self.assertEqual(self.review()[-1], "Sleep: wearable on no nights; phone proxy has no night to compare.")
 
     def test_no_sleep_data_leaves_the_review_unchanged(self):
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
         self.configure(sleep_file="absent.jsonl")
         (self.st / "jobs-sent.jsonl").unlink()
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
 
     def test_week_sleep_helper(self):
         self.configure(sleep_file="sleep.jsonl")
@@ -117,7 +117,7 @@ class Review(unittest.TestCase):
     def test_a_broken_sleep_file_does_not_stop_the_review(self):
         self.configure(sleep_file="sleep.jsonl")
         (self.st / "sleep.jsonl").mkdir()
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
 
     def test_the_sleep_file_is_never_written(self):
         self.configure(sleep_file="sleep.jsonl")

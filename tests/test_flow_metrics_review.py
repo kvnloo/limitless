@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from limitless import flow_metrics as fm  # noqa: E402
+from limitless import flow_metrics as fm, weekly_target  # noqa: E402
 from limitless import jobs, jobs_runner  # noqa: E402
 from test_flow_week_hooks import KD, NOW, TODAY, UTC, FakePush, noon, write_db  # noqa: E402
 
@@ -69,7 +69,7 @@ class WeekReview(unittest.TestCase):
         return out
 
     def test_body_puts_the_line_right_after_the_flow_line(self):
-        text = jobs.week_review_text(self.habit)
+        text = jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x.", body_line="Body: y.",
                                           fragment="Work pattern: z."),
                          text + "\nFlow: x.\nWork pattern: z.\nBody: y." + KD)
@@ -82,9 +82,10 @@ class WeekReview(unittest.TestCase):
         self.configure(aw_db="aw.db", flow_work_apps=["editor"])
         lines = self.review()
         self.assertEqual(lines[0], jobs.week_review_text(self.habit))
-        self.assertTrue(lines[1].startswith("Flow ("), lines)
-        self.assertEqual(lines[2], LINE.format("work was broken up"))      # right after the flow line
-        self.assertEqual(re.findall(r"\d", lines[2]), [])
+        self.assertEqual(lines[1], weekly_target.REVIEW_ON_THE_WAY)
+        self.assertTrue(lines[2].startswith("Flow ("), lines)
+        self.assertEqual(lines[3], LINE.format("work was broken up"))      # right after the flow line
+        self.assertEqual(re.findall(r"\d", lines[3]), [])
 
     def test_last_weeks_data_does_not_count(self):
         write_db(self.st / "aw.db", self.broken(self.week_of - timedelta(days=2)))
@@ -107,7 +108,7 @@ class WeekReview(unittest.TestCase):
         self.assertEqual(self.ours(), [])
         self.configure()                                            # no DB at all
         (self.st / "jobs-sent.jsonl").unlink()
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
 
     def test_helper(self):
         d = noon(self.week_of + timedelta(days=2))

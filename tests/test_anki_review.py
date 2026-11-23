@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from limitless import anki, jobs, jobs_runner  # noqa: E402
+from limitless import anki, jobs, jobs_runner, weekly_target  # noqa: E402
 from test_anki_reviews import collection  # noqa: E402
 from test_flow_week_hooks import FakePush  # noqa: E402
 
@@ -62,7 +62,7 @@ class Review(unittest.TestCase):
         return text[:-len(KD)].split("\n")
 
     def test_body_puts_the_anki_line_last_before_the_choices(self):
-        text = jobs.week_review_text(self.habit)
+        text = jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY   # one Done day (#45)
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, rides_line="Rides: z.", sleep_line="Sleep: s.",
                                           anki_line="Anki: a."),
                          text + "\nRides: z.\nSleep: s.\nAnki: a." + KD)
@@ -72,7 +72,8 @@ class Review(unittest.TestCase):
     def test_the_review_carries_the_anki_words(self):
         db = collection(self.root / "c.anki2", [on(d) for d in (0, 1, 3, 5)] + [on(9)])
         lines = self.review(dict(self.env, LIMITLESS_ANKI=str(db)))
-        self.assertEqual(lines, [jobs.week_review_text(self.habit), "Anki: reviewed most days this week (measured)"])
+        self.assertEqual(lines, [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY,
+                                 "Anki: reviewed most days this week (measured)"])
         self.assertEqual(re.findall(r"\d", lines[-1]), [])
 
     def test_some_and_none(self):
@@ -87,10 +88,10 @@ class Review(unittest.TestCase):
             self.assertNotIn(bad, line)
 
     def test_unknown_leaves_the_review_unchanged(self):
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])            # no collection set
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])  # no collection set
         (self.st / "jobs-sent.jsonl").unlink()
         gone = dict(self.env, LIMITLESS_ANKI=str(self.root / "gone.anki2"))
-        self.assertEqual(self.review(gone), [jobs.week_review_text(self.habit)])        # missing file
+        self.assertEqual(self.review(gone), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])  # missing file
         self.assertEqual(jobs_runner.week_anki(self.st, None, self.env, self.root, UTC, TODAY), "")   # no week
         self.assertEqual(jobs_runner.week_anki(self.st, self.habit, self.env, self.root, UTC), "")   # no today
 
