@@ -45,7 +45,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import habit_catalogue, idea_ledger as _idea_ledger
+from . import habit_catalogue, idea_ledger as _idea_ledger, prediction as _prediction
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_ledger as _flow_ledger, \
     flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
@@ -80,7 +80,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
          anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "",
-         wind_down_line: str = "", rule_line: str = "", presleep_line: str = "", ideas_line: str = "") -> str:
+         wind_down_line: str = "", rule_line: str = "", presleep_line: str = "", ideas_line: str = "",
+         experiment_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -95,7 +96,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     proxy, in words), then ``presleep_line`` (week_presleep_hr: the wearable's pre-sleep heart rate against the
     usual, in words, next to the night), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
     ``anki_line`` (week_anki: this week's Anki reviews in words), then ``ideas_line`` (week_ideas: the idea
-    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``rule_line`` (week_rule: what the stop
+    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``experiment_line`` (week_experiment:
+    "Experiment: outcome pending (judged later)" while a lagged outcome waits), then ``rule_line`` (week_rule: what the stop
     rule picked at the week's start says, "Your rule says: keep it"), each as one more line
     when given, then ``Reply: Keep / Drop``: the rule only suggests, the reply decides. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
@@ -113,7 +115,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
                                       passive, flow, fragment, body_line,
                                       rides_line, sleep_line, presleep_line, naps_line, anki_line, ideas_line,
-                                      rule_line,
+                                      experiment_line, rule_line,
                                       one_tap.choices_line(spec.answers))
                          if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
@@ -140,6 +142,7 @@ def week_review_body(state_dir, habit: Optional[dict], synced: Optional[dict] = 
                 target_days=weekly_target.target_days(env, home),
                 naps_line=week_naps(state_dir, env, home, today, tz), rule_line=week_rule(habit, synced, env, home),
                 presleep_line=week_presleep_hr(state_dir, env, home, today),
+                experiment_line=week_experiment(state_dir, habit, today, env, home),
                 ideas_line=week_ideas(state_dir, now, env, home) if now is not None else "")
 
 
@@ -597,6 +600,27 @@ def week_rule(habit: Optional[dict], synced: Optional[dict] = None, env: Optiona
         return _gated("week_review:stop_rule", _stop_rule.review_line(v), env, home)
     except Exception:  # noqa: BLE001 - a broken habit.json must not stop the review
         return ""
+
+
+EXPERIMENT_PENDING_LINE = "Experiment: outcome pending (judged later)"
+
+
+def week_experiment(state_dir, habit: Optional[dict], today: Optional[date] = None,
+                    env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> str:
+    """The week review's experiment line: EXPERIMENT_PENDING_LINE when habit.json's week has a locked
+    prediction whose receipt is pending (a lag that has not passed: prediction.receipt says so, writing
+    nothing), through tier_audit.gate (hook ``week_review:experiment``); "" otherwise (no week, nothing locked,
+    no lag, a receipt already written or the state cannot be read). Read-only; never the prediction's text."""
+    try:
+        start = jobs._week_start(habit)
+        if start is None:
+            return ""
+        r = _prediction.receipt(state_dir, start.isoformat(), write=False, today=today)
+        if r.get("action") != _prediction.PENDING:
+            return ""
+    except Exception:  # noqa: BLE001 - a broken ledger must not stop the review
+        return ""
+    return _gated("week_review:experiment", EXPERIMENT_PENDING_LINE, env, home)
 
 
 def week_next(state_dir, habit: Optional[dict], decision, env: Optional[Mapping[str, str]] = None,
