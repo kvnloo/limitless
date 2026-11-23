@@ -30,11 +30,11 @@ from __future__ import annotations
 import inspect
 import json
 import os
-from datetime import date, datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, feeds_evidence, jobs, send_gate, wake_proxy
+from . import aw_reader, feeds_evidence, flow_week, jobs, send_gate, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -54,16 +54,17 @@ _BODY = {
 
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
-         synced: Optional[dict] = None) -> str:
+         synced: Optional[dict] = None, flow: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit and its taps.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
     a hint, no counts, times or app names; the answer stays the person's tap. The week review is
     jobs.week_review_text: the habit, "N of M logged days" (``synced``: StateReader.habit_days()) and
-    "Reply Keep or Drop."
+    "Reply Keep or Drop.", then ``flow`` (flow_week.review_line) as one more line when given.
     """
     if spec.name == jobs.WEEK_REVIEW.name:
-        return jobs.week_review_text(habit, synced)
+        text = jobs.week_review_text(habit, synced)
+        return f"{text}\n{flow}" if flow else text
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
@@ -282,6 +283,19 @@ def _phone(spec: jobs.JobSpec, v: jobs.Verdict, p: "_Pass", state_dir, env, home
     return feeds_evidence.phone_hint(StateReader(Path(state_dir)), wake, env, home) if wake is not None else None
 
 
+def week_flow(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
+    """The week review's flow line (flow_week.review_line) for the habit week and the week before it;
+    "" when no ActivityWatch DB is configured or no week is named. Read-only."""
+    reader = StateReader(Path(state_dir))
+    start = jobs._week_start(habit)
+    if start is None or reader.aw_db_path(env, home) is None:
+        return ""
+    this = flow_week.for_week(reader, start, tz, env, home)
+    last = flow_week.for_week(reader, start - timedelta(days=jobs.HABIT_WEEK_DAYS), tz, env, home)
+    return flow_week.review_line(this, last)
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -316,7 +330,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             if own:
                 ok, how = _send_brief(brief)       # the whole brief, same event key; never the placeholder
             else:
-                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced)
+                flow = week_flow(state_dir, p.habit, env, home, tz) if spec.name == jobs.WEEK_REVIEW.name else ""
+                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)

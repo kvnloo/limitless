@@ -12,9 +12,10 @@ from __future__ import annotations
 import os
 import re
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable, Mapping, Optional
 
+from . import flow_week
 from . import labeler as _labeler
 from . import tools
 from .envelope import STALE_H, envelope, missing
@@ -91,6 +92,24 @@ def _owner_text(owner: dict) -> str:
     return f"; messages: {word}" if isinstance(word, str) and not any(c.isdigit() for c in word) else ""
 
 
+def flow_label(reader: StateReader, today: date, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """The flow T1 label (flow_week.t1_label: digit-free) for the seven days to ``today`` against the seven
+    before, in this machine's zone; None when no ActivityWatch DB is configured."""
+    if reader.aw_db_path(env) is None:
+        return None
+    this = flow_week.for_week(reader, today - timedelta(days=6), None, env)
+    last = flow_week.for_week(reader, today - timedelta(days=13), None, env)
+    return flow_week.t1_label(this, last)
+
+
+def _aw_mtime(reader: StateReader, env: Optional[Mapping[str, str]]) -> Optional[int]:
+    p = reader.aw_db_path(env)
+    try:
+        return None if p is None else p.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
@@ -113,6 +132,9 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
         lines.append("habit: none set this week")
     else:
         lines.append(f"habit this week: {h['value']['habit']}; today {h['value']['today']}")
+    flow = flow_label(reader, today, env)
+    if flow is not None:
+        lines[-1] += f"; flow: {flow}"
     st = tools.status(reader, now)
     if st["value"] and st["value"]["not_recording"]:
         lines.append("not recording: " + ", ".join(st["value"]["not_recording"]))
@@ -150,10 +172,10 @@ class CardCache:
         win = window(reader, now, bands)
         owner = tools.owner_message(reader, now, env)
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
-               tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner))
+               tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env))
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
-                               owner=owner)["text"]
+                               owner=owner, env=env)["text"]
             self._key = key
             self.builds += 1
         return self._text
