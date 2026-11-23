@@ -16,6 +16,11 @@ inbound gateway message, after auth and slash-command dispatch, with ``text``. R
 anything else runs the turn. A capture is written through ``capture.capture`` (one store, source
 ``"bedtime"``) before ``handled`` is returned; a refused capture, or any error, returns None so the
 message reaches the agent untouched. The text is never logged: only the capture file holds it.
+
+    saved_last_night(state, now) -> int
+
+The bedtime captures of the night that ended at the latest wake (after the wake before it, at or before
+the latest one): the wake brief says "Saved last night: N ideas", the state card "ideas saved last night".
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -27,9 +32,9 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Optional
 
-from . import capture, habit_replies
+from . import capture, habit_replies, jobs, jobs_runner
 from .glide_provider import GlideProvider
-from .state_reader import StateReader, config, state_dir
+from .state_reader import StateReader, config, parse_ts, state_dir
 from .window_chain import EventProvider, first_known
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,7 @@ DEFAULT_URGENT_WORDS = ("urgent", "now")
 REPLY = "Saved for tomorrow."
 CONFIG_KEY, WORDS_KEY = "bedtime_capture", "bedtime_urgent_words"
 CAPTURE, PASS = "capture", "pass"
+FIRST_NIGHT_S = 24 * 3600   # with one wake on record, last night is at most this long before it
 
 
 def enabled(cfg: Mapping) -> bool:
@@ -109,3 +115,22 @@ def make_post_gateway_admission(env: Optional[Mapping[str, str]] = None,
             return None
 
     return post_gateway_admission
+
+
+def saved_last_night(state, now: float, env: Optional[Mapping[str, str]] = None,
+                     home: Optional[Path] = None) -> int:
+    """How many bedtime captures the night that ended at the latest wake holds; 0 with no wake on record."""
+    reader = StateReader(Path(state))
+    if not reader.exists():
+        return 0
+    wakes = jobs.wake_times(jobs_runner.events(reader, env=env, home=home), now)
+    if not wakes:
+        return 0
+    last = wakes[-1]
+    prev = wakes[-2] if len(wakes) > 1 else last - FIRST_NIGHT_S
+    n = 0
+    for row in reader.captures():
+        at = parse_ts(row.get("at"))
+        if row.get("source") == SOURCE and at is not None and prev < at <= last:
+            n += 1
+    return n

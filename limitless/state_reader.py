@@ -13,6 +13,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   unlocks.jsonl        {"at"} phone unlocks
   events.jsonl         {"event", "at"} other job events (wind_down, habit_cue, focus_end, ...)
   jobs-sent.jsonl      {"t", "k", "job"} job messages really delivered (written by jobs_runner only)
+  captures.jsonl       {"at", "text", "source"} captures (written by capture.py only; source "bedtime"
+                       for a message saved by bedtime capture)
   screen-events.jsonl  {"ts": epoch_ms, "type", "pkg"} Android screen events (wake_proxy.events_from_screen)
   ActivityWatch DB     optional SQLite copy at $LIMITLESS_AW_DB, else config "aw_db" (relative to the
                        state dir); read only through aw_reader.person_rows (aw_db_path)
@@ -217,3 +219,6 @@ class StateReader:
 
     def jobs_sent(self) -> list:
         return self._jsonl("jobs-sent.jsonl")
+
+    def captures(self) -> list:
+        return self._jsonl("captures.jsonl")
