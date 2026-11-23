@@ -333,5 +333,71 @@ class ScheduleCard(Base):
         self.assertEqual([c["id"] for c in ctx.cards], list(jobs.SPECS) + ["noop_export"])
 
 
+class Doctor(Base):
+    def doc_row(self, now=NOW):
+        from limitless import doctor
+        from limitless.state_reader import StateReader, config
+        return doctor.noop_export_row(StateReader(self.st), config(self.env, self.dir), now)
+
+    def check(self, r, status, *words):
+        self.assertEqual((r["name"], r["kind"], r["status"]), ("job NOOP export", "job", status), r)
+        for w in words:
+            self.assertIn(w, r["reason"])
+        self.assertNotRegex(r["reason"], r"\d")
+        self.assertNotIn("/", r["reason"])
+
+    def test_off_by_default(self):
+        self.config()
+        self.check(self.doc_row(), "off", "off (config noop_export)")
+
+    def test_on_with_no_copy_yet_is_stale(self):
+        self.config(noop_export="write")
+        self.runs({"at": iso(NOW - H), "job": "sync", "ok": True})
+        self.check(self.doc_row(), "stale", "no sync run has copied the NOOP database yet")
+
+    def test_a_copy_the_export_has_not_run_after_is_stale(self):
+        self.config(noop_export="write")
+        self.runs(self.copied(NOW - H))
+        self.check(self.doc_row(), "stale", "has not run after it", "limitless-jobs --send")
+
+    def test_live_after_it_ran_for_the_newest_copy(self):
+        self.config(noop_export="write")
+        self.runs(self.copied(NOW - 3 * H))
+        self.once(NOW - 2 * H)
+        self.runs(self.copied(NOW - 3 * H), {"at": iso(NOW - H), "job": "sync", "ok": True})   # a later non-copy run
+        self.check(self.doc_row(), "live", "write mode", "about two hours ago", "done")
+
+    def test_dry_run_is_live_and_says_counts_only(self):
+        self.config(noop_export="dry_run")
+        self.runs(self.copied(NOW - H))
+        self.once()
+        self.check(self.doc_row(), "live", "dry run", "counts only", "under an hour ago")
+
+    def test_nothing_to_export_is_stale_with_the_reason(self):
+        self.config(noop_export="write", noop_db=None)
+        self.runs(self.copied(NOW - H))
+        self.once()
+        self.check(self.doc_row(), "stale", "nothing to export", "no NOOP database configured")
+
+    def test_a_file_not_written_is_stale(self):
+        from limitless import jobs_runner as jr
+        self.config(noop_export="write")
+        jr._write_noop_mark(self.st, {"row_at": NOW - H, "ran_at": NOW - H, "mode": "write",
+                                      "outcome": jr.NOOP_NOT_WRITTEN, "said": ["sleep file: not written"]})
+        self.runs(self.copied(NOW - H))
+        self.check(self.doc_row(), "stale", "a file was not written")
+
+    def test_the_report_ends_with_the_row_and_strict_ignores_it(self):
+        from limitless import doctor
+        from unittest import mock
+        self.config()
+        with mock.patch.dict(os.environ, self.env):
+            rows = doctor.report({"state": str(self.st)}, NOW)
+        self.assertEqual(rows[-1]["name"], "job NOOP export")
+        self.assertEqual(rows[-1]["status"], "off")
+        live = [dict(r, status="live") for r in rows if r["kind"] != "job"]
+        self.assertFalse(doctor.strict_failed(live + [rows[-1]]))
+
+
 if __name__ == "__main__":
     unittest.main()

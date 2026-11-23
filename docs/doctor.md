@@ -21,6 +21,7 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `input <name>`, one per name in `inputs.json` | input | recording: within `STALE_H` (the `limitless_status` rule: the snapshot's age plus the input's age) | over the threshold, or reported `down` | no age for it; no `inputs.json` at all is one `inputs` row | |
 | `last sync run` | run | the last valid row of `runs.jsonl` is at most `STALE_H` old and did not fail | older, or it failed | no timestamped row | |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
+| `job NOOP export`, last | job | config `noop_export` is `dry_run` or `write` and the export ran after the newest sync that copied the NOOP database, and exported (`noop-export.json`) | a sync copied the NOOP database and it has not run after it yet; no sync has copied it yet; or its last run found nothing to export (the plain reason) or could not write a file | | `noop_export` is `off` (the default) ([noop-export.md](noop-export.md)) |
 
 The thresholds are the plugin's own (`envelope.STALE_H`, the one `limitless_status` and the labeler use); the
 doctor adds none. A tool row comes from calling that tool's plugin function with `{}` the way its handler does
@@ -38,7 +39,7 @@ front of its reason. A tool that raises is `missing` with the exception's type o
   "a number", so no line holds a digit, even under the person's raw opt-in (`LIMITLESS_RAW_IN_PROMPT=1`). A test
   plants obvious raw numbers in a synthetic state and checks that none of them appear, in text or `--json`.
 - Exit 0 always: it is a report, not a gate. Only `--strict` exits 1, and only for a state dir, input or last
-  sync run row that is not live; tool rows never fail it.
+  sync run row that is not live; tool rows and the job row never fail it.
 
 ## Example (synthetic)
 
@@ -87,6 +88,7 @@ tool limitless_palace: off: no memory palace link set (config palace_link)
 tool limitless_schedule: live: answers from direct evidence
 tool limitless_card_view: off: no card dir set (config card_dir): the card is rendered only
 tool limitless_focus_safe: off: the focus guard is off (config focus_safe)
+job NOOP export: off: the NOOP export job is off (config noop_export)
 $ limitless-doctor --strict > /dev/null; echo $?
 1
 ```
