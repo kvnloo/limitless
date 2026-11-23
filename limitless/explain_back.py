@@ -39,6 +39,8 @@ from typing import Mapping, Optional
 from . import capture, decision_window, jobs, one_tap
 from . import overnight as _overnight
 from .envelope import missing
+from .idea_ledger import amount as _amount
+from .state_reader import parse_ts
 from .window import MAX_AWAKE_H
 
 CHOICES = ("Voice", "Later")
@@ -159,3 +161,41 @@ def reply(state_dir, text, now: float) -> dict:
     if tap == "Voice":
         return missing(VOICE)
     return capture.capture(state_dir, text, now, source=SOURCE, kind=KIND, unknowns=unknowns(text))
+
+
+# --- the week, in words (limitless_explain_back) ---------------------------------------------------------------
+
+WEEK_S = 7 * 24 * 3600.0
+TIER, MODALITY = "T1", "self_report"
+
+
+def answers(captures, now: float) -> list:
+    """The explain-back captures in the seven days up to ``now``, oldest first, as ``(epoch, row)``. Pure."""
+    out = []
+    for r in captures or ():
+        if not isinstance(r, dict) or r.get("kind") != KIND or not isinstance(r.get("text"), str):
+            continue
+        t = parse_ts(r.get("at")) if isinstance(r.get("at"), str) else None
+        if t is not None and 0 <= now - t <= WEEK_S:
+            out.append((t, r))
+    return sorted(out, key=lambda x: x[0])
+
+
+def answered_words(n: int) -> str:
+    """"none this week", "one this week", "two this week", "a few this week" ...: digit-free, not a target."""
+    return f"{'none' if n <= 0 else _amount(n)} this week"
+
+
+def label(offered: bool, n: int) -> str:
+    """"explain-back offered today; one answered this week": what happened, in words; never a score or streak."""
+    return (f"explain-back {'offered' if offered else 'not offered'} today; "
+            f"{'none' if n <= 0 else _amount(n)} answered this week")
+
+
+def offered_for(reader, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
+    """``(offered, offered_at)``: whether the mark is for the latest wake event (wake_at), and when it was made."""
+    m = load_mark(reader.path)
+    if m is None:
+        return False, None
+    wake = wake_at(_events(reader, env, home), now)
+    return (wake is not None and m["wake_at"] == wake), m["offered_at"]

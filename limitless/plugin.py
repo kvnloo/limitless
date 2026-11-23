@@ -126,6 +126,10 @@ def _ideas(args, now):
     return tools.ideas(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _explain_back(args, now):
+    return tools.explain_back(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
@@ -364,6 +368,14 @@ by limitless-ledger-append): how many ideas were recorded and whether the person
 words such as a few new ideas this week, none triaged. Self-reported. The words only; the counts and the idea \
 text need the person's raw opt-in. No ledger set is no value with the reason. It never triages, ranks or \
 starts an idea: the person triages in a review. Read-only; nothing is written or sent."), _ideas, "💡"),
+    "limitless_explain_back": (_schema(
+        "limitless_explain_back",
+        "The one optional explain-back offer (the state card's \"Explain back: say what landed in one breath. \
+Reply: Voice / Later\", only in a trough after work landed, at most once per wake event): whether it was offered \
+for the latest wake and how many answers the last seven days hold, in plain words such as two this week. \
+Self-reported. The words only; the answers' text needs the person's raw opt-in. It is a suggestion: never grade \
+an answer, never ask a follow-up of your own, no score, no streak; a skipped offer is not logged. Read-only; \
+nothing is written or sent."), _explain_back, "🗣️"),
     "limitless_propose": (_schema(
         "limitless_propose",
         "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \

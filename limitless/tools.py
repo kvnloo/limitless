@@ -5,7 +5,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
+from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, explain_back as _explain_back,
+               feeds_evidence,
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
@@ -894,6 +895,31 @@ def ideas(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapp
         value.update(recorded=w["recorded"], triaged=w["triaged"], ideas=[dict(x) for x in w["ideas"]])
     out = envelope(value, _idea_ledger.MODALITY, None if w["newest_at"] is None else (now - w["newest_at"]) / 3600)
     out["label"] = lab
+    return out
+
+
+def explain_back(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None) -> dict:
+    """limitless_explain_back: whether the explain-back offer was made for the latest wake event and how many
+    answers the last seven days hold, in words (explain_back.offered_for, explain_back.answers), read-only.
+
+    ``value: {offered, answered_this_week}`` (a bool and digit-free words such as "two this week"), modality
+    self_report, aged by the newest of the offer and the answers, with a digit-free T1 label beside it. The
+    answers' time, text and unknowns are T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No grade,
+    score or streak; a skipped offer is not logged. Nothing is written or sent.
+    """
+    if not reader.exists():
+        return missing("the state dir does not exist")
+    offered, offered_at = _explain_back.offered_for(reader, now, env, home)
+    got = _explain_back.answers(reader.captures(), now)
+    value = {"offered": offered, "answered_this_week": _explain_back.answered_words(len(got))}
+    if raw:
+        value["answers"] = [{"at": r["at"], "text": r["text"], "unknowns": list(r.get("unknowns") or [])}
+                            for _, r in got]
+    times = [t for t, _ in got] + ([offered_at] if offered_at is not None and offered_at <= now else [])
+    out = envelope(value, _explain_back.MODALITY, (now - max(times)) / 3600 if times else None)
+    out["label"] = {"label": _explain_back.label(offered, len(got)), "tier": _explain_back.TIER,
+                    "modality": _explain_back.MODALITY}
     return out
 
 
