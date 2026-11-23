@@ -143,6 +143,10 @@ def _flow_ledger(args, now):
     return tools.flow_ledger(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _feed_reflex(args, now):
+    return tools.feed_reflex(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _ideas(args, now):
     return tools.ideas(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
@@ -462,6 +466,18 @@ blocks. Unknown with the reason when no work apps are set, there is no app activ
 not over. Observed app activity (modality observed), not attention or output: no score, no productivity \
 measure, no ranking, no target, no advice. The words only; block times and app names need the person's raw \
 opt-in, and work-queue file names never appear. Read-only; nothing is written or sent."), _flow_ledger, "📒"),
+    "limitless_feed_reflex": (_schema(
+        "limitless_feed_reflex",
+        "The unlock-to-feed reflex over the last seven days, from the phone's ActivityWatch DB (unlocks and \
+app-in-foreground rows; feed apps in config feed_apps): how often a feed app was the first thing opened after \
+unlocking the phone, within config feed_reflex_gap_s (a short gap, a duration, never a clock time). A non-feed \
+app first, an app opened after the gap and desktop rows never count. Plain words: a feed was often, sometimes or \
+rarely the first thing opened after unlocking; unknown with the reason when no feed apps are set, there is no \
+DB or unlock, or there are too few unlocks to say (never zero). The thresholds (feed_reflex_often_share, \
+feed_reflex_rarely_share, feed_reflex_min_unlocks) are shares of the person's own unlocks and change the \
+wording only. A proxy: an app opened first is not a feed read. The words only; the counts need the person's \
+raw opt-in. It never blocks, closes or delays an app: it only observes, and the person decides. No score, no \
+streak, no target. Read-only; nothing is written or sent."), _feed_reflex, "🔓"),
     "limitless_ideas": (_schema(
         "limitless_ideas",
         "The idea ledger's last seven days (config idea_ledger: the one record every capture lands in, appended \

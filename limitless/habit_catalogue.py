@@ -22,6 +22,12 @@ decision is Keep is never offered again, the running one is not offered, untried
 list order, and a dropped habit comes back only after every other one has been tried. A week with no
 loop row (skipped, or never decided) is unlogged, never a drop.
 
+One more entry sits outside the ordered list: CIRCUIT_BREAKER, a circuit breaker for opening a feed straight
+after unlocking. ``next_habit`` and ``review_line`` name it only when told the feed reflex is "often"
+(``reflex_often``, from feed_reflex: a feed was often the first thing opened after unlocking), the feeds-free
+first hour is not running, and the person has not run or decided it yet; otherwise nothing changes. ``find`` knows
+it, so a week the person starts with it is read like any other.
+
 No entry has a digit, a clock time, or a drug, supplement, caffeine or dosing word (``problems`` says which,
 and a test holds every entry to it). Pure: nothing here reads a clock, touches a file or sends. It never
 starts a habit: that needs the person's yes and habit_start. Stdlib only, Python 3.9+.
@@ -63,6 +69,12 @@ CATALOGUE = (
     _habit("next_step_before_break", "flow", "Next step before the break", "focus_end",
            "write the first step of the next block on a note", "a notepad beside the keyboard"),
 )
+
+# Offered only on the feed-reflex hint (next_habit / review_line ``reflex_often``), never in list order.
+CIRCUIT_BREAKER = _habit("feed_circuit_breaker", "foundation", "Circuit breaker after unlocking", "habit_cue",
+                         "when a feed opens straight after unlocking, close it and name one thing you came to do",
+                         "feed apps moved off the home screen")
+FEEDS_FREE_ID = "feeds_free_first_hour"
 
 # A clock time in any common spelling, or a schedule by the clock.
 _CLOCK = re.compile(r"(?i)\b(\d{1,2}\s*(:\s*\d{2})?\s*(am|pm|a\.m\.|p\.m\.|h)\b|o'?clock|noon|midnight|"
@@ -121,7 +133,7 @@ def find(v) -> Optional[MappingProxyType]:
     k = _key(v)
     if not k:
         return None
-    for h in CATALOGUE:
+    for h in CATALOGUE + (CIRCUIT_BREAKER,):
         if k in (h["id"], _key(h["name"])):
             return h
     return None
@@ -136,6 +148,7 @@ FIRST_REASON = "the first habit on the list not tried yet"
 UNTRIED_REASON = "the next habit on the list not tried yet"
 RETRY_REASON = "every other habit was tried: a dropped one comes back"
 EXHAUSTED = "every habit on the list is kept or running: nothing new to offer"
+CIRCUIT_REASON = "a feed was often the first thing opened after unlocking: a circuit breaker may help"
 
 
 def _current_id(current) -> Optional[str]:
@@ -160,11 +173,25 @@ def decisions(loop_rows) -> dict:
     return out
 
 
-def next_habit(loop_rows, current=None) -> Next:
+def _circuit(seen: dict, running: Optional[str]) -> Optional[Next]:
+    """The circuit breaker, when the feeds-free hour and the circuit breaker are not running and the person has
+    not kept or dropped the circuit breaker yet; else None."""
+    if running in (FEEDS_FREE_ID, CIRCUIT_BREAKER["id"]) or CIRCUIT_BREAKER["id"] in seen:
+        return None
+    return Next(CIRCUIT_BREAKER, CIRCUIT_REASON)
+
+
+def next_habit(loop_rows, current=None, reflex_often: bool = False) -> Next:
     """The first catalogue habit that is neither kept nor running (``current``), untried ones first; a
     dropped habit comes back only once every other one has been tried. ``Next(None, reason)`` when the list is
-    exhausted. It only suggests: starting the habit is the person's yes and habit_start."""
+    exhausted. With ``reflex_often`` (feed_reflex said "often") the circuit breaker comes first while the
+    feeds-free hour is not running and the person has not run or decided it. It only suggests: starting the
+    habit is the person's yes and habit_start."""
     seen = decisions(loop_rows)
+    if reflex_often:
+        n = _circuit(seen, _current_id(current))
+        if n is not None:
+            return n
     running = _current_id(current)
     open_ = [h for h in CATALOGUE if h["id"] != running and seen.get(h["id"]) != "Keep"]
     for h in open_:
@@ -178,15 +205,17 @@ def next_habit(loop_rows, current=None) -> Next:
 NEXT_PREFIX = "Next up, if you want it: "
 
 
-def review_line(decision, loop_rows, week=None) -> str:
+def review_line(decision, loop_rows, week=None, reflex_often: bool = False) -> str:
     """After a Drop at the week review, the one words line "Next up, if you want it: <name>."; "" after Keep,
     for an unknown decision, or when nothing is left to offer. ``week`` is the habit.json just decided: its
-    habit counts as dropped (and is not offered straight back) even before its loop row is written."""
+    habit counts as dropped (and is not offered straight back) even before its loop row is written. With
+    ``reflex_often`` the line may name the circuit breaker (next_habit): the dropped week is no longer running.
+    """
     if decision != "Drop":
         return ""
     rows = [r for r in (loop_rows or ()) if isinstance(r, Mapping)]
     habit = week.get("habit") if isinstance(week, Mapping) else None
     if isinstance(habit, str) and not any(r.get("week_of") == week.get("week_of") for r in rows):
         rows.append({"kind": "loop", "week_of": week.get("week_of"), "habit": habit, "decision": decision})
-    n = next_habit(rows, current=habit)
+    n = (_circuit(decisions(rows), None) if reflex_often else None) or next_habit(rows, current=habit)
     return f"{NEXT_PREFIX}{n.habit['name']}." if n.habit is not None else ""

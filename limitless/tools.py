@@ -8,7 +8,7 @@ from typing import Mapping, Optional
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration as _body_calibration,
                delivery_audit as _delivery,
                explain_back as _explain_back,
-               feeds_evidence,
+               feed_reflex as _feed_reflex, feeds_evidence,
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
@@ -487,16 +487,25 @@ HABIT_NEXT_NOTE = ("a suggestion only: nothing was started; the person starts it
                    "limitless_habit start runs with their yes")
 
 
-def habit_next(state_dir, now: float, today: date) -> dict:
+def habit_next(state_dir, now: float, today: date, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None, tz=None) -> dict:
     """limitless_habit_next: habit_catalogue.next_habit over the weekly loop rows (stop_rule.loop_rows) and the
     running week (habit.json, while jobs.habit_week_gate is None), as a derived envelope: value ``{id, name,
     cue, start}``, ``age_h`` None, the evidence_tier of the newest decision used (self-reported; ``none`` before
     any week was decided) and the digit-free T1 label "next habit: <name>". Null with a plain reason when the
-    list is exhausted. It only suggests: read-only, nothing is written, sent or started."""
-    h = StateReader(Path(state_dir)).habit()
+    list is exhausted. When the last seven days' feed reflex (feed_reflex) is "often", the circuit breaker may
+    come first (habit_catalogue.next_habit ``reflex_often``). It only suggests: read-only, nothing is written,
+    sent or started."""
+    reader = StateReader(Path(state_dir))
+    h = reader.habit()
     running = isinstance(h, dict) and jobs.habit_week_gate(h, today) is None
     rows = _stop_rule.loop_rows(state_dir)
-    n = _habit_catalogue.next_habit(rows, current=h if running else None)
+    try:
+        got = _feed_reflex.read_for(reader, now - _feed_reflex.LOOKBACK_DAYS * 86400.0, now, env, home, tz)
+        often = got["label"] == _feed_reflex.OFTEN
+    except Exception:  # noqa: BLE001 - broken activity data reads as not often, never as a failure
+        often = False
+    n = _habit_catalogue.next_habit(rows, current=h if running else None, reflex_often=often)
     if n.habit is None:
         out = missing(n.reason)
     else:
@@ -1006,6 +1015,34 @@ def naps(reader: StateReader, now: float, today: date, raw: bool = False, env: O
         value.update(naps=got["naps"], close=got["close"])
     out = envelope(value, _naps.MODALITY, None if newest is None else max(0.0, now - newest) / 3600)
     out["label"] = got["label"]
+    return out
+
+
+def feed_reflex(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_feed_reflex: over the last feed_reflex.LOOKBACK_DAYS days, how often a feed app was the first
+    thing opened after unlocking the phone (feed_reflex.read_for), read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: a feed was often, sometimes or rarely the first thing
+    opened after unlocking) with the T1 label beside it; modality proxy (an app opened first is not a feed
+    read), aged by the newest phone row or unlock. The counts (``unlocks``, ``feed_first``, ``days``) and
+    ``gap_s`` are T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No feed apps, no DB, no unlock
+    or too few unlocks is value None with the reason and the label "unknown: <why>", never zero. It never
+    blocks, closes or delays an app; no score, no streak, no target. Nothing is written or sent.
+    """
+    got = _feed_reflex.read_for(reader, now - _feed_reflex.LOOKBACK_DAYS * 86400.0, now, env, home, tz)
+    word = got["label"]
+    label = {"tier": "T1", "modality": _feed_reflex.MODALITY, "label": word}
+    if word not in _feed_reflex.WORDS:
+        out = envelope(None, _feed_reflex.MODALITY, None, reason=f"feed reflex {word}")
+        out["label"] = label
+        return out
+    value = {"label": word}
+    if raw:
+        value.update(unlocks=got["unlocks"], feed_first=got["feed_first"], gap_s=got["gap_s"],
+                     days=[dict(d) for d in got["days"]])
+    out = envelope(value, _feed_reflex.MODALITY, max(0.0, now - got["newest"]) / 3600)
+    out["label"] = label
     return out
 
 

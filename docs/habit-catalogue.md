@@ -57,6 +57,15 @@ more line, `Next up, if you want it: <name>.` (`jobs_runner.week_next`, through 
 `week_review:next`). Nothing after Keep, nothing when the decision is unknown, nothing when the list is
 exhausted. There is no new push and no new job.
 
+## The circuit breaker (feed reflex)
+
+One more entry sits outside the ordered list: `CIRCUIT_BREAKER`, "Circuit breaker after unlocking" (cue
+`habit_cue`; start: when a feed opens straight after unlocking, close it and name one thing you came to do). It is
+offered only when the feed reflex ([feed-reflex.md](feed-reflex.md)) says a feed was often the first thing opened
+after unlocking, the feeds-free first hour is not running, and the person has not run, kept or dropped it yet.
+Then `limitless_habit_next` and the `Next up` line after a Drop name it first. Otherwise the list and its order are
+unchanged. It only suggests: nothing starts without the person's yes.
+
 ## Synthetic example (real output)
 
 A temp state dir with nothing in it, then one dropped week of the first habit

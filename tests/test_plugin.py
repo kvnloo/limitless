@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_delivery", "limitless_experiment", "limitless_explain_back", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
+TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_delivery", "limitless_experiment", "limitless_explain_back", "limitless_feed_reflex", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
          "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_outages", "limitless_overnight",
          "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_result_tier", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_sleep_debt", "limitless_state",
          "limitless_status", "limitless_window"]
@@ -89,6 +89,19 @@ def blocks_config(st: Path, at: float = NOW) -> Path:
     make_db(st / "aw-blocks.db", spans=[(at - 6000, at - 60, "editor")])
     cfg = st / "blocks-config.json"
     cfg.write_text(json.dumps({"aw_db": "aw-blocks.db", "flow_work_apps": ["editor"]}))
+    return cfg
+
+
+def feed_reflex_config(st: Path) -> Path:
+    """A config naming a synthetic phone ActivityWatch DB in ``st``: six unlocks before NOW, a made-up feed
+    app first after four of them."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_aw_reader import make_db
+    unlocks = [NOW - (i + 2) * 3600 for i in range(6)]
+    make_db(st / "aw-reflex.db", unlocks=unlocks,
+            spans=[(u + 2, u + 300, "feedapp" if i < 4 else "notes") for i, u in enumerate(unlocks)])
+    cfg = st / "reflex-config.json"
+    cfg.write_text(json.dumps({"aw_db": "aw-reflex.db", "feed_apps": ["feedapp"]}))
     return cfg
 
 
@@ -261,6 +274,8 @@ class Wiring(unittest.TestCase):
                 (st / "ledger").mkdir()
                 env = {"LIMITLESS_STATE": str(st / "ledger"),
                        "LIMITLESS_CONFIG": str(blocks_config(st / "ledger", at=NOW - 86400))}
+            if name == "limitless_feed_reflex":   # six synthetic unlocks before NOW, a made-up feed app first
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(feed_reflex_config(st))}
             if name == "limitless_ideas":   # a synthetic idea ledger with one idea before NOW
                 ideas = st / "ideas.jsonl"
                 ideas.write_text(json.dumps({"kind": "idea", "id": "idea_synthetic", "at": "2030-01-15T11:00:00+00:00",

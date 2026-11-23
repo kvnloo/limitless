@@ -75,7 +75,7 @@ class Handlers(unittest.TestCase):
     def test_every_tool_keeps_the_envelope_and_labels_a_value(self):
         for name in plugin.TOOLS:
             if name in ("limitless_anki", "limitless_body", "limitless_overnight", "limitless_rides",
-                        "limitless_sleep", "limitless_sleep_debt", "limitless_naps", "limitless_quiet", "limitless_blocks", "limitless_flow_metrics", "limitless_flow_ledger",
+                        "limitless_sleep", "limitless_sleep_debt", "limitless_naps", "limitless_quiet", "limitless_blocks", "limitless_flow_metrics", "limitless_flow_ledger", "limitless_feed_reflex",
                         "limitless_propose", "limitless_loop", "limitless_presleep_hr",
                         "limitless_schedule", "limitless_habit_next", "limitless_ideas", "limitless_card_view",
                         "limitless_phase", "limitless_explain_back", "limitless_experiment",
@@ -87,6 +87,7 @@ class Handlers(unittest.TestCase):
                                              # propose: its action words; loop: no week decided;
                                              # presleep_hr: no pre-sleep file
                                              # sleep_debt: no sleep data (test_sleep_debt_tool)
+                                             # feed_reflex: no feed apps set (test_feed_reflex_tool)
                                              # schedule: its card count (test_schedule_tool)
                                              # habit_next: next habit: <name> (test_habit_next_tool)
                                              # card_view: a state card with <rows> (test_ui_card_tool)

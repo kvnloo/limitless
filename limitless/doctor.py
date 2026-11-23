@@ -12,7 +12,8 @@ when written within STALE_H, else stale; read from the packet's own generated_at
 (config voice_miq, its mark voice-miq.json) just before it. Right after the tool rows comes the NOOP MCP row
 (config noop_mcp and t0_tools; the server is never started), then the desktop ActivityWatch's row (config
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
-call a server, read-only, with a short timeout).
+call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
+live, or unknown as status missing; words only, never its value).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -372,11 +373,30 @@ def desktop_aw_row(cfg: Mapping, now: float, fetch=None) -> dict:
                 f"active app time {age_words(max(0.0, now - got['newest']) / 3600)}")
 
 
+FEED_REFLEX_ROW = "feed reflex"
+FEED_REFLEX_LIVE = "reads unlocks and phone app rows from the last week"
+
+
+def feed_reflex_row(cfg: Mapping, now: float) -> dict:
+    """The feed reflex (feed_reflex.from_settings over the last LOOKBACK_DAYS days up to ``now``): off when no
+    feed apps are set; unknown (status missing) with the plain reason when it cannot say (no DB, no unlock, too
+    few unlocks); live when it can. Words only: never the words it would say, a count, an app name or a path.
+    Kind ``source``: --strict does not count it. Read-only."""
+    from . import feed_reflex
+    got = feed_reflex.from_settings(cfg, state_path(cfg), now - feed_reflex.LOOKBACK_DAYS * 86400.0, now)
+    if got["label"] in feed_reflex.WORDS:
+        return _row(FEED_REFLEX_ROW, "source", LIVE, FEED_REFLEX_LIVE)
+    why = got["label"][len(feed_reflex.UNKNOWN_PREFIX):]
+    if why == feed_reflex.NO_FEEDS:
+        return _row(FEED_REFLEX_ROW, "source", OFF, why)
+    return _row(FEED_REFLEX_ROW, "source", MISSING, got["label"])
+
+
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
-    desktop's ActivityWatch (desktop_aw_row), then the voice MIQ's row (voice_miq_row) just before the
+    desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then the voice MIQ's row (voice_miq_row) just before the
     context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
@@ -386,7 +406,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
-    rows += [desktop_aw_row(cfg, now), voice_miq_row(reader, cfg, now)]
+    rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 

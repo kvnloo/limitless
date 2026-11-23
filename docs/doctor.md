@@ -23,7 +23,8 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
 | `NOOP MCP`, right after the tools | mcp | | | config `noop_mcp` is set but malformed; `refused: t0_tools does not cover its tools`; or set and covered, to be added to the host's `mcp_servers` by hand (the host has no plugin API for it; the doctor cannot see `mcp_servers`) | `noop_mcp` is unset (the default) ([noop-mcp.md](noop-mcp.md)) |
 | `desktop AW`, after the NOOP MCP row | source | config `desktop_aw_url` (or `desktop_aw_export`) is set and shows active app time within `STALE_H`, its age in words | it answers with no active app time in that time | `unreachable:` it does not answer, or what it sends cannot be used (no window bucket, no afk bucket, not ActivityWatch data); the plain reason | neither is set (the default); nothing is called ([desktop-aw.md](desktop-aw.md)) |
-| `job voice MIQ`, after the desktop AW row | job | config `voice_miq` is `dry_run` or `write` and config `voice_miq_sessions` names a dir that exists; the reason says the mode and when the last spoken MIQ answer was captured (`voice-miq.json`) | | on, but `voice_miq_sessions` is unset or the dir does not exist | `voice_miq` is `off` (the default) ([voice-miq.md](voice-miq.md)) |
+| `feed reflex`, after the desktop AW row | source | config `feed_apps` and `aw_db` are set and the last week has enough unlocks to say (`feed_reflex_min_unlocks`); never the words it would say | | `unknown:` no readable DB, no unlock, or too few unlocks; the plain reason | `feed_apps` is not set (the default) ([feed-reflex.md](feed-reflex.md)) |
+| `job voice MIQ`, after the feed reflex row | job | config `voice_miq` is `dry_run` or `write` and config `voice_miq_sessions` names a dir that exists; the reason says the mode and when the last spoken MIQ answer was captured (`voice-miq.json`) | | on, but `voice_miq_sessions` is unset or the dir does not exist | `voice_miq` is `off` (the default) ([voice-miq.md](voice-miq.md)) |
 | `export context packet`, after the voice MIQ row | export | config `context_packet_path` is set and the packet there was written (`limitless-context-packet --write`) within `STALE_H` by its own `generated_at` | set but not written yet; older than `STALE_H`; or the file is not a `limitless.context/1` packet | | `context_packet_path` is unset (the default) ([context-packet.md](context-packet.md)) |
 | `export Open Wearables`, before the NOOP job | export | config `open_wearables_export` is `dry_run` or `write` and the last `limitless-ow-export` run read the server within `STALE_H` (`open-wearables.json`) | on but it has not run yet; its last good run is older; or `failing:` its last run could not read the server or write the sleep file (the plain reason) | | `open_wearables_export` is `off` (the default) ([open-wearables.md](open-wearables.md)) |
 | `job NOOP export`, last | job | config `noop_export` is `dry_run` or `write` and the export ran after the newest sync that copied the NOOP database, and exported (`noop-export.json`) | a sync copied the NOOP database and it has not run after it yet; no sync has copied it yet; or its last run found nothing to export (the plain reason) or could not write a file | | `noop_export` is `off` (the default) ([noop-export.md](noop-export.md)) |
@@ -86,6 +87,7 @@ tool limitless_quiet: stale: answers, but its evidence is stale or of unknown ag
 tool limitless_blocks: missing: focus blocks unknown: no readable ActivityWatch DB (aw_db)
 tool limitless_flow_metrics: missing: flow metrics unknown: no readable ActivityWatch DB (aw_db)
 tool limitless_flow_ledger: off: flow ledger unknown: no work apps set (flow_work_apps)
+tool limitless_feed_reflex: off: feed reflex unknown: no feed apps set (config feed_apps)
 tool limitless_ideas: stale: answers, but its evidence is stale or of unknown age
 tool limitless_delivery: off: no push log set (config push_log)
 tool limitless_phase: live: answers from a proxy
@@ -98,6 +100,7 @@ tool limitless_focus_safe: off: the focus guard is off (config focus_safe)
 tool limitless_result_tier: off: no health tools listed (config t0_tools)
 NOOP MCP: off: no noop_mcp set
 desktop AW: off: desktop ActivityWatch is not set (desktop_aw_url or desktop_aw_export)
+feed reflex: off: no feed apps set (config feed_apps)
 job voice MIQ: off: the voice MIQ is off (config voice_miq)
 export context packet: off: the context packet is not written (config context_packet_path)
 export Open Wearables: off: the Open Wearables export is off (config open_wearables_export)
