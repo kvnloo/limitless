@@ -8,6 +8,8 @@ Health data reaches a cloud model only as coarse labels, unless the person opts 
 | T1 | coarse labels ("sleep short", "readiness low", "fresh") | code (`limitless/labeler.py`) or an optional local model |
 | T2 | what a cloud model sees: T1 labels only | the `pre_llm_call` state card and the tool results |
 
+Another plugin's or an MCP server's health tool is kept at T1 by the result tier filter: every number in a tool result listed in config `t0_tools` becomes words before it enters context ([result-tier.md](result-tier.md)).
+
 The opt-in is `LIMITLESS_RAW_IN_PROMPT=1`. Without it the card masks every digit, and labels never hold one.
 
 ## Tier audit
