@@ -44,6 +44,8 @@ NO_LEDGER = "no idea ledger set"
 NO_DIR = "the idea ledger's folder does not exist"
 SAME_AS_CAPTURES = "the idea ledger cannot be the captures file"
 NOTHING_NEW = "no new ideas"
+FAILED = (NO_DIR, SAME_AS_CAPTURES)      # set but not writable: the CLI exits 1
+_NUM = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 
 def normalise(text: str) -> str:
@@ -108,6 +110,23 @@ def new_rows(captures: Optional[Iterable], ledger_rows: Optional[Iterable], curs
         seen.add(row["id"])
         out.append(row)
     return out
+
+
+def count_words(n: int) -> str:
+    """"one idea", "two ideas" ... "ten ideas", then "several ideas"; digit-free."""
+    word = _NUM[n] if 0 <= n < len(_NUM) else "several"
+    return f"{word} idea" + ("" if n == 1 else "s")
+
+
+def words(out: dict, write: bool) -> str:
+    """append/run's result as the CLI's one plain line, digit-free: "would append two ideas", "appended two
+    ideas", "no new ideas", "no idea ledger set" or "not appended: <why>". Never the idea text."""
+    why = out.get("why") or ""
+    if why in FAILED:
+        return f"not appended: {why}"
+    if why:
+        return why
+    return f"{'appended' if write and out.get('written') else 'would append'} {count_words(out.get('count', 0))}"
 
 
 def _result(path, count: int, written: bool, why: str = "", rows=None) -> dict:

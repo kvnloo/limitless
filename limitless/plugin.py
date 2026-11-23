@@ -379,7 +379,8 @@ def _register_cards(ctx) -> None:
         logger.info(schedule_cards.NO_HOST)
         return
     try:
-        for c in schedule_cards.cards(external=jobs_runner.external_jobs()):
+        ledger = _reader().idea_ledger_path() is not None
+        for c in schedule_cards.cards(external=jobs_runner.external_jobs(), ledger=ledger):
             method(c)
     except Exception:  # noqa: BLE001 - a host's card API must never break plugin registration
         logger.warning(schedule_cards.HOST_FAILED)

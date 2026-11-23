@@ -21,6 +21,9 @@ Host registration (plugin.register): a host ctx with a callable ``register_sched
 each card, one call per card. #158289 at its head dd4e675b has no such plugin method yet, so today every
 host takes the other path: nothing is registered and the plugin logs NO_HOST, one content-free line.
 
+The idea ledger (idea_ledger.py) adds one more card when a ledger is configured: ``ledger_card()``, sender
+``local`` (bin/limitless-ledger-append --write on the wind_down event; nothing is sent, budget zero).
+
 Pure: no clock, no file, no network; nothing here sends or schedules. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -33,8 +36,8 @@ KIND = "schedule"            # #158289: the approval kind of a "Schedule this jo
 HOST_METHOD = "register_schedule_card"   # the host ctx method plugin.register looks for (hasattr)
 NO_HOST = "limitless: the host has no schedule-card registration; nothing registered"
 HOST_FAILED = "limitless: the host's schedule-card registration failed; register went on"
-PLUGIN, EXTERNAL = "plugin", "external"
-SENDERS = (PLUGIN, EXTERNAL)
+PLUGIN, EXTERNAL, LOCAL = "plugin", "external", "local"
+SENDERS = (PLUGIN, EXTERNAL, LOCAL)      # local: a job on this machine that sends nothing (the idea ledger)
 OWN_SENDER = "; sent by its own sender, not by limitless-jobs"   # jobs_runner.OWN_SENDER, as a clause
 HOOK = "tool:limitless_schedule"
 MODALITY = "derived"          # computed from the job specs and config, not measured (as propose.MODALITY)
@@ -68,11 +71,31 @@ def specs(habit: Optional[dict] = None) -> list:
     return [per_habit[n](habit) if n in per_habit else s for n, s in jobs.SPECS.items()]
 
 
-def cards(external: Iterable[str] = (), habit: Optional[dict] = None) -> list:
+def cards(external: Iterable[str] = (), habit: Optional[dict] = None, ledger: bool = False) -> list:
     """One card per job spec, in jobs.SPECS order. ``external``: job names another sender owns
-    (jobs_runner.external_jobs); ``habit``: habit.json, whose ``cue`` moves the two habit cards."""
+    (jobs_runner.external_jobs); ``habit``: habit.json, whose ``cue`` moves the two habit cards; ``ledger``
+    (an idea ledger is configured) adds ledger_card() last."""
     ext = set(external or ())
-    return [card_for(s, ext) for s in specs(habit)]
+    return [card_for(s, ext) for s in specs(habit)] + ([ledger_card()] if ledger else [])
+
+
+LEDGER_ID = "idea_ledger"
+LEDGER_SPEC = jobs.JobSpec(LEDGER_ID, "wind_down", "wind_down", "Idea ledger", 1, "sleep_mode_on")   # not in SPECS
+LEDGER_RUNS = "limitless-ledger-append --write"
+LEDGER_DOES = "nothing is sent; it appends the new captures to your idea ledger"
+
+
+def ledger_card() -> dict:
+    """The idea ledger's one card (idea_ledger.py): bin/limitless-ledger-append --write once per wind-down.
+    Not a jobs.SPECS job: limitless-jobs never runs it, it pushes nothing (budget zero) and it has no clock
+    time; whoever approves the card runs the command on the event."""
+    w = jobs.to_schedule_card(LEDGER_SPEC)
+    w.update(delivery=LEDGER_DOES, runs=LEDGER_RUNS)
+    desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {LEDGER_DOES}'
+    return {"id": LEDGER_ID, "kind": KIND, "name": LEDGER_SPEC.send_title, "description": desc,
+            "trigger": LEDGER_SPEC.trigger_event, "ends": LEDGER_SPEC.expires, "window": LEDGER_SPEC.window_class,
+            "stale_after_s": None, "once_key": f"{LEDGER_ID}:<night date>", "budget": 0,
+            "per_window": LEDGER_SPEC.max_per_window, "sender": LOCAL, "words": w}
 
 
 def label(n: int) -> str:

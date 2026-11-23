@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""limitless-ledger-append [--write] [--show]: append the captures not yet in the idea ledger to it.
+
+The ledger is $LIMITLESS_IDEA_LEDGER, else config "idea_ledger" (a relative path is in the state dir); not set,
+it does nothing and says "no idea ledger set". Dry run by default: "would append two ideas". With --write it
+appends (idea_ledger.run: one atomic append, deduped on the normalised text, so a re-run appends nothing) and
+says "appended two ideas". One plain line, digit-free; the idea text only with --show, one "- <text>" line per
+idea. It never sends, pushes, triages or starts anything. Exit 1 when the ledger is set but cannot be written
+(a missing folder, or the captures file itself), else 0. Offered as one schedule card on the wind_down event
+(schedule_cards.ledger_card); it has no clock time of its own.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+import argparse  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import idea_ledger  # noqa: E402
+from limitless.state_reader import state_dir  # noqa: E402
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-ledger-append",
+                                 description="Append new captures to the idea ledger (dry run by default).")
+    ap.add_argument("--write", action="store_true", help="append for real (default: dry run)")
+    ap.add_argument("--show", action="store_true", help="also print each idea's text")
+    a = ap.parse_args(argv[1:])
+    out = idea_ledger.run(state_dir(), write=a.write)
+    print(idea_ledger.words(out, a.write))
+    if a.show:
+        for r in out["rows"]:
+            print(f"- {r['text']}")
+    return 1 if out["why"] in idea_ledger.FAILED else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
