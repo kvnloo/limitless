@@ -120,6 +120,10 @@ def _flow_ledger(args, now):
     return tools.flow_ledger(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _ideas(args, now):
+    return tools.ideas(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
@@ -340,6 +344,13 @@ blocks. Unknown with the reason when no work apps are set, there is no app activ
 not over. Observed app activity (modality observed), not attention or output: no score, no productivity \
 measure, no ranking, no target, no advice. The words only; block times and app names need the person's raw \
 opt-in, and work-queue file names never appear. Read-only; nothing is written or sent."), _flow_ledger, "📒"),
+    "limitless_ideas": (_schema(
+        "limitless_ideas",
+        "The idea ledger's last seven days (config idea_ledger: the one record every capture lands in, appended \
+by limitless-ledger-append): how many ideas were recorded and whether the person has triaged them, in plain \
+words such as a few new ideas this week, none triaged. Self-reported. The words only; the counts and the idea \
+text need the person's raw opt-in. No ledger set is no value with the reason. It never triages, ranks or \
+starts an idea: the person triages in a review. Read-only; nothing is written or sent."), _ideas, "💡"),
     "limitless_propose": (_schema(
         "limitless_propose",
         "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \

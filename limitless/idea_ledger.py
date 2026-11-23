@@ -180,3 +180,61 @@ def run(state, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
         return _result(path, 0, False, SAME_AS_CAPTURES)
     ledger = reader.idea_ledger_rows(env, home)
     return append(path, new_rows(reader.captures(), ledger, cursor(ledger)), write=write)
+
+
+# --- the week, in words (limitless_ideas, the week review) -----------------------------------------------
+
+WEEK_S = 7 * 24 * 3600.0
+TIER, MODALITY = "T1", "self_report"
+
+
+def week(ledger_rows: Optional[Iterable], now: float) -> dict:
+    """``{recorded, triaged, newest_at, ideas}`` over the ledger's idea rows. One idea per id: its first row
+    gives ``at`` and ``text``, its latest row with a ``status`` gives the status (the person may append or edit
+    a row in a review; the code never does). ``recorded`` counts the ideas whose ``at`` is in the seven days up
+    to ``now``; ``triaged`` those of them whose status is not "new". ``newest_at`` is the newest idea time at or
+    before ``now`` (None when there is none). Pure."""
+    first, status = {}, {}
+    for r in _ideas(ledger_rows):
+        i = r.get("id")
+        if not isinstance(i, str):
+            continue
+        if i not in first:
+            first[i] = r
+        if isinstance(r.get("status"), str) and r["status"].strip():
+            status[i] = r["status"].strip()
+    ideas, newest = [], None
+    for i, r in first.items():
+        t = parse_ts(r.get("at")) if isinstance(r.get("at"), str) else None
+        if t is None or t > now:
+            continue
+        newest = t if newest is None or t > newest else newest
+        if now - t <= WEEK_S:
+            ideas.append((t, {"id": i, "at": r["at"], "text": r.get("text"), "source": r.get("source"),
+                              "status": status.get(i, NEW)}))
+    ideas = [x for _, x in sorted(ideas, key=lambda x: x[0])]
+    return {"recorded": len(ideas), "triaged": sum(1 for x in ideas if x["status"] != NEW),
+            "newest_at": newest, "ideas": ideas}
+
+
+def amount(n: int) -> str:
+    """one, two, a few (three to five), several (six to ten), many: coarse and digit-free."""
+    return "one" if n == 1 else "two" if n == 2 else "a few" if n <= 5 else "several" if n <= 10 else "many"
+
+
+def label(w: Optional[dict]) -> str:
+    """The week in words: "a few new ideas this week, none triaged", "no new ideas this week". Digit-free; it
+    says what the ledger holds and nothing about which idea matters."""
+    n = (w or {}).get("recorded") or 0
+    t = (w or {}).get("triaged") or 0
+    if n <= 0:
+        return "no new ideas this week"
+    if n == 1:
+        return f"one new idea this week, {'triaged' if t else 'not triaged yet'}"
+    tri = "none triaged" if t <= 0 else "all triaged" if t >= n else "some triaged"
+    return f"{amount(n)} new ideas this week, {tri}"
+
+
+def t1(w: Optional[dict]) -> dict:
+    """label() as a T1 label dict."""
+    return {"label": label(w), "tier": TIER, "modality": MODALITY}
