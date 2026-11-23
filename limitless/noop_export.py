@@ -17,21 +17,27 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sqlite3
+import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 from urllib.parse import quote
 
 from .presleep_hr import MAX_BPM, MEASURED, MIN_BPM
 from .sleep import EVENING_FROM_H
-from .state_reader import MAX_ASLEEP_S
+from .state_reader import MAX_ASLEEP_S, PRESLEEP_HR_CONFIG, SLEEP_CONFIG, StateReader, config, state_dir
 
 SOURCE = "noop"              # the one source name the sleep rows carry: never a device, model or id
 WEARABLE_KINDS = ("liveBLE", "historyBLE", "oura", "huami")   # pairedDevice.sourceKind read straight off a strap
 ASLEEP_STAGES = ("light", "deep", "rem")
 WINDOW_S = 30 * 60           # pre-sleep window: the half hour right before the night's onset, [onset - WINDOW_S, onset)
 MIN_SAMPLES = 10             # fewer plausible heart-rate samples in that window: no row for the night
+DB_CONFIG = "noop_db"
+USAGE = "usage: limitless-noop-export [--write]"
+NO_DB = f"nothing to export: no NOOP database configured (set \"{DB_CONFIG}\" in config.json)"
 NO_FILE = "no NOOP database at the configured path"
 NOT_NOOP = "the configured file is not a readable SQLite database"
 SCHEMA_PREFIX = "not a NOOP database this exporter knows: "
@@ -219,3 +225,145 @@ def read(db_path, tz=None) -> dict:
             con.close()
     except (sqlite3.Error, OSError, ValueError, TypeError):
         return _empty(NOT_NOOP)
+
+
+_ONES = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+         "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
+_TENS = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+
+
+def words(n: int) -> str:
+    """A count spelled out (0 is "no"), so no digit reaches the output; "many" past 9999."""
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        return _TENS[n // 10] + ("-" + _ONES[n % 10] if n % 10 else "")
+    if n < 1000:
+        return _ONES[n // 100] + " hundred" + (" " + words(n % 100) if n % 100 else "")
+    if n < 10000:
+        return _ONES[n // 1000] + " thousand" + (" " + words(n % 1000) if n % 1000 else "")
+    return "many"
+
+
+def nights_words(n: int) -> str:
+    return f"{words(n)} night" + ("" if n == 1 else "s")
+
+
+def db_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+    """Config ``noop_db``: the operator's copy of the NOOP DB; a relative path is in the state dir. None unset."""
+    v = config(env, home).get(DB_CONFIG)
+    if not isinstance(v, str) or not v.strip():
+        return None
+    p = Path(v.strip()).expanduser()
+    return p if p.is_absolute() else state_dir(env, home) / p
+
+
+def _line(row: dict) -> str:
+    return json.dumps(row) + "\n"
+
+
+def merge(existing: str, rows: list, key: tuple) -> tuple:
+    """(new text, rows new or changed): ``rows`` merged into the JSONL text ``existing`` by ``key`` (night plus
+    source or modality). A row of ours replaces the one with the same key; every other row is kept, as are lines
+    that are not object rows with a night (first, in their order). Object rows are sorted by key: the output
+    depends only on the content, so a rerun gives the same bytes."""
+    keep, byk = [], {}
+    for ln in existing.splitlines():
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            r = None
+        if not isinstance(r, dict) or not isinstance(r.get("night"), str):
+            if ln.strip():
+                keep.append(ln + "\n")
+            continue
+        byk.setdefault(tuple(str(r.get(k)) for k in key), r)
+    changed = 0
+    for r in rows:
+        k = tuple(str(r.get(f)) for f in key)
+        if byk.get(k) != r:
+            changed += 1
+        byk[k] = r
+    return "".join(keep) + "".join(_line(byk[k]) for k in sorted(byk)), changed
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` through a temp file in the same directory and a rename, mode 0600."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+TARGETS = (("sleep file", SLEEP_CONFIG, "sleep", ("night", "source")),
+           ("pre-sleep heart-rate file", PRESLEEP_HR_CONFIG, "presleep", ("night", "modality")))
+SKIP_WORDS = (("not_wearable", "session", "not from a wearable"), ("no_asleep_time", "session", "with no asleep time"),
+              ("not_a_night", "session", "not a night"), ("too_few_hr", "night", "with too few heart-rate samples"))
+
+
+def _skipped(skipped: dict) -> str:
+    parts = [f"{words(skipped[k])} {noun}{'' if skipped[k] == 1 else 's'} {why}"
+             for k, noun, why in SKIP_WORDS if skipped.get(k)]
+    return ("; skipped " + ", ".join(parts)) if parts else ""
+
+
+def _target(reader: StateReader, cfg_key: str, env, home) -> Optional[Path]:
+    return reader.sleep_file(env, home) if cfg_key == SLEEP_CONFIG else reader.presleep_hr_file(env, home)
+
+
+def main(argv, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None, tz=None, out=None,
+         err=None) -> int:
+    """The CLI: 0 when done or when there is nothing to export (one line why), 1 when a file cannot be written,
+    2 for bad arguments. Prints counts in words and never a path, a device or a reading."""
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
+    env = os.environ if env is None else env
+    args = list(argv)
+    if args not in ([], ["--write"]):
+        print(USAGE, file=err)
+        return 2
+    write = args == ["--write"]
+    db = db_path(env, home)
+    if db is None:
+        print(NO_DB, file=out)
+        return 0
+    got = read(db, tz)
+    if got["reason"] is not None:
+        print(got["reason"], file=out)
+        return 0
+    found = (f"{nights_words(len(got['sleep']))} of wearable sleep and {nights_words(len(got['presleep']))} of "
+             f"pre-sleep heart rate in the NOOP database{_skipped(got['skipped'])}")
+    if not write:
+        print(f"dry run: {found}; nothing written (run with --write to write them)", file=out)
+        return 0
+    print(f"found {found}", file=out)
+    reader, code = StateReader(state_dir(env, home)), 0
+    for name, cfg_key, field, key in TARGETS:
+        path = _target(reader, cfg_key, env, home)
+        if path is None:
+            print(f"{name}: not configured (set \"{cfg_key}\" in config.json), not written", file=out)
+            continue
+        try:
+            old = path.read_text(encoding="utf-8") if path.is_file() else ""
+            text, changed = merge(old, got[field], key)
+            if text == old:
+                print(f"{name}: unchanged", file=out)
+                continue
+            write_atomic(path, text)
+        except (OSError, ValueError) as e:
+            print(f"{name}: not written: {getattr(e, 'strerror', None) or type(e).__name__}", file=err)
+            code = 1
+            continue
+        print(f"{name}: written, {nights_words(changed)} new or changed", file=out)
+    return code
