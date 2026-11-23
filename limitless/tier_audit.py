@@ -79,3 +79,60 @@ def record(ev, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
         return True
     except Exception:  # noqa: BLE001 - the audit must never break a turn
         return False
+
+
+def gate(hook: str, text: str, opt_in: bool, env: Optional[Mapping[str, str]] = None,
+         home: Optional[Path] = None, now: Optional[float] = None) -> Optional[str]:
+    """Record one injection of ``text`` and return what may be sent: ``text``, or None when it has a digit
+    without the opt-in (blocked: dropped, never sent). Blocking does not depend on the audit being on."""
+    ev = event(hook, text, opt_in, now)
+    record(ev, env, home)
+    return None if ev["blocked"] else text
+
+
+def _is_label(v) -> bool:
+    return isinstance(v, dict) and "tier" in v and isinstance(v.get("label"), str)
+
+
+def labels(result) -> list:
+    """Every T1 label word in a tool result (the top-level ``label`` and any nested one), in order."""
+    out = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k == "label" and _is_label(x):
+                    out.append(x["label"])
+                else:
+                    walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+
+    walk(result)
+    return out
+
+
+def _without_digit_labels(v):
+    if isinstance(v, dict):
+        return {k: _without_digit_labels(x) for k, x in v.items()
+                if not (k == "label" and _is_label(x) and any(c.isdigit() for c in x["label"]))}
+    if isinstance(v, list):
+        return [_without_digit_labels(x) for x in v]
+    return v
+
+
+def audit_result(hook: str, result, opt_in: bool, env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None, now: Optional[float] = None):
+    """Record the labels a tool result carries (one line, over the label words joined by newlines) and return
+    the result to send: unchanged, or without its digit-bearing labels when that is blocked. A result with
+    no label is not an injection of a label: nothing is recorded."""
+    try:
+        words = labels(result)
+    except Exception:  # noqa: BLE001
+        return result
+    if not words:
+        return result
+    if gate(hook, "\n".join(words), opt_in, env, home, now) is None:
+        return _without_digit_labels(result)
+    return result

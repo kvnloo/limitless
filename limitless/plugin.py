@@ -2,7 +2,8 @@
 ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=None, is_async=False,
 description="", emoji="", override=False) and ctx.register_hook(hook_name, callback).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
-Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value.
+Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
+result is recorded by tier_audit (content-free).
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import capture, card, labeler, scorecard, tools
+from . import capture, card, labeler, scorecard, tier_audit, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -63,10 +64,14 @@ def _capture(args, now):
     return capture.capture(state_dir(), args.get("text"), now)
 
 
-def _handler(fn: Callable) -> Callable:
+def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
-            env = tools.labeled(fn(args if isinstance(args, dict) else {}, time.time()))
+            now = time.time()
+            env = tools.labeled(fn(args if isinstance(args, dict) else {}, now))
+            # every labeled result is audited; a digit-bearing label without the opt-in is dropped
+            env = tier_audit.audit_result(f"tool:{name or handler.__name__}", env,
+                                          card.raw_in_prompt(os.environ), now=now)
         except Exception as exc:  # the handler contract: report, never raise into the agent loop
             env = missing(f"{type(exc).__name__}: {exc}")
         return json.dumps(env, ensure_ascii=False)
@@ -145,7 +150,7 @@ TOOLS = {
 
 def register(ctx) -> None:
     for name, (schema, fn, emoji) in TOOLS.items():
-        ctx.register_tool(name=name, toolset=TOOLSET, schema=schema, handler=_handler(fn),
+        ctx.register_tool(name=name, toolset=TOOLSET, schema=schema, handler=_handler(fn, name),
                           description=schema["description"], emoji=emoji)
     ctx.register_hook("pre_llm_call", card.make_pre_llm_call(
         clock=lambda: time.time(), today=lambda: date.fromtimestamp(time.time()), bands=_bands()))

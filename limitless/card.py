@@ -6,6 +6,8 @@ hold a raw value. Every digit left in it is masked as a second guard (MASK_DIGIT
 opts in to raw numbers. Labels describe one imported or proxy value; nothing here computes a score.
 The hook's card is cached until the window class, a card input file's mtime, the date, the raw flag or the
 owner-message label (tools.owner_message: one short read-only probe of each owner session DB per turn) changes.
+Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
+opt-in is dropped, not sent.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ from datetime import date
 from typing import Callable, Mapping, Optional
 
 from . import labeler as _labeler
-from . import tools
+from . import tier_audit, tools
 from .envelope import STALE_H, envelope, missing
 from .state_reader import StateReader, parse_ts, state_dir
 from .window import window
@@ -172,7 +174,9 @@ def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[
         reader = StateReader(state_dir(e))
         if not reader.exists():
             return None
-        return {"context": cache.get(reader, clock(), today(), raw=raw_in_prompt(e), bands=bands,
-                                     labeler=_labeler.from_config(e), env=e)}
+        now, raw = clock(), raw_in_prompt(e)
+        text = cache.get(reader, now, today(), raw=raw, bands=bands, labeler=_labeler.from_config(e), env=e)
+        text = tier_audit.gate("pre_llm_call", text, raw, env=e, now=now)  # a digit without the opt-in: drop
+        return None if text is None else {"context": text}
 
     return pre_llm_call
