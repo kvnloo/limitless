@@ -367,7 +367,8 @@ scheduled or started."), _propose, "🪶"),
         "Every recurring Limitless job (wake brief, back from nap, the bedtime question, the habit check-in, \
 the week review, the break nudge) as one Hermes schedule card: the event that wakes it (never a clock time), \
 the event that ends it, its decision window, how late its trigger may be (stale_after_s), its once-per-event \
-key in words, the send gate's daily cap and whether limitless-jobs or another sender sends it. `lines` and the \
+key in words, the send gate's daily cap and whether limitless-jobs or another sender sends it; with an idea \
+ledger set, one more card for its nightly append, which sends nothing. `lines` and the \
 label are plain words; the raw fields are only in value. Read-only: nothing is written, sent, scheduled or \
 registered."), _schedule, "🗓️"),
 }
