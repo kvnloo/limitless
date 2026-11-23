@@ -8,8 +8,8 @@ plugin's own jobs and send gate. The skill adds no tool, no job and no write.
 
 ## Registration
 
-`register(ctx)` calls `coach_skill.register(ctx)` last, after the tools, hooks and schedule cards
-(`limitless/coach_skill.py`):
+`register(ctx)` calls `coach_skill.register(ctx)` after the tools, hooks and schedule cards and before the
+rules section ([prompt-rules.md](prompt-rules.md)) (`limitless/coach_skill.py`):
 
 - A host whose ctx has a callable `register_skill` (Hermes: `register_skill(name, path, description="",
   frontmatter=None)`) gets one call per name in `coach_skill.NAMES` (`coach`, then `learn`, see
