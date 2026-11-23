@@ -5,10 +5,10 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (asks as _asks, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
+from . import (asks as _asks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                owner_messages as _owner, passive_habit, prediction as _prediction, scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
-from .state_reader import (OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
+from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
                            parse_ts)
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
@@ -332,4 +332,35 @@ def owner_message(reader: StateReader, now: float, env: Optional[Mapping[str, st
         out = envelope(got["at"], "messages", got["age_h"])
     out["sources"] = sources
     out["label"] = _labeler.label(OWNER_KIND, got["age_h"], "messages")
+    return out
+
+
+def body(reader: StateReader, now: float, today: date, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+         home: Optional[Path] = None) -> dict:
+    """limitless_body: the body-fat trend (body.trend) for ``today``, read-only.
+
+    An envelope whose value is ``{recent_rows, prior_rows, label}`` (counts and the T1 words) with the T1
+    label beside it; modality measured when every row in both windows is calibrated, else proxy; aged by the
+    body file's mtime. Raw numbers (``recent_median``, ``prior_median``, ``change``) are T0 and appear only
+    with ``raw`` (the card's LIMITLESS_RAW_IN_PROMPT opt-in). No file configured, a missing file or no valid
+    row is value None with a reason (unknown, not zero); reasons never echo the path.
+    """
+    path = reader.body_file(env, home)
+    if path is None:
+        return missing(f"no body file: set \"{BODY_CONFIG}\" in config.json")
+    rows = reader.body_rows(env, home, today=today)
+    if not rows:
+        return missing("no valid body row in the configured body file")
+    try:
+        age_h = max(0.0, now - path.stat().st_mtime) / 3600
+    except OSError:
+        age_h = None
+    t = _body.trend(rows, today, flat=_body.flat_points(env, home))
+    value = {"recent_rows": t["recent"]["rows"], "prior_rows": t["prior"]["rows"], "label": t["label"]["label"]}
+    if raw:
+        for k, v in (("recent_median", t["recent"]["median"]), ("prior_median", t["prior"]["median"]),
+                     ("change", t["change"])):
+            value[k] = None if v is None else round(v, 2)
+    out = envelope(value, t["modality"], age_h)
+    out["label"] = t["label"]
     return out

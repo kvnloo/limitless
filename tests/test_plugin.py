@@ -20,9 +20,21 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_capture", "limitless_catchup", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
+TOOLS = ["limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
          "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
+
+
+def body_config(st: Path) -> Path:
+    """A config naming a synthetic body file in ``st`` with three visits in each window before NOW."""
+    from datetime import date, timedelta
+    today = date.fromtimestamp(NOW)
+    rows = [{"day": (today - timedelta(days=d)).isoformat(), "bf_pct": 20.0, "method": "synthetic",
+             "calibrated": True} for d in (1, 4, 7, 15, 18, 21)]
+    (st / "body.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    cfg = st / "body-config.json"
+    cfg.write_text(json.dumps({"body_file": "body.jsonl"}))
+    return cfg
 
 
 class FakeCtx:
@@ -139,6 +151,8 @@ class Wiring(unittest.TestCase):
             env = {"LIMITLESS_STATE": str(st)} if name == "limitless_capture" else None
             if name == "limitless_catchup":
                 env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(owner_db(st / "owner.db"))}
+            if name == "limitless_body":   # synthetic visits, three in each two-week window
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(body_config(st))}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))
