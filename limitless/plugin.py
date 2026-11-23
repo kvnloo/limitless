@@ -18,8 +18,8 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import (bedtime, capture, card, card_view, catchup, jobs_runner, labeler, modes, schedule_cards, scorecard, stop_rule,
-               tier_audit, tools)
+from . import (bedtime, capture, card, card_view, catchup, explain_back, jobs_runner, labeler, modes, schedule_cards,
+               scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -69,6 +69,8 @@ def _scorecard(args, now):
 
 
 def _capture(args, now):
+    if args.get("kind") == explain_back.KIND:
+        return explain_back.reply(state_dir(), args.get("text"), now)
     return capture.capture(state_dir(), args.get("text"), now)
 
 
@@ -126,6 +128,10 @@ def _ideas(args, now):
 
 def _phase(args, now):
     return tools.phase(_reader(), now)
+
+
+def _explain_back(args, now):
+    return tools.explain_back(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
 def _propose(args, now):
@@ -259,8 +265,13 @@ nothing is written or sent."), _loop, "🔁"),
     "limitless_capture": (_schema(
         "limitless_capture",
         "Record one thought, idea or to-do for later triage by appending it to the capture log. It only "
-        "records: do not start, plan or delegate the captured item.",
-        {"text": {"type": "string", "description": "The captured text, verbatim."}}, ["text"]),
+        "records: do not start, plan or delegate the captured item. With `kind: explain_back` it records the "
+        "person's answer to the state card's explain-back offer, verbatim (Later or a bare Voice tap records "
+        "nothing); never grade the answer and never ask a follow-up about it.",
+        {"text": {"type": "string", "description": "The captured text, verbatim."},
+         "kind": {"type": "string", "enum": [explain_back.KIND],
+                  "description": "explain_back only for an answer to the explain-back offer; leave it out "
+                                 "otherwise."}}, ["text"]),
         _capture, "📝"),
     "limitless_catchup": (_schema(
         "limitless_catchup",
@@ -370,6 +381,14 @@ unknown (no wake event yet). A circadian posture file (config posture_file or LI
 when it is fresher than the wake event and names one of these phases; otherwise it is ignored and \
 posture_ignored says why. Modality derived (posture file) or proxy (wake event). No clock time, no target \
 bedtime, no light dose or supplement advice. Read-only; nothing is written, sent or scheduled."), _phase, "🌅"),
+    "limitless_explain_back": (_schema(
+        "limitless_explain_back",
+        "The one optional explain-back offer (the state card's \"Explain back: say what landed in one breath. \
+Reply: Voice / Later\", only in a trough after work landed, at most once per wake event): whether it was offered \
+for the latest wake and how many answers the last seven days hold, in plain words such as two this week. \
+Self-reported. The words only; the answers' text needs the person's raw opt-in. It is a suggestion: never grade \
+an answer, never ask a follow-up of your own, no score, no streak; a skipped offer is not logged. Read-only; \
+nothing is written or sent."), _explain_back, "🗣️"),
     "limitless_propose": (_schema(
         "limitless_propose",
         "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \

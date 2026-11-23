@@ -22,6 +22,10 @@ In a trough window with an Anki collection set (anki.offer: the window chain, Gl
 trough job; never in a peak, asleep, an unknown window, a focus block or focused mode) the hook's card adds
 "trough: a short Anki review fits now", on a line of its own or after the last line's words when the card is
 full. Only the pre_llm_call card has it (CardCache); build() adds it only when given ``anki_offer``.
+The same trough, once per wake event and only after work landed in the work queue (explain_back.for_turn),
+adds the explain-back offer "Explain back: say what landed in one breath. Reply: Voice / Later" on a line of its
+own after the card (outside MAX_LINES, so the Reply choices stay whole); once the gate lets that card through,
+the hook marks the wake as offered (explain-back.json). build() adds it only when given ``explain_offer``.
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
 MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -35,7 +39,7 @@ import time
 from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Optional
 
-from . import anki as _anki, bedtime, flow_week, modes, peak as _peak, phase as _phase
+from . import anki as _anki, bedtime, explain_back as _explain_back, flow_week, modes, peak as _peak, phase as _phase
 from . import labeler as _labeler
 from . import tier_audit, tools
 from . import weekly_target as _weekly_target
@@ -191,20 +195,33 @@ def anki_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapping
     no offer. Never raises."""
     try:
         path = _anki.collection_path(env)
-        state = first_known(GlideProvider.from_config(env, now=now))
-        if state.cls == UNKNOWN:
-            state = win
-        state = modes.apply(state, modes.load(reader.path))
-        return _anki.offer(state, {"set": path is not None and path.is_file()}) or None
+        return _anki.offer(_trough_state(reader, now, win, env), {"set": path is not None and path.is_file()}) or None
     except Exception:  # noqa: BLE001 - a broken input must not break the card
         return None
+
+
+def _trough_state(reader: StateReader, now: float, win: dict, env: Optional[Mapping[str, str]] = None):
+    """The window a trough offer sees: the window chain (Glide first, then ``win``), focused mode applied."""
+    state = first_known(GlideProvider.from_config(env, now=now))
+    if state.cls == UNKNOWN:
+        state = win
+    return modes.apply(state, modes.load(reader.path))
+
+
+def explain_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapping[str, str]] = None) -> tuple:
+    """explain_back.for_turn in the window anki_offer sees: ``(line or None, wake)``. Never raises."""
+    try:
+        line, wake = _explain_back.for_turn(reader, now, _trough_state(reader, now, win, env), env)
+        return line or None, wake
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None, None
 
 
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
-          mask: bool = True, light: Any = _UNSET) -> dict:
+          explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
@@ -268,6 +285,8 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
         else:
             lines[1] += f"; {lit}"
     lines = lines[:MAX_LINES]
+    if explain_offer:
+        lines.append(explain_offer)   # its own last line, outside MAX_LINES: the Reply choices stay whole
     if not raw and MASK_DIGITS and mask:
         lines = [re.sub(r"\d+", "#", ln) for ln in lines]
     return {"text": "\n".join(lines), "lines": lines, "items": items, "age_h": digest_age}
@@ -290,6 +309,7 @@ def state(reader: StateReader, now: float, today: date, *, raw: bool = False,
 class CardCache:
     def __init__(self):
         self._key, self._text, self.builds = None, None, 0
+        self.wake = None   # the wake event of the last get's explain-back offer, for the hook's mark
 
     def get(self, reader: StateReader, now: float, today: date, raw: bool = False,
             bands: Optional[Mapping] = None, labeler: Optional[Callable] = None,
@@ -299,12 +319,14 @@ class CardCache:
         word = peak_label(reader, now, env)   # the peak closes with time, not a file change: part of the key
         offer = anki_offer(reader, now, win, env)   # Glide's block and the mode change it too: part of the key
         lit = light_line(reader, now, env)   # the light part ends with time since the wake: part of the key
+        explain, self.wake = explain_offer(reader, now, win, env)   # the mark and landed work change it too
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env), word, offer, lit)
+               _passive_mtime(reader, env), word, offer, lit, explain)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
-                               owner=owner, env=env, peak=word, anki_offer=offer, light=lit)["text"]
+                               owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
+                               explain_offer=explain)["text"]
             self._key = key
             self.builds += 1
         return self._text
@@ -329,6 +351,10 @@ def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[
         if mode_line:
             text = f"{text}\n{mode_line}"
         text = tier_audit.gate("pre_llm_call", text, raw, env=e, now=now)  # a digit without the opt-in: drop
-        return None if text is None else {"context": text}
+        if text is None:
+            return None
+        if cache.wake is not None and _explain_back.OFFER in text.splitlines():
+            _explain_back.mark(reader.path, cache.wake, now)   # offered once for this wake event
+        return {"context": text}
 
     return pre_llm_call
