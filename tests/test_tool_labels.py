@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from limitless import envelope as e  # noqa: E402
 from limitless import plugin, tools  # noqa: E402
+from test_plugin import owner_db  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
@@ -66,6 +67,8 @@ class Handlers(unittest.TestCase):
     def call(self, name, args=None, state=None):
         env = {"LIMITLESS_STATE": str(state or self.st), "LIMITLESS_SCORECARD": str(CARD),
                "LIMITLESS_CONFIG": str(Path(self.tmp.name) / "none.json")}
+        if name == "limitless_catchup":  # the catch-up needs to know when the person last wrote
+            env["LIMITLESS_OWNER_DBS"] = str(owner_db(Path(self.tmp.name) / "owner.db"))
         with mock.patch.dict(os.environ, env), mock.patch("time.time", return_value=NOW):
             return json.loads(plugin._handler(plugin.TOOLS[name][1])(args or {}))
 

@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import re
+import sqlite3
 import sys
 import tempfile
 import time
@@ -19,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_capture", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
+TOOLS = ["limitless_capture", "limitless_catchup", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
          "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
@@ -52,6 +53,19 @@ def load_plugin(name="hermes_plugins.limitless_test"):
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def owner_db(path, at=NOW - 30 * 3600):
+    """A synthetic Hermes session store whose only message from the person is at ``at``."""
+    con = sqlite3.connect(str(path))
+    con.executescript("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT);"
+                      "CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT, timestamp REAL NOT NULL);"
+                      "CREATE INDEX idx_messages_session ON messages(session_id, timestamp);")
+    con.execute("INSERT INTO sessions VALUES ('s', 'cli')")
+    con.execute("INSERT INTO messages VALUES ('s', 'user', 'synthetic', ?)", (at,))
+    con.commit()
+    con.close()
+    return path
 
 
 def manifest_list(key):
@@ -123,6 +137,8 @@ class Wiring(unittest.TestCase):
         for name in TOOLS:
             args = {"text": "remember the shed"} if name == "limitless_capture" else {}
             env = {"LIMITLESS_STATE": str(st)} if name == "limitless_capture" else None
+            if name == "limitless_catchup":
+                env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(owner_db(st / "owner.db"))}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))
@@ -156,6 +172,27 @@ class Wiring(unittest.TestCase):
     def test_capture_schema_requires_text(self):
         params = self.ctx.tools["limitless_capture"]["schema"]["parameters"]
         self.assertEqual(params["required"], ["text"])
+
+    def test_catchup_tool_through_the_handler(self):
+        env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(owner_db(Path(self.tmp.name) / "o.db"))}
+        res = self.call("limitless_catchup", env=env)
+        self.assertEqual(set(res), {"value", "modality", "age_h", "evidence_tier", "label"})
+        self.assertEqual(res["label"], {"label": "stale", "tier": "T1", "modality": "messages"})  # last seen 30 h ago
+        self.assertEqual(res["value"]["label"], {"label": "away", "tier": "T1", "modality": "messages"})
+        self.assertEqual(res["modality"], "messages")
+        self.assertTrue(res["value"]["lines"][0].startswith("[limitless] catch-up"))
+        self.assertFalse(any(c.isdigit() for c in "".join(res["value"]["lines"])))
+
+    def test_catchup_hook_injects_once_after_the_card(self):
+        self.assertEqual(len(self.ctx.hooks["pre_llm_call"]), 2)
+        hook = self.ctx.hooks["pre_llm_call"][1]
+        env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(owner_db(Path(self.tmp.name) / "o.db"))}
+        kw = dict(session_id="s", user_message="hi", conversation_history=[], is_first_turn=True, model="m",
+                  platform="cli", sender_id="u")
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(time, "time", return_value=NOW):
+            first, second = hook(**kw), hook(**kw)
+        self.assertTrue(first["context"].startswith("[limitless] catch-up"), first)
+        self.assertIsNone(second)
 
     def test_hook_injects_the_card(self):
         hook = self.ctx.hooks["pre_llm_call"][0]

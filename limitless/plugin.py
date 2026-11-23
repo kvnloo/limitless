@@ -13,7 +13,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import capture, card, labeler, scorecard, tier_audit, tools
+from . import capture, card, catchup, labeler, scorecard, tier_audit, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -62,6 +62,10 @@ def _scorecard(args, now):
 
 def _capture(args, now):
     return capture.capture(state_dir(), args.get("text"), now)
+
+
+def _catchup(args, now):
+    return catchup.tool(_reader(), now)
 
 
 def _handler(fn: Callable, name: str = "") -> Callable:
@@ -145,6 +149,12 @@ TOOLS = {
         "records: do not start, plan or delegate the captured item.",
         {"text": {"type": "string", "description": "The captured text, verbatim."}}, ["text"]),
         _capture, "📝"),
+    "limitless_catchup": (_schema(
+        "limitless_catchup",
+        "A short catch-up since the person last wrote to an agent: at most 5 plain lines, TLDR first with at \
+most one next step, then inputs not recording, the habit week, messages sent and captures saved while away \
+(none, one, a few, many; unknown when the source is missing) and asks waiting. The label says away (gap \
+over catchup_after_h, default a day) or not away. Read-only; nothing is sent."), _catchup, "🧳"),
 }
 
 
@@ -154,3 +164,5 @@ def register(ctx) -> None:
                           description=schema["description"], emoji=emoji)
     ctx.register_hook("pre_llm_call", card.make_pre_llm_call(
         clock=lambda: time.time(), today=lambda: date.fromtimestamp(time.time()), bands=_bands()))
+    # after an absence over catchup_after_h, the first turn also gets a short catch-up (once per absence)
+    ctx.register_hook("pre_llm_call", catchup.make_pre_llm_call(clock=lambda: time.time()))
