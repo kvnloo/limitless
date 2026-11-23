@@ -56,6 +56,11 @@ def _names(parts: list) -> Optional[tuple]:
     return names
 
 
+def starts_reply(line) -> bool:
+    """True when ``line`` starts a ``work apps:`` or ``feed apps:`` list (the prefix parse reads)."""
+    return isinstance(line, str) and _PREFIX.match(line) is not None
+
+
 def parse(text) -> Optional[dict]:
     """``{list key: names}`` for each list a whole message sets (``()`` clears), or None for anything else."""
     if not isinstance(text, str):

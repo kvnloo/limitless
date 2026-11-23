@@ -41,6 +41,10 @@ writes nothing.
 `apps-ask.json` is `{"told": <epoch seconds>}`, written atomically (a temp file in the state dir, mode 0600,
 then a rename). It never holds an app name.
 
+kevin-push holds every message to its shape ([message-shape.md](message-shape.md)). On a long brief it folds the
+middle lines, but it keeps this closing ask whole, never folded or cut, so the lines that are marked told are
+the lines the person sees.
+
 The gate blocks a line with a digit unless the raw opt-in is set, so a proposal naming an app with a digit in
 its name is left out of the brief (and nothing is marked); the person can still run
 `bin/limitless-app-candidates`.
