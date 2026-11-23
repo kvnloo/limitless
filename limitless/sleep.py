@@ -30,7 +30,7 @@ import statistics
 from datetime import date, datetime, time, timedelta, tzinfo
 from typing import Optional
 
-from . import wake_proxy
+from . import regularity, wake_proxy
 
 DAYS = 7
 REGULARITY_DAYS = 14         # regularity reads the last two weeks of nights (timed_nights)
@@ -178,9 +178,12 @@ def newest_at(wearable_rows, proxy_gaps, tz: Optional[tzinfo] = None) -> Optiona
     return best
 
 
-def review_line(lab) -> str:
-    """The week review's sleep line, digit-free; "" for anything that is not one of LABELS."""
+def review_line(lab, reg=None) -> str:
+    """The week review's sleep line, digit-free; "" for anything that is not one of LABELS. ``reg``
+    (regularity.regularity) adds one regularity clause after the words ("...; wearable says sleep times
+    steady."); none when it is unknown or missing."""
     word = lab.get("label") if isinstance(lab, dict) else None
     if not isinstance(word, str) or word not in LABELS:
         return ""
-    return f"{word[0].upper()}{word[1:]}."
+    extra = regularity.clause(reg)
+    return f"{word[0].upper()}{word[1:]}{'; ' + extra if extra in regularity.CLAUSES else ''}."
