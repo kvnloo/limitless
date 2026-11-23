@@ -503,9 +503,11 @@ def miq_wind_down(evs: list, trigger_at: Optional[float], env: Optional[Mapping[
     Read-only."""
     try:
         night = night_date(evs, trigger_at, tz) if trigger_at is not None else None
+        cfg = config(env, home)
         live = (state_dir is not None and now is not None
-                and wind_down.wearable_live(StateReader(Path(state_dir)).inputs(), now))
-        text = wind_down.line(config(env, home), glide_provider.attention(env, home), night, heart_live=live)
+                and wind_down.wearable_live(StateReader(Path(state_dir)).inputs(), now,
+                                            wind_down.wearable_inputs(cfg)))
+        text = wind_down.line(cfg, glide_provider.attention(env, home), night, heart_live=live)
         return _gated("miq:wind_down", text, env, home)
     except Exception:  # noqa: BLE001 - a broken line must never stop the bedtime question
         return ""

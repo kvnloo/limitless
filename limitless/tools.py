@@ -764,8 +764,9 @@ def breathing(reader: StateReader, now: float, raw: bool = False, env: Optional[
     cfg = config(env, home)
     link = wind_down.breathing_link(cfg)
     inputs = reader.inputs()
-    age = wind_down.wearable_age_h(inputs, now)
-    words = wind_down.breathing_words(wind_down.wearable_live(inputs, now))
+    names = wind_down.wearable_inputs(cfg)
+    age = wind_down.wearable_age_h(inputs, now, names)
+    words = wind_down.breathing_words(wind_down.wearable_live(inputs, now, names))
     value = {"link_set": link is not None, "heart_data": words}
     if link is not None:
         value["link"] = link if raw else BREATHING_HIDDEN

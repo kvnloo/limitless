@@ -82,23 +82,38 @@ def breathing_words(heart_live: bool = False) -> str:
     return HEART_LIVE if heart_live is True else HEART_NONE
 
 
-def wearable_age_h(inputs, now: float) -> Optional[float]:
-    """The wearable input's age now, as limitless_status computes it (tools.status): inputs.json
-    ``ageHours.wearable`` plus the snapshot's own age (its ``at``), rounded to a tenth. None when the input is
-    down, missing, not a number, or the snapshot has no readable time."""
+WEARABLE_INPUTS_KEY = "wearable_inputs"
+WEARABLE_INPUTS = ("wearable",)
+
+
+def wearable_inputs(cfg: Optional[Mapping]) -> tuple:
+    """The inputs.json names that count as the wearable: config ``wearable_inputs`` (a list of names; a host
+    whose sync names each device's input), else WEARABLE_INPUTS. Blank and non-text names are ignored."""
+    v = cfg.get(WEARABLE_INPUTS_KEY) if isinstance(cfg, Mapping) else None
+    names = tuple(n.strip() for n in v if isinstance(n, str) and n.strip()) if isinstance(v, list) else ()
+    return names or WEARABLE_INPUTS
+
+
+def wearable_age_h(inputs, now: float, names=WEARABLE_INPUTS) -> Optional[float]:
+    """The wearable input's age now, as limitless_status computes it (tools.status): the freshest of the
+    ``names`` in inputs.json ``ageHours`` plus the snapshot's own age (its ``at``), rounded to a tenth. None
+    when every named input is down, missing or not a number, or the snapshot has no readable time."""
     hours = inputs.get("ageHours") if isinstance(inputs, Mapping) else None
-    age = hours.get("wearable") if isinstance(hours, Mapping) else None
-    if isinstance(age, bool) or not isinstance(age, (int, float)):
+    if not isinstance(hours, Mapping):
+        return None
+    ages = [a for a in (hours.get(n) for n in names or ())
+            if not isinstance(a, bool) and isinstance(a, (int, float))]
+    if not ages:
         return None
     at = parse_ts(inputs.get("at"))
     if at is None or not isinstance(now, (int, float)):
         return None
-    return round(age + max(0.0, now - at) / 3600, 1)
+    return round(min(ages) + max(0.0, now - at) / 3600, 1)
 
 
-def wearable_live(inputs, now: float) -> bool:
-    """True only when the wearable input is recording by limitless_status's rule: at most STALE_H old."""
-    age = wearable_age_h(inputs, now)
+def wearable_live(inputs, now: float, names=WEARABLE_INPUTS) -> bool:
+    """True only when a wearable input is recording by limitless_status's rule: at most STALE_H old."""
+    age = wearable_age_h(inputs, now, names)
     return age is not None and age <= STALE_H
 
 

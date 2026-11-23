@@ -22,7 +22,9 @@ gains ONE more choice, "slow breathing in your app", with the link at the end:
 
 The words in brackets are "with live heart data" only when the wearable input is fresh by the rule
 `limitless_status` already uses: `inputs.json` `ageHours.wearable` plus the snapshot's age, at most
-`envelope.STALE_H` (a day). Stale, down, missing or unreadable is "without heart data". The line never holds a
+`envelope.STALE_H` (a day). When your sync names each device's input separately, list those names in config
+`wearable_inputs` (for example `["band_a", "band_b"]`; default `["wearable"]`): the freshest named input
+counts. Stale, down, missing or unreadable is "without heart data". The line never holds a
 breath count, a pace number, a heart rate or a heart rate variability value.
 
 It rides in the same MIQ body as before (`jobs_runner.miq_wind_down`, hook `miq:wind_down`, through
