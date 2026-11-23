@@ -20,7 +20,20 @@ Per local day in ``tz`` (None = this machine's zone), only days with at least on
 - ``returns`` and ``median_return_s``: for each switch, the seconds from the first non-work row to the next
   work row, counted only when the activity between them has no hole of ``gap_s`` or more (a hole is a
   break away from the device, not a switch) and the return is on the same day. The median of those; None
-  when there was none (unknown, not zero).
+  when there was none (unknown, not zero). ``return_s`` lists every one, so days can be pooled.
+
+``pooled(days)`` is the same fields over several days (rates and shares from the summed time; the median
+over every return), plus ``days`` and ``work_days``. ``label(m)`` turns one day or a pool into T1 words,
+digit-free: "work stayed in long blocks", "work was broken up", "mixed" or "unknown: <why>". The words
+describe observed app activity only; they are not a measure of attention, concentration or output.
+
+Thresholds (``thresholds(env, home)``; config keys, documented defaults, wording only and not targets):
+
+- ``flow_long_share`` (0.6): at least this share of work time in long blocks, and at most
+  ``flow_calm_switches_per_h`` (4) switches per work hour, reads "work stayed in long blocks".
+- ``flow_broken_share`` (0.3): less than this share in long blocks, or more than
+  ``flow_busy_switches_per_h`` (8) switches per work hour, reads "work was broken up".
+- Anything between reads "mixed".
 
 No work apps configured, or no rows at all, is unknown (None), never zero. Pure: nothing here reads the
 clock, a file or the config. Stdlib only, Python 3.9+.
@@ -33,6 +46,7 @@ from typing import Iterable, Optional
 
 from . import blocks as _blocks
 from . import flow_week
+from .state_reader import config
 
 H = 3600.0
 
@@ -81,7 +95,8 @@ def _day(spans: list, gap_s: float, break_after_s: float) -> dict:
     return {"work_h": work_s / H, "switches": switches,
             "switches_per_work_h": switches / (work_s / H) if work_s > 0 else None,
             "long_block_share": in_long / work_s if work_s > 0 else None,
-            "returns": len(backs), "median_return_s": median(backs) if backs else None}
+            "returns": len(backs), "return_s": sorted(backs),
+            "median_return_s": median(backs) if backs else None}
 
 
 def metrics(rows: Optional[Iterable], work_apps: Iterable, gap_s: float = _blocks.GAP_S, *,
@@ -99,4 +114,59 @@ def metrics(rows: Optional[Iterable], work_apps: Iterable, gap_s: float = _block
         clipped = [x for x in clipped if x[1] > x[0]]
         if clipped:
             out.append(dict(day=day, **_day(clipped, gap_s, break_after_s)))
+    return out
+
+
+def pooled(days: Optional[list]) -> Optional[dict]:
+    """The per-day metrics over several days; None (unknown) for None or no day."""
+    days = [d for d in days or () if isinstance(d, dict)]
+    if not days:
+        return None
+    work_s = sum(d["work_h"] for d in days) * H
+    switches = sum(d["switches"] for d in days)
+    in_long = sum(d["long_block_share"] * d["work_h"] * H for d in days if d["long_block_share"] is not None)
+    backs = sorted(x for d in days for x in d.get("return_s") or ())
+    return {"days": len(days), "work_days": sum(1 for d in days if d["work_h"] > 0), "work_h": work_s / H,
+            "switches": switches, "switches_per_work_h": switches / (work_s / H) if work_s > 0 else None,
+            "long_block_share": in_long / work_s if work_s > 0 else None, "returns": len(backs),
+            "return_s": backs, "median_return_s": median(backs) if backs else None}
+
+
+# --- words: the T1 label (digit-free) -------------------------------------------------------------------
+
+LONG, BROKEN, MIXED, UNKNOWN = "work stayed in long blocks", "work was broken up", "mixed", "unknown"
+LABELS = (LONG, BROKEN, MIXED)
+NO_DATA, NO_WORK_TIME = "no activity data", "no work time in the activity data"
+DEFAULTS = {"long_share": 0.6, "broken_share": 0.3, "calm_switches_per_h": 4.0, "busy_switches_per_h": 8.0}
+_SHARES = ("long_share", "broken_share")
+
+
+def _unknown(why: str) -> str:
+    return f"{UNKNOWN}: {why}"
+
+
+def label(m, why: str = NO_DATA, th: Optional[dict] = None) -> str:
+    """T1 words for one day or a pool (``metrics`` / ``pooled``); ``why`` names the reason when ``m`` is
+    unknown. Digit-free. ``th`` defaults to DEFAULTS."""
+    th = DEFAULTS if th is None else th
+    if not isinstance(m, dict):
+        return _unknown(why)
+    rate, share = m.get("switches_per_work_h"), m.get("long_block_share")
+    if rate is None or share is None:
+        return _unknown(NO_WORK_TIME)
+    if share < th["broken_share"] or rate > th["busy_switches_per_h"]:
+        return BROKEN
+    if share >= th["long_share"] and rate <= th["calm_switches_per_h"]:
+        return LONG
+    return MIXED
+
+
+def thresholds(env=None, home=None) -> dict:
+    """DEFAULTS with each ``flow_<name>`` from config that is valid: a share above zero and at most one, a
+    switch rate above zero. Anything else keeps its default."""
+    cfg, out = config(env, home), dict(DEFAULTS)
+    for k in DEFAULTS:
+        v = cfg.get(f"flow_{k}")
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 and (k not in _SHARES or v <= 1):
+            out[k] = float(v)
     return out

@@ -140,5 +140,100 @@ class TimeBack(unittest.TestCase):
         self.assertIsNone(d["median_return_s"])
 
 
+def day(work_h=2.0, switches=0, share=1.0, backs=()):
+    return {"day": "2033-05-16", "work_h": work_h, "switches": switches,
+            "switches_per_work_h": switches / work_h if work_h else None,
+            "long_block_share": share if work_h else None, "returns": len(backs),
+            "return_s": sorted(backs), "median_return_s": None}
+
+
+class Pooled(unittest.TestCase):
+    def test_none_and_empty_are_unknown(self):
+        self.assertIsNone(fm.pooled(None))
+        self.assertIsNone(fm.pooled([]))
+
+    def test_pools_work_time_switches_share_and_every_return(self):
+        rows = [row(0, 100, "editor"), row(100, 102, "feed"), row(102, 120, "editor"),
+                row(0, 30, "editor", day=1), row(30, 36, "chat", day=1), row(36, 60, "editor", day=1),
+                row(0, 60, "feed", day=2)]
+        p = fm.pooled(run(rows))
+        self.assertEqual(p["days"], 3)
+        self.assertEqual(p["work_days"], 2)
+        self.assertAlmostEqual(p["work_h"], (118 + 54) / 60)
+        self.assertEqual(p["switches"], 2)
+        self.assertAlmostEqual(p["switches_per_work_h"], 2 / ((118 + 54) / 60))
+        self.assertAlmostEqual(p["long_block_share"], 118 / (118 + 54))
+        self.assertEqual(p["returns"], 2)
+        self.assertEqual(p["median_return_s"], 4 * M)          # median of two and six minutes
+
+    def test_no_work_time_at_all_is_unknown_rate_and_share(self):
+        p = fm.pooled(run([row(0, 60, "feed")]))
+        self.assertEqual((p["work_h"], p["switches_per_work_h"], p["long_block_share"]), (0.0, None, None))
+
+
+class Label(unittest.TestCase):
+    WORDS = ("work stayed in long blocks", "work was broken up", "mixed")
+
+    def test_long_blocks_few_switches(self):
+        self.assertEqual(fm.label(day(work_h=4, switches=4, share=0.8)), "work stayed in long blocks")
+
+    def test_short_blocks_is_broken_up(self):
+        self.assertEqual(fm.label(day(work_h=4, switches=4, share=0.1)), "work was broken up")
+
+    def test_many_switches_is_broken_up_even_in_long_blocks(self):
+        self.assertEqual(fm.label(day(work_h=1, switches=12, share=0.9)), "work was broken up")
+
+    def test_in_between_is_mixed(self):
+        self.assertEqual(fm.label(day(work_h=4, switches=4, share=0.45)), "mixed")
+        self.assertEqual(fm.label(day(work_h=1, switches=6, share=0.9)), "mixed")   # long, but busy
+
+    def test_unknown_says_why_and_is_never_a_zero(self):
+        self.assertEqual(fm.label(None), "unknown: no activity data")
+        self.assertEqual(fm.label(None, why="no work apps set (flow_work_apps)"),
+                         "unknown: no work apps set (flow_work_apps)")
+        self.assertEqual(fm.label(day(work_h=0)), "unknown: no work time in the activity data")
+        self.assertEqual(fm.label("junk"), "unknown: no activity data")
+
+    def test_thresholds_come_from_the_caller(self):
+        m = day(work_h=4, switches=4, share=0.45)
+        self.assertEqual(fm.label(m, th=dict(fm.DEFAULTS, long_share=0.4)), "work stayed in long blocks")
+        self.assertEqual(fm.label(m, th=dict(fm.DEFAULTS, broken_share=0.5)), "work was broken up")
+
+    def test_labels_are_digit_free_words(self):
+        import re
+        for share in (0.0, 0.2, 0.45, 0.7, 1.0):
+            for sw in (0, 3, 6, 20):
+                w = fm.label(day(work_h=2, switches=sw, share=share))
+                self.assertIn(w, self.WORDS)
+                self.assertEqual(re.findall(r"\d", w), [])
+
+
+class Thresholds(unittest.TestCase):
+    def setUp(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cfg = Path(self.tmp.name) / "config.json"
+        self.env = {"LIMITLESS_CONFIG": str(self.cfg)}
+        self.json = json
+
+    def th(self, **cfg):
+        self.cfg.write_text(self.json.dumps(cfg))
+        return fm.thresholds(self.env, self.cfg.parent)
+
+    def test_documented_defaults(self):
+        self.assertEqual(fm.DEFAULTS, {"long_share": 0.6, "broken_share": 0.3, "calm_switches_per_h": 4.0,
+                                       "busy_switches_per_h": 8.0})
+        self.assertEqual(self.th(), fm.DEFAULTS)
+
+    def test_config_overrides_and_bad_values_fall_back(self):
+        got = self.th(flow_long_share=0.7, flow_broken_share="x", flow_calm_switches_per_h=2,
+                      flow_busy_switches_per_h=-1)
+        self.assertEqual(got, dict(fm.DEFAULTS, long_share=0.7, calm_switches_per_h=2.0))
+        self.assertEqual(self.th(flow_long_share=1.5, flow_broken_share=True), fm.DEFAULTS)
+
+
 if __name__ == "__main__":
     unittest.main()
