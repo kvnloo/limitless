@@ -21,6 +21,7 @@ from typing import Callable
 from . import (bedtime, capture, card, card_view, catchup, explain_back, focus_safe, jobs_runner, labeler, modes,
                schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
+from .prediction import LAG_DAYS as _PREDICTION_LAGS
 from .state_reader import StateReader, config, state_dir
 
 TOOLSET = "limitless"
@@ -58,7 +59,8 @@ def _habit(args, now):
                                  stop_rule=args.get("stop_rule"))
     if args.get("predict") is not None:
         return tools.habit_predict(state_dir(), args.get("predict"), args.get("metric", "logged"),
-                                   args.get("direction"), today, now, confirm=confirm)
+                                   args.get("direction"), today, now, confirm=confirm,
+                                   falsifier=args.get("falsifier"), lag_days=args.get("lag_days", 0))
     if args.get("receipt") is True:
         return tools.habit_receipt(state_dir(), today, now, confirm=confirm)
     return tools.habit(_reader(), now, today)
@@ -154,6 +156,10 @@ def _focus_safe(args, now):
     return focus_safe.tool(now)
 
 
+def _experiment(args, now):
+    return tools.experiment(state_dir(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _card_view(args, now):
     kind = args.get("kind", "state")
     return card_view.view(state_dir(), now, date.fromtimestamp(now), kind if isinstance(kind, str) else "",
@@ -237,6 +243,12 @@ TOOLS = {
                                    "or a named state metric."},
          "direction": {"type": "string", "description": "For logged: \"at_least k of m\"; for a state "
                                                         "metric: up or down against the week before."},
+         "falsifier": {"type": "string", "description": "With predict, optional: the person's own words for \
+what result would show the prediction is wrong. Leave it out when they stated none."},
+         "lag_days": {"type": "integer", "enum": list(_PREDICTION_LAGS),
+                      "description": "With predict and a state metric, optional: judge the outcome on the seven \
+days that many days after the habit week's start (0, the default, is the habit week itself), for effects that \
+show late; the receipt is pending until then."},
          "receipt": {"type": "boolean", "description": "true to judge the locked prediction after day seven."},
          "confirm": {"type": "boolean", "description": "true only when the person said yes to starting "
                                                       "this habit, locking this prediction or writing this "
@@ -260,6 +272,18 @@ verdict: supports, contradicts or inconclusive, with the receipt's own modality;
 what the stop rule picked at the week's start said (keep it, drop it, your call; it only suggested) and the \
 person's decision (kept or dropped, self-reported). Words only: no score, no streak, no advice. Read-only; \
 nothing is written or sent."), _loop, "🔁"),
+    "limitless_experiment": (_schema(
+        "limitless_experiment",
+        "The N-of-1 habit experiments in the prediction ledger, in plain words. `current` is the newest locked \
+prediction with no receipt yet: running (its habit week is on), waiting with its outcome pending (judged later, \
+when a lag of a week or two weeks after the habit week was set) or ready to judge, whether the person stated a \
+falsifier (what result would show it wrong) and the lagged span; else no experiment locked or no experiment \
+running. `past` lists the other weeks newest first as {week_of, verdict (supports, contradicts, inconclusive; \
+pending or not judged without a receipt), falsifier_stated}. Modality derived; a digit-free T1 label. The \
+prediction and falsifier text are the person's own words and need the person's raw opt-in. It only suggests: \
+lock a prediction only through limitless_habit predict and write a receipt only through limitless_habit \
+receipt, each with the person's yes. Habits only; no score, no streak. Read-only; nothing is \
+written or sent."), _experiment, "🧪"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",
         "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "

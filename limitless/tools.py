@@ -278,31 +278,30 @@ def _predict_week(state_dir, today: date) -> date:
     return start if today < start + timedelta(days=_prediction.WEEK_DAYS) else today
 
 
-def habit_predict(state_dir, text, metric, direction, today: date, now: float, confirm: bool = False) -> dict:
+def habit_predict(state_dir, text, metric, direction, today: date, now: float, confirm: bool = False,
+                  falsifier=None, lag_days=0) -> dict:
     """Lock a prediction for the habit week (prediction.lock), writing only when ``confirm`` is True.
 
     The week is habit.json's while it runs or is set to start later, else today. An envelope whose value is
     ``{action, reason, prediction}``, with a digit-free T1 label: would lock this prediction, locked this
-    prediction or refused: <why>. Without confirm it writes nothing and says what it would do.
+    prediction or refused: <why>. Without confirm it writes nothing and says what it would do. ``falsifier``
+    (the person's words) and ``lag_days`` (prediction.LAG_DAYS) go on the prediction row.
     """
     week = _predict_week(state_dir, today)
     r = _prediction.lock(state_dir, week.isoformat(), text, metric, direction, write=confirm is True,
-                         today=today, now=now)
+                         today=today, now=now, falsifier=falsifier, lag_days=lag_days)
     return _labeled_row(r, _prediction.label(r))
 
 
 def _receipt_week(state_dir, today: date) -> Optional[str]:
-    """The newest locked prediction whose week is over and has no receipt, else the newest locked one."""
-    weeks = [r.get("week_of") for r in _prediction.rows(state_dir) if r.get("kind") == "prediction"]
-    weeks = [w for w in weeks if isinstance(w, str)]
-    for w in reversed(weeks):
-        try:
-            over = today >= date.fromisoformat(w) + timedelta(days=_prediction.WEEK_DAYS)
-        except ValueError:
-            continue
-        if over and _prediction.receipt_for(state_dir, w) is None:
-            return w
-    return weeks[-1] if weeks else None
+    """The newest locked prediction that is due (its judged span is over: prediction.due_day) and has no
+    receipt, else the newest locked one."""
+    preds = [r for r in _prediction.rows(state_dir) if r.get("kind") == "prediction" and isinstance(r.get("week_of"), str)]
+    for p in reversed(preds):
+        due = _prediction.due_day(p)
+        if due is not None and today >= due and _prediction.receipt_for(state_dir, p["week_of"]) is None:
+            return p["week_of"]
+    return preds[-1]["week_of"] if preds else None
 
 
 def habit_receipt(state_dir, today: date, now: float, confirm: bool = False) -> dict:
@@ -318,6 +317,86 @@ def habit_receipt(state_dir, today: date, now: float, confirm: bool = False) -> 
     else:
         r = _prediction.receipt(state_dir, week, write=confirm is True, today=today, now=now)
     return _labeled_row(r, _prediction.receipt_label(r))
+
+
+EXPERIMENT_MODALITY = "derived"
+EXPERIMENT_PAST = 8               # the past experiments the tool lists, newest first
+EXPERIMENT_NOTE = ("read-only and a suggestion only: a prediction is locked only through limitless_habit predict "
+                   "after the person said yes in this turn; a receipt only through limitless_habit receipt")
+_LAG_WORDS = {7: "outcome judged on the week after the habit week",
+              14: "outcome judged on the second week after the habit week"}
+
+
+def _experiment_open(p: dict, today: date) -> str:
+    """The words for an unjudged prediction: running (its habit week is on or ahead), waiting (a lag not yet
+    passed) or ready to judge."""
+    start, due = _prediction._day(p.get("week_of")), _prediction.due_day(p)
+    if start is None or due is None:
+        return "one experiment not dated"
+    if today < start + timedelta(days=_prediction.WEEK_DAYS):
+        return "one experiment running, outcome pending"
+    if today < due:
+        return "one experiment waiting, outcome pending (judged later)"
+    return "one experiment ready to judge"
+
+
+def _experiment_past(p: dict, r: Optional[dict], today: date, raw: bool) -> dict:
+    if r is not None:
+        verdict = r.get("verdict") if isinstance(r.get("verdict"), str) else _prediction.INCONCLUSIVE
+    else:
+        due = _prediction.due_day(p)
+        verdict = _prediction.PENDING if due is not None and today < due else "not judged"
+    out = {"week_of": p.get("week_of"), "verdict": verdict, "falsifier_stated": _prediction.falsifier_of(p) is not None}
+    if raw:
+        out.update(text=p.get("text"), falsifier=_prediction.falsifier_of(p))
+    return out
+
+
+def experiment(state_dir, now: float, today: date, raw: bool = False) -> dict:
+    """limitless_experiment: one read-only view over the prediction ledger (predictions.jsonl).
+
+    ``value: {current, past}``: ``current`` is plain words for the newest prediction with no receipt (running,
+    waiting on its lag, ready to judge; whether a falsifier was stated; the lagged span in words), or "no
+    experiment locked" / "no experiment running"; ``past`` is every other prediction, newest first (at most
+    EXPERIMENT_PAST), as ``{week_of, verdict (the receipt's, else pending or not judged), falsifier_stated}``.
+    Modality derived; ``age_h`` is the age of the newest prediction or receipt row; evidence_tier as a
+    self-report of that age (none before anything is locked). The T1 label is the current words' first part,
+    digit-free. The prediction and falsifier text are the person's own words (T0): only with ``raw``
+    (LIMITLESS_RAW_IN_PROMPT). No score, no streak; nothing is written, sent or locked.
+    """
+    if not Path(state_dir).is_dir():
+        return missing("the state dir does not exist")
+    rows = _prediction.rows(state_dir)
+    preds = [r for r in rows if r.get("kind") == "prediction" and isinstance(r.get("week_of"), str)]
+    seen, firsts = set(), []
+    for p in preds:                          # the first prediction of a week is the locked one
+        if p["week_of"] not in seen:
+            seen.add(p["week_of"])
+            firsts.append(p)
+    receipts = {p["week_of"]: _prediction.receipt_for(state_dir, p["week_of"]) for p in firsts}
+    open_ = next((p for p in reversed(firsts) if receipts[p["week_of"]] is None), None)
+    if not firsts:
+        word, current = "no experiment locked", "no experiment locked"
+    elif open_ is None:
+        word, current = "no experiment running", "no experiment running"
+    else:
+        word = _experiment_open(open_, today)
+        bits = [word, "falsifier stated" if _prediction.falsifier_of(open_) else "no falsifier stated"]
+        lag_words = _LAG_WORDS.get(_prediction.lag_of(open_) or 0)
+        if lag_words:
+            bits.append(lag_words)
+        current = "; ".join(bits)
+    past = [_experiment_past(p, receipts[p["week_of"]], today, raw)
+            for p in reversed(firsts) if p is not open_][:EXPERIMENT_PAST]
+    value = {"current": current, "past": past}
+    if raw and open_ is not None:
+        value["prediction"] = {"text": open_.get("text"), "falsifier": _prediction.falsifier_of(open_)}
+    ages = [a for a in (_age_h(r.get("at") if r.get("kind") == "receipt" else r.get("locked_at"), now)
+                        for r in rows if r.get("kind") in ("prediction", "receipt")) if a is not None]
+    age = round(min(ages), 1) if ages else None
+    tier = "none" if not firsts else _envelope_tier("self_report", age)
+    return {"value": value, "modality": EXPERIMENT_MODALITY, "age_h": age, "evidence_tier": tier,
+            "label": _t1(word, EXPERIMENT_MODALITY), "note": EXPERIMENT_NOTE}
 
 
 LOOP_WEEKS = 4                    # "the last few" weekly loop rows the tool shows
