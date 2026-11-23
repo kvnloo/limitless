@@ -37,7 +37,8 @@ NOT_ENOUGH = "not enough measurements"
 CALIBRATED, UNCALIBRATED = "calibrated estimate", "uncalibrated estimate"
 REFERENCE_CALIBRATED = "calibrated against reference scans"   # body_calibration fitted the scale rows
 DIRECTIONS = ("down", "flat", "up")
-LABELS = (NOT_ENOUGH,) + tuple(f"body fat trending {d} ({c})" for d in DIRECTIONS for c in (CALIBRATED, UNCALIBRATED, REFERENCE_CALIBRATED))
+LABELS = (NOT_ENOUGH,) + tuple(f"body fat trending {d} ({c})" for d in DIRECTIONS
+                               for c in (CALIBRATED, UNCALIBRATED, REFERENCE_CALIBRATED))
 
 
 def _num(v) -> Optional[float]:

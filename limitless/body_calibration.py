@@ -13,7 +13,8 @@ Wiring: ``trend(rows, today, env, home)`` is body.trend over ``calibrated_rows``
 ``body_calibration``, on by default; "off" is body.trend exactly), and ``review_line`` is the week
 review's digit-free line. With no reference row at all nothing changes.
 
-Tiers: every number here is T0 and stays in code: never in a label, never in a prompt. Nothing here reads the clock, writes or sends.
+Tiers: every number here is T0 and stays in code: never in a label, never in a prompt. Nothing here reads
+the clock, writes or sends.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
