@@ -69,6 +69,10 @@ def _catchup(args, now):
     return catchup.tool(_reader(), now)
 
 
+def _body(args, now):
+    return tools.body(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -155,7 +159,12 @@ TOOLS = {
         "A short catch-up since the person last wrote to an agent: at most 5 plain lines, TLDR first with at \
 most one next step, then inputs not recording, the habit week, messages sent and captures saved while away \
 (none, one, a few, many; unknown when the source is missing) and asks waiting. The label says away (gap \
-over catchup_after_h, default a day) or not away. Read-only; nothing is sent."), _catchup, "🧳"),
+over catchup_after_h, default a day) or not away. Read-only; nothing is sent."), _catchup, "🧳"),    "limitless_body": (_schema(
+        "limitless_body",
+        "The body fat trend from the body-composition file (config body_file): the median of the last two \
+weeks against the two weeks before, in plain words: trending down, flat or up (calibrated or uncalibrated \
+estimate), or not enough measurements. Counts and the label only; raw numbers need the person's raw opt-in. \
+A direction only: no score, no goal, no advice. Read-only; nothing is sent."), _body, "⚖️"),
 }
 
 

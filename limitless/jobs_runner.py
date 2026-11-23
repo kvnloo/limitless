@@ -34,7 +34,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, feeds_evidence, flow_week, jobs, passive_habit, send_gate, wake_proxy
+from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, passive_habit, send_gate, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -54,17 +54,18 @@ _BODY = {
 
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
-         synced: Optional[dict] = None, flow: str = "", passive: str = "") -> str:
+         synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit and its taps.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
     a hint, no counts, times or app names; the answer stays the person's tap. The week review is
     jobs.week_review_text: the habit, "N of M logged days" (``synced``: StateReader.habit_days()) and
     "Reply Keep or Drop.", then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
-    (flow_week.review_line), each as one more line when given. The first line's number stays the tapped one.
+    (flow_week.review_line), then ``body_line`` (week_body: the body fat trend in words), each as one more
+    line when given. The first line's number stays the tapped one.
     """
     if spec.name == jobs.WEEK_REVIEW.name:
-        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow) if x)
+        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, body_line) if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
@@ -307,6 +308,18 @@ def week_flow(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]]
     return flow_week.review_line(this, last)
 
 
+def week_body(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+              today: Optional[date] = None) -> str:
+    """The week review's body line (body.review_line of body.trend up to ``today``), digit-free; "" when no
+    body file is configured or it has no valid row (unknown, not zero). Read-only."""
+    reader = StateReader(Path(state_dir))
+    try:
+        rows = reader.body_rows(env, home, today=today)
+        return _body.review_line(_body.trend(rows, today, flat=_body.flat_points(env, home))) if rows else ""
+    except Exception:  # noqa: BLE001 - a broken body file must not stop the review
+        return ""
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -344,7 +357,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 flow = week_flow(state_dir, p.habit, env, home, tz) if spec.name == jobs.WEEK_REVIEW.name else ""
                 review = spec.name == jobs.WEEK_REVIEW.name
                 passive = week_passive(state_dir, p.habit, env, home) if review else ""
-                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive)
+                body_line = week_body(state_dir, env, home, today) if review else ""
+                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
+                            body_line)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
