@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
-from . import aw_reader, blocks, feeds_evidence
+from . import apps_reply, aw_reader, blocks, feeds_evidence
 from .state_reader import config
 
 REFLEX_GAP_S, GAP_CONFIG = 30.0, "feed_reflex_gap_s"         # the first app within this long of the unlock
@@ -199,20 +199,16 @@ def review_line(word) -> str:
 
 def from_settings(cfg: Mapping, state_dir, lo: float, hi: float, env: Optional[Mapping[str, str]] = None,
                   tz=None) -> dict:
-    """reflex over [lo, hi) from a config mapping ``cfg`` (the doctor's): the feed list ($LIMITLESS_FEED_APPS,
-    else ``feed_apps``), the phone ActivityWatch DB ($LIMITLESS_AW_DB, else ``aw_db``; relative to
-    ``state_dir``), ``feed_reflex_gap_s`` and the thresholds; plus ``gap_s``, ``thresholds`` and ``label``.
-    Unlocks come from aw_reader.person_rows and app rows from blocks.read_rows: the phone DB only, never the
-    desktop's ActivityWatch. Read-only (the DB is opened mode=ro)."""
+    """reflex over [lo, hi) from a config mapping ``cfg`` (the doctor's): the feed list (apps_reply.list_for:
+    $LIMITLESS_FEED_APPS, else ``feed_apps``, else apps.json in ``state_dir``), the phone ActivityWatch DB
+    ($LIMITLESS_AW_DB, else ``aw_db``; relative to ``state_dir``), ``feed_reflex_gap_s`` and the thresholds;
+    plus ``gap_s``, ``thresholds`` and ``label``. Unlocks come from aw_reader.person_rows and app rows from
+    blocks.read_rows: the phone DB only, never the desktop's ActivityWatch. Read-only (the DB is opened
+    mode=ro)."""
     env = os.environ if env is None else env
     cfg = cfg if isinstance(cfg, Mapping) else {}
     gap, th = _gap_of(cfg), _thresholds_of(cfg)
-    feeds = env.get(feeds_evidence.ENV_KEY)
-    if not (isinstance(feeds, str) and feeds.strip()):
-        feeds = cfg.get(feeds_evidence.CONFIG_KEY)
-    if isinstance(feeds, str):
-        feeds = feeds.split(",")
-    feeds = feeds_evidence._clean(feeds) if isinstance(feeds, (list, tuple)) else ()
+    feeds = apps_reply.list_for(apps_reply.FEED, cfg, state_dir, env)[0]
     db = env.get("LIMITLESS_AW_DB") or cfg.get("aw_db")
     db = Path(db).expanduser() if isinstance(db, str) and db else None
     if db is not None and not db.is_absolute():

@@ -13,7 +13,8 @@ when written within STALE_H, else stale; read from the packet's own generated_at
 (config noop_mcp and t0_tools; the server is never started), then the desktop ActivityWatch's row (config
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
-live, or unknown as status missing; words only, never its value).
+live, or unknown as status missing; words only, never its value), then the apps lists row (off, or each list
+set from the environment, from config or from a reply; never an app name).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -392,12 +393,30 @@ def feed_reflex_row(cfg: Mapping, now: float) -> dict:
     return _row(FEED_REFLEX_ROW, "source", MISSING, got["label"])
 
 
+APPS_ROW = "apps lists"
+APPS_OFF = "no work apps or feed apps set (config flow_work_apps, feed_apps, or a reply)"
+_APPS_FROM = {"env": "set from the environment", "config": "set from config", "reply": "set from a reply"}
+
+
+def apps_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> dict:
+    """Where the work-app and feed-app lists come from (apps_reply.lists_for: env, then config, then apps.json
+    set from a reply): off when neither is set; live with each list's source in words. Never an app name or a
+    count. Kind ``source``: --strict does not count it. Read-only."""
+    from . import apps_reply
+    got = apps_reply.lists_for(cfg, state_path(cfg, env), env)
+    if not any(src for _, src in got.values()):
+        return _row(APPS_ROW, "source", OFF, APPS_OFF)
+    words = [f"{label} {_APPS_FROM.get(got[key][1], 'not set')}"
+             for key, label in ((apps_reply.WORK, "work apps"), (apps_reply.FEED, "feed apps"))]
+    return _row(APPS_ROW, "source", LIVE, "; ".join(words))
+
+
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
-    desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then the voice MIQ's row (voice_miq_row) just before the
-    context packet's.
+    desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
+    come from (apps_row), then the voice MIQ's row (voice_miq_row) just before the context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -406,7 +425,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
-    rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), voice_miq_row(reader, cfg, now)]
+    rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
