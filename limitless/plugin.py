@@ -81,6 +81,10 @@ def _rides(args, now):
     return tools.rides(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _sleep(args, now):
+    return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -186,6 +190,14 @@ last seven days against the seven before, in plain words: rides this week none, 
 same as, more than or fewer than last week. Counts and the label only; total minutes need the person's raw \
 opt-in; heart rate and power are never read. A week with no ride is none, never missed: no target, no streak, \
 no score, no advice. Read-only; nothing is sent."), _rides, "🚲"),
+    "limitless_sleep": (_schema(
+        "limitless_sleep",
+        "Sleep over the last seven nights from two sources kept apart: the wearable's nightly summary (config \
+sleep_file) and a phone proxy (the longest screen-off gap that starts in the evening half of the day), each \
+with its modality and age. Plain words: wearable on most, some or no nights, and whether the phone proxy says \
+about the same, shorter or longer. Counts and the label only; per-night minutes need the person's raw opt-in. \
+measured only when the wearable covers the newest night, else proxy; a night with neither is unknown, never \
+zero. A quiet phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
 }
 
 

@@ -37,6 +37,9 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        none by default), one row per session: {"start": ISO-8601 with offset, "duration_s",
                        "kind", "source"}; only kinds in config "ride_kinds" are rides; read only through
                        ride_rows (any HR or power field is T0 and is never read)
+  sleep file           optional JSONL of wearable nightly sleep summaries, config "sleep_file" (relative to the
+                       state dir; none by default), one row per night and source: {"night": "YYYY-MM-DD" (the
+                       evening the night began), "asleep_s": int, "source"}; read only through sleep_rows
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -62,6 +65,8 @@ _ID_NAME = re.compile(r"t_[0-9a-f]+")   # a card id as a file name means nothing
 RIDES_CONFIG = "rides_file"
 RIDE_KINDS_CONFIG = "ride_kinds"
 RIDE_KINDS = ("biking_stationary", "rehit")
+SLEEP_CONFIG = "sleep_file"
+MAX_ASLEEP_S = 24 * 3600   # a nightly summary longer than a day is not a night
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -422,6 +427,46 @@ class StateReader:
             seen.add((at, source))
             out.append((at, {"start": start, "duration_s": int(round(dur)), "kind": kind, "source": source}))
         return [row for _, row in sorted(out, key=lambda x: x[0])]
+
+    def sleep_file(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+        """The wearable sleep summaries: config ``sleep_file``; a relative path is in the state dir. None when it
+        is not set (there is no default file name)."""
+        v = config(env, home).get(SLEEP_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def sleep_rows(self, today: Optional[date] = None, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> list:
+        """The sleep file's valid rows ``{"night", "asleep_s", "source"}``, oldest night first.
+
+        A valid row has ``night`` a YYYY-MM-DD date no later than ``today`` (default: the local date), ``asleep_s``
+        an int in 1..MAX_ASLEEP_S and a non-empty ``source``; a second row with the same night and source is
+        dropped (the first in file order is kept). Other fields are never read. [] when no file is configured,
+        it is missing or unreadable; never raises."""
+        try:
+            today = date.today() if today is None else today
+            if not isinstance(today, date):
+                return []
+            p = self.sleep_file(env, home)
+            if p is None:
+                return []
+            rows = _rows(p.read_text(errors="replace"))
+        except Exception:  # noqa: BLE001 - unreadable sleep data is no rows, never a traceback
+            return []
+        out, seen = [], set()
+        for r in rows:
+            night, secs, source = r.get("night"), r.get("asleep_s"), r.get("source")
+            if not _valid_day(night) or night > today.isoformat():
+                continue
+            if isinstance(secs, bool) or not isinstance(secs, int) or not 0 < secs <= MAX_ASLEEP_S:
+                continue
+            if not isinstance(source, str) or not source.strip() or (night, source) in seen:
+                continue
+            seen.add((night, source))
+            out.append({"night": night, "asleep_s": secs, "source": source})
+        return sorted(out, key=lambda x: x["night"])
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")

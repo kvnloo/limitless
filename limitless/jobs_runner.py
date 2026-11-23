@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, passive_habit, \
-    rides as _rides, send_gate, wake_proxy
+    rides as _rides, send_gate, sleep as _sleep, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -56,7 +56,7 @@ _BODY = {
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
-         overnight: str = "", rides_line: str = "") -> str:
+         overnight: str = "", rides_line: str = "", sleep_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit and its taps.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
@@ -64,15 +64,16 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     jobs.week_review_text: the habit, "N of M logged days" (``synced``: StateReader.habit_days()) and
     "Reply Keep or Drop.", then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
     (flow_week.review_line), then ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
-    (week_rides: this week's rides in words), each as one more line when given. The first line's number
+    (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
+    proxy, in words), each as one more line when given. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
     what runs tonight, count words only) when given.
     """
     if spec.name == jobs.MIQ.name:
         return "\n".join(x for x in (_BODY[spec.name], overnight) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
-        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, body_line, rides_line)
-                         if x)
+        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, body_line, rides_line,
+                                      sleep_line) if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
@@ -341,6 +342,24 @@ def week_rides(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
         return ""
 
 
+def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+               today: Optional[date] = None, tz: Optional[tzinfo] = None) -> str:
+    """The week review's sleep line (sleep.review_line of the last seven nights before ``today``: the wearable
+    beside the phone proxy), digit-free; "" when there is no wearable row and no phone gap at all, or no
+    ``today`` is given (unknown, not zero). Read-only."""
+    if not isinstance(today, date):
+        return ""
+    reader = StateReader(Path(state_dir))
+    try:
+        wear = reader.sleep_rows(today, env, home)
+        gaps = _sleep.screen_gaps(person_rows(reader, env, home))
+        if not wear and not gaps:
+            return ""
+        return _sleep.review_line(_sleep.label(_sleep.nights(wear, gaps, today, tz=tz)))
+    except Exception:  # noqa: BLE001 - broken sleep data must not stop the review
+        return ""
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -381,8 +400,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 body_line = week_body(state_dir, env, home, today) if review else ""
                 plan = _overnight.plan_for(state_dir, now, env, home) if spec.name == jobs.MIQ.name else ""
                 rides_line = week_rides(state_dir, env, home, today) if review else ""
+                sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
-                            body_line, plan, rides_line)
+                            body_line, plan, rides_line, sleep_line)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
