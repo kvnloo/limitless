@@ -45,6 +45,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
+from . import habit_catalogue
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
@@ -540,6 +541,21 @@ def week_rule(habit: Optional[dict], synced: Optional[dict] = None, env: Optiona
         return _gated("week_review:stop_rule", _stop_rule.review_line(v), env, home)
     except Exception:  # noqa: BLE001 - a broken habit.json must not stop the review
         return ""
+
+
+def week_next(state_dir, habit: Optional[dict], decision, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None) -> str:
+    """After a Drop at the week review, the one words line habit_catalogue.review_line gives ("Next up, if you
+    want it: <name>."), through tier_audit.gate (hook ``week_review:next``); "" after Keep, for an unknown
+    decision, when the list is exhausted or the state cannot be read. It only suggests: no push, no job, and
+    no habit starts (that is the person's yes and habit_start)."""
+    if decision != "Drop":
+        return ""
+    try:
+        line = habit_catalogue.review_line(decision, _stop_rule.loop_rows(state_dir), habit)
+    except Exception:  # noqa: BLE001 - a broken ledger must not stop the decision being logged
+        return ""
+    return _gated("week_review:next", line, env, home)
 
 
 def _break(v: jobs.Verdict, p: _Pass, now: float) -> jobs.Verdict:

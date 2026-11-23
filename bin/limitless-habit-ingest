@@ -6,7 +6,10 @@ Reads the person's Telegram messages from the Hermes session DB (read-only) afte
 check-in in jobs-sent.jsonl, and logs the first Done, No or Skip into habit.json's checkins for the
 check-in's local date. Anything else stays unlogged; a day that already has an answer is kept.
 After this week's week review it also logs the first Keep or Drop as habit.json's decision (with
-decided_at); anything else leaves the week undecided, and a decision already there is kept.
+decided_at); anything else leaves the week undecided, and a decision already there is kept. After the
+Drop it logs (or would log) it prints one more line, the next habit from the short catalogue: "Next up,
+if you want it: <name>." (habit_catalogue, through the tier audit); nothing after a Keep. It only
+suggests: no habit starts.
 Without --write it is a dry run: it prints what it would write and writes nothing.
 The DB is --db, else $LIMITLESS_HERMES_DB, else "hermes_db" in $LIMITLESS_CONFIG
 (~/.config/limitless/config.json; a relative path is in the state dir). There is no default: with none
@@ -19,7 +22,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import habit_replies  # noqa: E402
+from limitless import habit_replies, jobs_runner  # noqa: E402
 from limitless.state_reader import StateReader, state_dir  # noqa: E402
 
 
@@ -43,10 +46,15 @@ def main(argv):
         print(f"{r['day'] or 'no day'}: {r['action']}: {word}{r['reason']}")
     review = habit_replies.latest_review(sent_log, now)
     if review is not None:                      # a Keep / Drop only ever answers a week review
+        week = StateReader(state).habit()
         for r in habit_replies.decide(state, habit_replies.replies_from_hermes_db(db, review), now,
                                       dry_run=not args.write):
             word = f"{r['answer']}: " if r["answer"] else ""
             print(f"week of {r['week_of'] or 'no week'}: {r['action']}: {word}{r['reason']}")
+            if r["action"] in (habit_replies.WRITE, habit_replies.WOULD_WRITE):
+                nxt = jobs_runner.week_next(state, week, r["answer"])
+                if nxt:
+                    print(nxt)
     if not args.write:
         print("dry run: nothing written (--write writes habit.json)")
     return 0

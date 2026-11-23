@@ -4,6 +4,7 @@
     habit_catalogue.find("Feeds-free first hour")   -> that entry (by id or name, any case), else None
     habit_catalogue.next_habit(stop_rule.loop_rows(state_dir), current=habit_json)
         -> Next(habit, reason): the next one to offer, or Next(None, why) when the list is exhausted
+    habit_catalogue.review_line("Drop", rows, habit_json)  -> "Next up, if you want it: <name>." ("" otherwise)
 
 Few good habits, not many goals. When a week ends with Drop, or before the first week, the agent offers the
 next habit from this list instead of inventing one. The list is ordered by layer (foundation: sleep, energy
@@ -172,3 +173,20 @@ def next_habit(loop_rows, current=None) -> Next:
     if open_:
         return Next(open_[0], RETRY_REASON)
     return Next(None, EXHAUSTED)
+
+
+NEXT_PREFIX = "Next up, if you want it: "
+
+
+def review_line(decision, loop_rows, week=None) -> str:
+    """After a Drop at the week review, the one words line "Next up, if you want it: <name>."; "" after Keep,
+    for an unknown decision, or when nothing is left to offer. ``week`` is the habit.json just decided: its
+    habit counts as dropped (and is not offered straight back) even before its loop row is written."""
+    if decision != "Drop":
+        return ""
+    rows = [r for r in (loop_rows or ()) if isinstance(r, Mapping)]
+    habit = week.get("habit") if isinstance(week, Mapping) else None
+    if isinstance(habit, str) and not any(r.get("week_of") == week.get("week_of") for r in rows):
+        rows.append({"kind": "loop", "week_of": week.get("week_of"), "habit": habit, "decision": decision})
+    n = next_habit(rows, current=habit)
+    return f"{NEXT_PREFIX}{n.habit['name']}." if n.habit is not None else ""
