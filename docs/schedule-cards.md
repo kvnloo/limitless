@@ -61,6 +61,13 @@ NOOP database"), ending at the next such sync, sender `local`, budget zero, once
 time>`. `limitless-jobs --send` runs it (in `words.runs`); it sends nothing, so no decision window holds it. It
 is not a `jobs.SPECS` job: the message jobs' cards stay as they were ([noop-export.md](noop-export.md#as-an-event-job)).
 
+## The apps ingest's card
+
+When config `apps_ingest` is `dry_run` or `write`, `cards(apps=True)` adds one more card last:
+`schedule_cards.apps_ingest_card()`, id `apps_ingest`, on the `sync` event ("after each sync run"), ending at the
+next sync run, sender `local`, budget zero, once-key `apps_ingest:<sync run time>`. It sends nothing and never
+names an app ([apps-ingest.md](apps-ingest.md#as-an-event-job)).
+
 ## Host registration
 
 `register(ctx)` checks the host for a schedule-card method with

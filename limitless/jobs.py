@@ -188,7 +188,7 @@ def apps_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], now:
     if t is None:
         return Verdict(NOT_TRIGGERED, "no sync run yet")
     if not sync_ran(last_run):
-        return Verdict(NOT_TRIGGERED, "the last sync run failed")
+        return Verdict(NOT_TRIGGERED, "the last sync run did not finish ok")
     if t > now:
         return Verdict(NOT_TRIGGERED, "the last sync run is timestamped in the future")
     if mark_at is not None and t <= mark_at:
