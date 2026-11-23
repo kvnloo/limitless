@@ -1,11 +1,11 @@
-"""The state card and the week review as one small, glanceable HTML card (an ephemeral card, not a wall of text).
+"""The state card, the week review and the skill tree as one small, glanceable HTML card (an ephemeral card, not a wall of text).
 
     r = render(title, lines, kind)   # {"html", "rows", "dropped", "chips"}; pure, writes nothing
     chip(line)                       # "known" | "unknown" | "held", from the line's own words
     write(out_dir, html)             # atomic, 0600, named by a content hash; the path
 
 Deterministic code builds the card from lines the plugin already makes digit-free (card.build for the state
-card, the week review body for the week); the model never writes its contents. Every line goes through
+card, the week review body for the week, skill_tree.lines for the skill tree); the model never writes its contents. Every line goes through
 tier_audit.gate (hook ``ui_card:<kind>``) with the raw opt-in always off: a line with a digit is dropped and
 counted, never shown, so no raw number reaches a card even when the person opted in for prompts. Blank and
 non-text lines are dropped too, and so is any line past MAX_ROWS.
@@ -29,8 +29,8 @@ from typing import Iterable, Mapping, Optional
 from . import tier_audit
 from .state_reader import config
 
-KINDS = ("state", "week")
-TITLES = {"state": "Today", "week": "This week"}
+KINDS = ("state", "week", "skill_tree")
+TITLES = {"state": "Today", "week": "This week", "skill_tree": "Skill tree"}
 MAX_ROWS = 8
 KNOWN, UNKNOWN, HELD = "known", "unknown", "held"
 CHIPS = (KNOWN, UNKNOWN, HELD)
