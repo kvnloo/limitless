@@ -9,7 +9,7 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, f
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
-               overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
+               overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak, phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
                scorecard as _scorecard, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
@@ -918,4 +918,32 @@ def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] =
         return out
     out["lines"] = lines
     out["label"] = {"label": word, "tier": "T1", "modality": _schedule_cards.MODALITY}
+    return out
+
+
+def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+          home: Optional[Path] = None) -> dict:
+    """limitless_phase: the part of the day (phase.read_for), read-only.
+
+    ``value: {phase}`` with phase just_woke, day, evening, asleep or unknown. Modality derived when a fresh
+    posture file decided it, else proxy (the wake event, Sleep mode). ``age_h`` is the age of the event that
+    decided it (the posture, the wind-down, the wake or Sleep mode on); evidence_tier as envelope.py (a fresh
+    derived phase is indirect, like a proxy), none for unknown, with ``reason``. ``label`` is the T1 words
+    ("just woke: a good time for outdoor light"), digit-free, with no clock time; ``why`` says which event,
+    ``posture_ignored`` why a posture file was not used. Nothing is written, sent or scheduled.
+    """
+    r = _phase.read_for(reader, now, env, home)
+    modality = "derived" if r["source"] == "posture" else "proxy"
+    at = r.get("at")
+    age = None if at is None else round(max(0.0, now - at) / 3600, 1)
+    if r["phase"] == "unknown":
+        tier = "none"
+    else:
+        tier = _envelope_tier("proxy", age)
+    out = {"value": {"phase": r["phase"]}, "modality": modality, "age_h": age, "evidence_tier": tier,
+           "label": {"label": _phase.label(r), "tier": "T1", "modality": modality}, "why": r["why"]}
+    if r["phase"] == "unknown":
+        out["reason"] = r["why"]
+    if r.get("posture_ignored"):
+        out["posture_ignored"] = r["posture_ignored"]
     return out

@@ -10,6 +10,10 @@ A bedtime capture last night (bedtime.saved_last_night) adds the digit-free line
 While the post-wake peak applies (peak.read_for: from the wake event, never a clock time) the card says
 "post-wake peak: open" or "post-wake peak: in use" on a line of its own under the window line, or after the
 window line's words when the card is full; nothing when the peak is closed or unknown.
+While the phase is just_woke (phase.read_for: the first short span after the wake event, config
+phase_light_h; never a clock time) the card says "Light: outdoor light now helps set the day." on a line of its
+own under the window and peak lines, or after the window line's words when the card is full; nothing in any
+other phase. No new job, push or reminder: the line only rides on the card.
 Once this week's Done days reach the weekly target (tools.habit ``target``) the habit line says
 "target reached this week"; before that it says nothing about a target, and never a count.
 The habit line gains the passive habit days' T1 words (tools.habit ``passive``, a proxy) when there are any,
@@ -31,7 +35,7 @@ import time
 from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Optional
 
-from . import anki as _anki, bedtime, flow_week, modes, peak as _peak
+from . import anki as _anki, bedtime, flow_week, modes, peak as _peak, phase as _phase
 from . import labeler as _labeler
 from . import tier_audit, tools
 from . import weekly_target as _weekly_target
@@ -170,6 +174,17 @@ def peak_label(reader: StateReader, now: float, env: Optional[Mapping[str, str]]
     return word if isinstance(word, str) and not any(c.isdigit() for c in word) else None
 
 
+def light_line(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """phase.CARD_LINE while the phase is just_woke (phase.read_for), else None; a digit drops it. Never raises."""
+    try:
+        if _phase.read_for(reader, now, env)["phase"] != "just_woke":
+            return None
+        word = _phase.CARD_LINE
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+    return word if isinstance(word, str) and not any(c.isdigit() for c in word) else None
+
+
 def anki_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
     """anki.offer for this turn: the window chain (Glide first, then ``win``), focused mode applied, and
     whether a collection is set (configured and the file is there; the DB is not opened). None when there is
@@ -189,7 +204,7 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
-          mask: bool = True) -> dict:
+          mask: bool = True, light: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
@@ -239,11 +254,19 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
         else:
             lines[-1] += f"; {anki_offer}"
     word = peak_label(reader, now, env) if peak is _UNSET else peak
+    at = 2
     if word:
         if len(lines) < MAX_LINES:
             lines.insert(2, word)
+            at = 3
         else:
             lines[1] += f"; {word}"
+    lit = light_line(reader, now, env) if light is _UNSET else light
+    if lit:
+        if len(lines) < MAX_LINES:
+            lines.insert(at, lit)
+        else:
+            lines[1] += f"; {lit}"
     lines = lines[:MAX_LINES]
     if not raw and MASK_DIGITS and mask:
         lines = [re.sub(r"\d+", "#", ln) for ln in lines]
@@ -275,12 +298,13 @@ class CardCache:
         owner = tools.owner_message(reader, now, env)
         word = peak_label(reader, now, env)   # the peak closes with time, not a file change: part of the key
         offer = anki_offer(reader, now, win, env)   # Glide's block and the mode change it too: part of the key
+        lit = light_line(reader, now, env)   # the light part ends with time since the wake: part of the key
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env), word, offer)
+               _passive_mtime(reader, env), word, offer, lit)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
-                               owner=owner, env=env, peak=word, anki_offer=offer)["text"]
+                               owner=owner, env=env, peak=word, anki_offer=offer, light=lit)["text"]
             self._key = key
             self.builds += 1
         return self._text

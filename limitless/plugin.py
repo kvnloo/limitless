@@ -124,6 +124,10 @@ def _ideas(args, now):
     return tools.ideas(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _phase(args, now):
+    return tools.phase(_reader(), now)
+
+
 def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
@@ -357,6 +361,15 @@ by limitless-ledger-append): how many ideas were recorded and whether the person
 words such as a few new ideas this week, none triaged. Self-reported. The words only; the counts and the idea \
 text need the person's raw opt-in. No ledger set is no value with the reason. It never triages, ranks or \
 starts an idea: the person triages in a review. Read-only; nothing is written or sent."), _ideas, "💡"),
+    "limitless_phase": (_schema(
+        "limitless_phase",
+        "The part of the day the person is in, in plain words, from the wake event (phone Sleep mode going \
+off), never a clock time: just woke (the first short span after the wake event, config phase_light_h: a good \
+time for outdoor light), day, evening (once the wind-down event has happened), asleep (Sleep mode is on) or \
+unknown (no wake event yet). A circadian posture file (config posture_file or LIMITLESS_POSTURE) is used only \
+when it is fresher than the wake event and names one of these phases; otherwise it is ignored and \
+posture_ignored says why. Modality derived (posture file) or proxy (wake event). No clock time, no target \
+bedtime, no light dose or supplement advice. Read-only; nothing is written, sent or scheduled."), _phase, "🌅"),
     "limitless_propose": (_schema(
         "limitless_propose",
         "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \
