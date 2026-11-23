@@ -11,3 +11,4 @@ provides_tools:
   - limitless_catchup
 provides_hooks:
   - pre_llm_call
+  - post_gateway_admission

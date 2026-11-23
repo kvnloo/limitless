@@ -6,6 +6,7 @@ hold a raw value. Every digit left in it is masked as a second guard (MASK_DIGIT
 opts in to raw numbers. Labels describe one imported or proxy value; nothing here computes a score.
 The hook's card is cached until the window class, a card input file's mtime, the date, the raw flag or the
 owner-message label (tools.owner_message: one short read-only probe of each owner session DB per turn) changes.
+A bedtime capture last night (bedtime.saved_last_night) adds the digit-free line "ideas saved last night".
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
 opt-in is dropped, not sent.
 """
@@ -17,7 +18,7 @@ import time
 from datetime import date, timedelta
 from typing import Callable, Mapping, Optional
 
-from . import flow_week
+from . import bedtime, flow_week
 from . import labeler as _labeler
 from . import tier_audit, tools
 from .envelope import STALE_H, envelope, missing
@@ -26,7 +27,9 @@ from .window import window
 
 MAX_LINES = 6
 ASKS_MAX_AGE_H = 36.0
-CARD_FILES = ("inputs.json", "digests.jsonl", "habit.json", "asks-latest.json")
+CARD_FILES = ("inputs.json", "digests.jsonl", "habit.json", "asks-latest.json", "captures.jsonl",
+              "sleepmode.jsonl")
+SAVED_LABEL = "ideas saved last night"  # digit-free: the count is in the wake brief
 _WEAKEST_LAST = ("measured", "messages", "imported", "self_report", "proxy")
 MASK_DIGITS = True  # the second guard: lines are built from T1 labels first
 
@@ -112,6 +115,13 @@ def _aw_mtime(reader: StateReader, env: Optional[Mapping[str, str]]) -> Optional
         return None
 
 
+def _saved_last_night(reader: StateReader, now: float, env: Optional[Mapping[str, str]]) -> int:
+    try:
+        return bedtime.saved_last_night(reader.path, now, env=env)
+    except Exception:  # noqa: BLE001 - a broken capture file must not break the card
+        return 0
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
@@ -144,6 +154,11 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
     asks_at = parse_ts(asks.get("at"))
     if asks_at is not None and now - asks_at <= ASKS_MAX_AGE_H * 3600 and asks.get("count"):
         lines.append("asks waiting on you" + (f": {asks['count']}" if raw else ""))
+    if _saved_last_night(reader, now, env):
+        if len(lines) < MAX_LINES:
+            lines.append(SAVED_LABEL)
+        else:
+            lines[-1] += f"; {SAVED_LABEL}"
     lines = lines[:MAX_LINES]
     if not raw and MASK_DIGITS:
         lines = [re.sub(r"\d+", "#", ln) for ln in lines]

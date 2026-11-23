@@ -1,4 +1,5 @@
-"""Wake-brief post-processing: the folded 'Asks waiting on you' digest becomes one plain line."""
+"""Wake-brief post-processing: the folded 'Asks waiting on you' digest becomes one plain line, and the
+ideas bedtime capture saved last night one more ("Saved last night: N ideas")."""
 from __future__ import annotations
 
 import json
@@ -31,7 +32,13 @@ def asks_line(asks: dict | None, now: float) -> str | None:
     return f"Asks waiting on you: {len(items)} (first: {first})"
 
 
-def finalize(text: str, asks: dict | None, now: float) -> str:
-    out = scrub(text)
-    line = asks_line(asks, now)
-    return f"{out}\n{line}" if line else out
+def saved_line(n) -> str | None:
+    """"Saved last night: N ideas" for N bedtime captures (bedtime.saved_last_night); None for none."""
+    if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
+        return None
+    return f"Saved last night: {n} idea" + ("" if n == 1 else "s")
+
+
+def finalize(text: str, asks: dict | None, now: float, saved: int = 0) -> str:
+    lines = [scrub(text)] + [ln for ln in (asks_line(asks, now), saved_line(saved)) if ln]
+    return "\n".join(lines)
