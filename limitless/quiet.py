@@ -17,13 +17,23 @@ There are no times of day and no durations here. A missing, unreadable or malfor
 fails open to the existing gate and never mutes silently. ``quiet_tonight`` or ``snoozed`` without a valid
 ``since`` is ``on`` too, and so is a snooze ``check`` cannot test (no message source configured or none
 readable), or a quiet night whose wake events cannot be read. Every ``why`` is plain and digit-free; a held
-one starts with ``quiet: ``. Nothing here sends. Stdlib only, Python 3.9+.
+one starts with ``quiet: ``.
+
+Replies (``ingest``, bin/limitless-quiet-ingest [--db PATH] [--write], the habit_replies CLI shape): the
+person's Telegram messages from the Hermes session DB (read-only), after ``read_after`` (the second after
+the current ``since``; with no valid file, FIRST_READ_S back, so a first run never acts on an old message).
+A whole message, case-insensitive, with spaces and trailing punctuation ignored, is a command: ``quiet``
+(off), ``quiet tonight``, ``snooze`` or ``snooze until I write again`` (snoozed), ``on``. Anything else,
+including any time or duration ("snooze 2h"), is not a command and changes nothing. The latest command
+wins and is written with ``since`` = its reply time (whole seconds, UTC). Dry run unless written. Rows
+never echo a reply. Nothing here sends. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import json
 import os
 import tempfile
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Tuple
@@ -44,6 +54,12 @@ WHY_NO_SINCE = "on: the quiet file has no valid start, so it does not hold"
 WHY_NO_WAKES = "on: the wake events cannot be read, so quiet tonight does not hold"
 WHY_NO_SOURCE = ("on: this host cannot see when you write, so the snooze does not hold; "
                  "reply quiet to turn pushes off")
+
+
+WRITE, WOULD_WRITE, IGNORE, NOTHING = "write", "would write", "ignore", "nothing"
+FIRST_READ_S = 24 * 3600   # ingest only: how far back a first run (no quiet.json) reads replies; not a quiet rule
+COMMANDS = {"quiet": OFF, "quiet tonight": TONIGHT, "snooze": SNOOZED, "snooze until i write again": SNOOZED,
+            "on": ON}
 
 
 def label(mode) -> str:
@@ -106,7 +122,8 @@ def load(state_dir) -> Optional[dict]:
 
 
 def iso(t: float) -> str:
-    return datetime.fromtimestamp(float(t), timezone.utc).isoformat(timespec="seconds")
+    """UTC ISO time in whole seconds (the fraction is cut), the shape owner_messages reports."""
+    return datetime.fromtimestamp(int(float(t)), timezone.utc).isoformat(timespec="seconds")
 
 
 def write(state_dir, mode: str, since_ts: float) -> dict:
@@ -174,3 +191,51 @@ def check(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
         return active(state, [], None, now)
     except Exception:  # noqa: BLE001 - a broken quiet check must never mute or crash a push
         return False, WHY_ON
+
+
+def command(text) -> Optional[str]:
+    """The mode a whole reply asks for (COMMANDS), or None when it is not exactly a command."""
+    if not isinstance(text, str):
+        return None
+    words = " ".join(text.split()).lower()
+    while words and unicodedata.category(words[-1]).startswith("P"):
+        words = words[:-1].rstrip()
+    return COMMANDS.get(words)
+
+
+def read_after(state_dir, now: float) -> float:
+    """Epoch seconds after which replies are read: the second after the current ``since``, else FIRST_READ_S
+    before ``now``."""
+    since = _since(load(state_dir))
+    return since + 1 if since is not None else float(now) - FIRST_READ_S
+
+
+def _row(t, mode, action, reason) -> dict:
+    return {"reply_at": None if t is None else iso(t), "mode": mode, "label": None if mode is None else label(mode),
+            "action": action, "reason": reason}
+
+
+def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, dry_run: bool = True) -> list:
+    """One plain-word row per reply (or one ``nothing`` row): ``{reply_at, mode, label, action, reason}``.
+    The latest command after the current ``since`` is written (only when not ``dry_run``)."""
+    start = read_after(state_dir, now)
+    ok = sorted(((float(t), x) for t, x in (replies or ()) if _number(t)), key=lambda r: r[0])
+    if not ok:
+        return [_row(None, None, NOTHING, "no new message: quiet stays as it is")]
+    rows, last = [], None
+    for t, text in ok:
+        mode = command(text)
+        if int(t) < start:
+            rows.append(_row(t, None, IGNORE, "before the current quiet setting"))
+        elif t > now:
+            rows.append(_row(t, None, IGNORE, "after now"))
+        elif mode is None:
+            rows.append(_row(t, None, IGNORE, "not quiet, quiet tonight, snooze or on: changes nothing"))
+        else:
+            if last is not None:
+                rows[last] = dict(rows[last], action=IGNORE, reason="a later command wins")
+            last = len(rows)
+            rows.append(_row(t, mode, WOULD_WRITE if dry_run else WRITE, "the latest command"))
+    if last is not None and not dry_run:
+        write(state_dir, rows[last]["mode"], ok[last][0])     # one row per reply: same index
+    return rows

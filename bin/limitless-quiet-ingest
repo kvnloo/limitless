@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""limitless-quiet-ingest [--db PATH] [--write]: set quiet from one reply (quiet, quiet tonight, snooze, on).
+
+Reads the person's Telegram messages from the Hermes session DB (read-only) after the current quiet.json
+"since" (with no quiet.json, the last day only), and writes the latest whole-message command into quiet.json
+in the state dir (atomic, mode 0600): "quiet" is off until "on"; "quiet tonight" ends at the next wake;
+"snooze" (or "snooze until I write again") ends when the person writes again; "on" ends any of them.
+Anything else, times and durations included, changes nothing. Without --write it is a dry run: it prints
+what it would write and writes nothing. The DB is --db, else $LIMITLESS_HERMES_DB, else "hermes_db" in
+$LIMITLESS_CONFIG (~/.config/limitless/config.json; a relative path is in the state dir). There is no
+default: with none set it reads nothing and says so. The state dir is $LIMITLESS_STATE, else "state" in
+$LIMITLESS_CONFIG. Nothing here sends.
+"""
+import argparse
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import habit_replies, quiet  # noqa: E402
+from limitless.state_reader import state_dir  # noqa: E402
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-quiet-ingest", add_help=True)
+    ap.add_argument("--db", help="the Hermes session DB (state.db)")
+    ap.add_argument("--write", action="store_true", help="write quiet.json (default: dry run)")
+    args = ap.parse_args(argv[1:])
+    now = time.time()
+    state = state_dir()
+    db = habit_replies.hermes_db_path(state, arg=args.db)
+    if db is None:
+        print(f"limitless-quiet-ingest: no Hermes DB set (--db, {habit_replies.ENV_KEY} or config "
+              f"\"{habit_replies.CONFIG_KEY}\"): nothing read, nothing written")
+        return 0
+    replies = habit_replies.replies_from_hermes_db(db, quiet.read_after(state, now))
+    for r in quiet.ingest(state, replies, now, dry_run=not args.write):
+        word = f"{r['label']}: " if r["label"] else ""
+        print(f"{r['reply_at'] or 'no reply'}: {r['action']}: {word}{r['reason']}")
+    if not args.write:
+        print("dry run: nothing written (--write writes quiet.json)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
