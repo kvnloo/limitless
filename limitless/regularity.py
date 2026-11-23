@@ -3,6 +3,8 @@
     r = regularity(nights, min_nights=MIN_NIGHTS, tz=None)
     # {"wearable": kind, "proxy": kind}; kind = {"known", "nights", "mid_spread_min", "wake_spread_min",
     #                                           "drift_min", "drift", "pattern"}
+    lab = label(r)      # T1 dict: "wearable: sleep times steady" / "phone estimate: drifting later" / "unknown: ..."
+    clause(r)           # the week review's clause: "wearable says sleep times steady"; "" when unknown
 
 Input is sleep.timed_nights(): ``{"night": "YYYY-MM-DD", "wearable": (start_s, end_s) | None,
 "proxy": (start_s, end_s) | None}`` oldest first. Only the last MAX_NIGHTS nights count. Each source is read on
@@ -17,8 +19,12 @@ DRIFT_MIN or more, else "steady". ``pattern``: "later" / "earlier" when the drif
 sit close to the drift line (residual spread at most STEADY_SPREAD_MIN), else "varies" when the midpoint or
 wake spread is over STEADY_SPREAD_MIN, else "steady".
 
-Tiers: minutes and counts are T0 and stay in code (the tool shows them only under the raw opt-in); the words
-are T1 with no digit and no clock time. Observation only: no target, no bedtime, no advice.
+Words (T1, no digit, no clock time): the wearable's when it is known, else the phone estimate's, always with
+the source named: "wearable: sleep times steady | sleep times vary a lot | drifting later | drifting earlier"
+(or "phone estimate: ..."), else "unknown: too few nights ..." / "unknown: no nights ...".
+
+Tiers: minutes and counts are T0 and stay in code (the tool shows them only under the raw opt-in); ``label`` and
+``clause`` are T1 words. Observation only: no target, no bedtime, no advice.
 Nothing here reads the clock, touches a file or sends. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -34,7 +40,15 @@ DRIFT_MIN = 60.0             # a drift across the window of at least this is dri
 MAX_SPAN_S = 24 * 3600       # a span this long or longer is a hole in the data, not a night
 CONFIG_KEY = "regularity_min_nights"
 DAY_MIN = 1440.0
-SOURCES = ("wearable", "proxy")
+SOURCES = ("wearable", "proxy")            # the wearable is read first; the phone estimate stands in for it
+NAMES = {"wearable": "wearable", "proxy": "phone estimate"}
+MODALITY = {"wearable": "measured", "proxy": "proxy"}
+WORDS = {"steady": "sleep times steady", "varies": "sleep times vary a lot", "later": "drifting later",
+         "earlier": "drifting earlier"}
+UNKNOWN_FEW = "unknown: too few nights with sleep times from the wearable or the phone estimate"
+UNKNOWN_NONE = "unknown: no nights with sleep times from the wearable or the phone estimate"
+LABELS = tuple(f"{NAMES[s]}: {w}" for s in SOURCES for w in WORDS.values()) + (UNKNOWN_FEW, UNKNOWN_NONE)
+CLAUSES = tuple(f"{NAMES[s]} says {w}" for s in SOURCES for w in WORDS.values())
 
 
 def min_nights(cfg: Optional[Mapping]) -> int:
@@ -137,3 +151,30 @@ def regularity(nights, min_nights: int = MIN_NIGHTS, tz: Optional[tzinfo] = None
         except (ValueError, ZeroDivisionError, OverflowError):
             out[src] = _unknown(len(pts))
     return out
+
+
+def _chosen(r) -> Optional[str]:
+    """The source the words describe: the wearable when known, else the phone estimate, else None."""
+    if not isinstance(r, dict):
+        return None
+    for src in SOURCES:
+        k = r.get(src)
+        if isinstance(k, dict) and k.get("known") is True and k.get("pattern") in WORDS:
+            return src
+    return None
+
+
+def label(r) -> dict:
+    """The T1 words for ``r`` (regularity()), with the source named; "unknown: <why>" when neither is known."""
+    src = _chosen(r)
+    if src is not None:
+        return {"label": f"{NAMES[src]}: {WORDS[r[src]['pattern']]}", "tier": "T1", "modality": MODALITY[src]}
+    seen = any(isinstance(r.get(s), dict) and isinstance(r[s].get("nights"), int) and r[s]["nights"] > 0
+               for s in SOURCES) if isinstance(r, dict) else False
+    return {"label": UNKNOWN_FEW if seen else UNKNOWN_NONE, "tier": "T1", "modality": "proxy"}
+
+
+def clause(r) -> str:
+    """The week review's digit-free regularity clause ("wearable says sleep times steady"); "" when unknown."""
+    src = _chosen(r)
+    return "" if src is None else f"{NAMES[src]} says {WORDS[r[src]['pattern']]}"

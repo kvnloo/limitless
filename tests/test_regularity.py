@@ -4,6 +4,7 @@ Synthetic spans only, UTC as the local zone. A night is ``{"night", "wearable", 
 ``(start_s, end_s)`` span or None (sleep.timed_nights). Wearable and phone estimate are kept apart; fewer than
 min_nights spans of one source is unknown, never regular.
 """
+import re
 import sys
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -107,6 +108,62 @@ class Regularity(unittest.TestCase):
             out = reg.regularity(bad, tz=UTC)
             self.assertFalse(out["wearable"]["known"])
             self.assertFalse(out["proxy"]["known"])
+
+
+class Label(unittest.TestCase):
+    def words(self, starts, kind="wearable", **kw):
+        return reg.label(reg.regularity(ns(starts, kind=kind), tz=UTC, **kw))
+
+    def test_t1_words_name_the_source(self):
+        self.assertEqual(self.words([23, 23.25, 22.75, 23, 23.1, 22.9, 23]),
+                         {"label": "wearable: sleep times steady", "tier": "T1", "modality": "measured"})
+        self.assertEqual(self.words([21, 26, 22, 27, 23, 20.5, 25.5], kind="proxy"),
+                         {"label": "phone estimate: sleep times vary a lot", "tier": "T1", "modality": "proxy"})
+        self.assertEqual(self.words([22, 22.4, 22.8, 23.2, 23.6, 24, 24.4])["label"], "wearable: drifting later")
+        self.assertEqual(self.words([25, 24.5, 24, 23.5, 23, 22.5, 22], kind="proxy")["label"],
+                         "phone estimate: drifting earlier")
+
+    def test_the_wearable_wins_when_both_are_known_and_the_proxy_stands_in_otherwise(self):
+        w = ns([23] * 7)
+        p = ns([21, 26, 22, 27, 23, 20.5, 25.5], kind="proxy")
+        both = [dict(a, proxy=b["proxy"]) for a, b in zip(w, p)]
+        self.assertEqual(reg.label(reg.regularity(both, tz=UTC))["label"], "wearable: sleep times steady")
+        few = [dict(b, wearable=a["wearable"] if i < 2 else None) for i, (a, b) in enumerate(zip(w, p))]
+        self.assertEqual(reg.label(reg.regularity(few, tz=UTC))["label"], "phone estimate: sleep times vary a lot")
+
+    def test_too_few_nights_is_unknown_with_why_never_regular(self):
+        lab = self.words([23, 23, 23])
+        self.assertTrue(lab["label"].startswith("unknown: "))
+        self.assertIn("too few nights", lab["label"])
+        self.assertEqual(lab["modality"], "proxy")
+        for bad in (None, {}, {"wearable": "x"}, "steady"):
+            self.assertTrue(reg.label(bad)["label"].startswith("unknown: "))
+
+    def test_words_never_carry_a_digit_a_clock_time_or_advice(self):
+        cases = [[23] * 7, [21, 26, 22, 27, 23, 20.5, 25.5], [22, 22.4, 22.8, 23.2, 23.6, 24, 24.4],
+                 [25, 24.5, 24, 23.5, 23, 22.5, 22], [23, 23], [2, 3, 1, 2.5, 3.5]]
+        for starts in cases:
+            for kind in ("wearable", "proxy"):
+                r = reg.regularity(ns(starts, kind=kind), tz=UTC)
+                for text in (reg.label(r)["label"], reg.clause(r)):
+                    self.assertEqual(re.findall(r"\d", text), [], text)
+                    for bad in ("should", "bed at", "goal", "aim", "try", "target", "am", "pm"):
+                        self.assertNotIn(bad, text.lower().split(), text)
+                self.assertIn(reg.label(r)["label"], reg.LABELS)
+
+    def test_the_review_clause_is_empty_when_unknown(self):
+        self.assertEqual(reg.clause(reg.regularity(ns([23] * 7), tz=UTC)), "wearable says sleep times steady")
+        self.assertEqual(reg.clause(reg.regularity(ns([22, 22.4, 22.8, 23.2, 23.6, 24, 24.4], kind="proxy"),
+                                                   tz=UTC)), "phone estimate says drifting later")
+        self.assertEqual(reg.clause(reg.regularity(ns([23, 23]), tz=UTC)), "")
+        self.assertEqual(reg.clause(None), "")
+
+    def test_min_nights_comes_from_config(self):
+        self.assertEqual(reg.min_nights({"regularity_min_nights": 6}), 6)
+        for bad in ({}, None, {"regularity_min_nights": 1}, {"regularity_min_nights": "6"},
+                    {"regularity_min_nights": True}):
+            self.assertEqual(reg.min_nights(bad), reg.MIN_NIGHTS)
+        self.assertTrue(self.words([23] * 5, min_nights=6)["label"].startswith("unknown: "))
 
 
 if __name__ == "__main__":
