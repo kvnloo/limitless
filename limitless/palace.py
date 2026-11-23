@@ -41,6 +41,7 @@ DEFAULT_LABEL = "memory palace"
 MAX_LABEL_CHARS = 40
 NO_LINK = "no memory palace link set"
 OFF, FITS, NOT_NOW = "off", "fits now", "not now"
+MODALITY = "derived"
 MUTED = "pushes are muted (or quiet could not be read), so this waits until quiet ends"
 ANKI = "an Anki review was offered in this trough, and one learning offer per trough is enough"
 BROKEN = "the inputs could not be read, so this waits"

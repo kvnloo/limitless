@@ -1073,6 +1073,33 @@ def explain_back(reader: StateReader, now: float, raw: bool = False, env: Option
     return out
 
 
+def palace(result) -> dict:
+    """limitless_palace: whether the one memory palace offer fits now (palace.for_turn's result, which the plugin
+    builds from the window the state card sees), read-only.
+
+    ``value: {label}`` with the label "off" (and ``why``: "no memory palace link set"), "fits now" (and ``line``,
+    the offer with the person's link) or "not now: <reason in words>". Modality derived, age_h None,
+    evidence_tier direct when off (the config alone decides it), else indirect (the window is inferred). Words
+    only: no time, no count of walks, no score; a result with a digit anywhere is not now. Nothing is written,
+    marked or sent: only the state card's hook marks the wake day.
+    """
+    r = result if isinstance(result, Mapping) else {}
+    word, words, line = r.get("word"), r.get("words"), r.get("line")
+    ok = isinstance(words, str) and words and not any(c.isdigit() for c in words)
+    if ok and line is not None:
+        ok = word == _palace.FITS and isinstance(line, str) and not any(c.isdigit() for c in line)
+    if not ok:
+        word, words, line = _palace.NOT_NOW, f"{_palace.NOT_NOW}: {_palace.BROKEN}", None
+    value = {"label": words}
+    if word == _palace.OFF:
+        value["why"] = _palace.NO_LINK
+    elif word == _palace.FITS and line:
+        value["line"] = line
+    tier = "direct" if word == _palace.OFF else "indirect"
+    return {"value": value, "modality": _palace.MODALITY, "age_h": None, "evidence_tier": tier,
+            "label": {"label": words, "tier": "T1", "modality": _palace.MODALITY}}
+
+
 def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
              home: Optional[Path] = None) -> dict:
     """limitless_schedule: every job's schedule card (schedule_cards.cards), read-only.

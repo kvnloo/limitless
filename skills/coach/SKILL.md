@@ -38,6 +38,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | How is the north-star scorecard? | limitless_scorecard |
 | Save this thought for later | limitless_capture |
 | Did I get the explain-back offer today? | limitless_explain_back |
+| Does a short memory palace walk fit now? (trough only) | limitless_palace |
 | What ideas did I record this week? | limitless_ideas |
 | How did I sleep this week? | limitless_sleep |
 | Did I nap yesterday? | limitless_naps |
