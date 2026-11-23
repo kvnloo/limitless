@@ -1,6 +1,6 @@
 name: limitless
 version: 0.1.0
-description: Limitless Protocol state for the agent - input freshness, today's coarse state card, decision window, this week's habit, the north-star scorecard block and quick capture. Read-only except captures.
+description: Limitless Protocol state for the agent - input freshness, today's coarse state card, decision window, this week's habit, the north-star scorecard block and quick capture. Read-only except captures and the opt-in tier audit log.
 provides_tools:
   - limitless_status
   - limitless_state
