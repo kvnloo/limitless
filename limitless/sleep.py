@@ -41,12 +41,13 @@ LABELS = tuple(f"sleep: wearable on {c}; phone proxy {k}" for c in COVERAGE for 
 
 
 def screen_gaps(rows) -> list:
-    """``(from_s, to_s)`` quiet spans between consecutive person actions in screen-event rows, oldest first."""
+    """``(from_s, to_s)`` quiet spans between consecutive person actions in screen-event rows, oldest first.
+    A span of MAX_GAP_S or more is a hole in the data (a dead or unsynced phone), not a gap: it is left out."""
     try:
         times = wake_proxy.person_times(rows if isinstance(rows, (list, tuple)) else [])
     except Exception:  # noqa: BLE001 - a bad row list is no gaps
         return []
-    return [(a, b) for a, b in zip(times, times[1:]) if b > a]
+    return [(a, b) for a, b in zip(times, times[1:]) if 0 < b - a < MAX_GAP_S]
 
 
 def _num(v) -> Optional[float]:

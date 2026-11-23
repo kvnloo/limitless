@@ -47,6 +47,8 @@ class Gaps(unittest.TestCase):
                 {"ts": 4000, "type": "USER_INTERACTION"}, {"ts": 9000, "type": "KEYGUARD_HIDDEN"}]
         self.assertEqual(sleep.screen_gaps(rows), [(1000.0, 4000.0), (4000.0, 9000.0)])
         self.assertEqual(sleep.screen_gaps([]), [])
+        self.assertEqual(sleep.screen_gaps([{"ts": 0, "type": "KEYGUARD_HIDDEN"},
+                                            {"ts": 24 * H, "type": "KEYGUARD_HIDDEN"}]), [])   # a hole, not a gap
         self.assertEqual(sleep.screen_gaps(None), [])
 
 
