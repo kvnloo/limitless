@@ -7,7 +7,8 @@ Missing data is ``value: None`` plus a ``reason``; nothing is ever filled in by 
 evidence_tier is a label for how the value was obtained, not a score:
 direct = measured, imported, self-reported or read from message timestamps (``messages``: when the
 person last wrote to an agent) and at most STALE_H old; indirect = a fresh proxy;
-stale = older than STALE_H or of unknown age; none = no value.
+stale = older than STALE_H or of unknown age; none = no value. One tool names its proxy more exactly:
+limitless_flow_metrics says observed-activity (app activity as observed) where a fresh proxy says indirect.
 
 A result may also carry ``label``: a T1 label (labeler.py) next to the value, added by with_label only
 when there is a value and no label yet. The four fields above never change.

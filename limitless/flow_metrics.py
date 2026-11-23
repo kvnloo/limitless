@@ -35,6 +35,12 @@ Thresholds (``thresholds(env, home)``; config keys, documented defaults, wording
   ``flow_busy_switches_per_h`` (8) switches per work hour, reads "work was broken up".
 - Anything between reads "mixed".
 
+``read_for(reader, lo, hi, env, home, tz)`` reads every input from config (the ActivityWatch DB through
+blocks.read_rows, read-only, cut to not-afk spans; ``flow_work_apps``; ``block_gap_min``;
+``break_after_min``) for [lo, hi) and returns ``{days, pool, rows_end, why, thresholds}``; ``days`` None
+(unknown) carries ``why``, plain and digit-free. The tool's evidence tier is EVIDENCE_TIER
+("observed-activity"): app activity as observed, a proxy, never a measure of attention.
+
 No work apps configured, or no rows at all, is unknown (None), never zero. Pure: nothing here reads the
 clock, a file or the config. Stdlib only, Python 3.9+.
 """
@@ -169,4 +175,34 @@ def thresholds(env=None, home=None) -> dict:
         v = cfg.get(f"flow_{k}")
         if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 and (k not in _SHARES or v <= 1):
             out[k] = float(v)
+    return out
+
+
+# --- config: every input for a span of time -------------------------------------------------------------
+
+EVIDENCE_TIER = "observed-activity"
+NO_WORK_APPS = "no work apps set (flow_work_apps)"
+
+
+def read_for(reader, lo: float, hi: float, env=None, home=None, tz: Optional[tzinfo] = None,
+             no_rows: str = "no activity rows in that time") -> dict:
+    """metrics() and pooled() for [lo, hi) with every input from config. Read-only; never raises on a
+    missing or bad DB (that is ``why``)."""
+    out = {"days": None, "pool": None, "rows_end": None, "why": "", "thresholds": thresholds(env, home)}
+    db = reader.aw_db_path(env, home)
+    rows = None if db is None else _blocks.read_rows(db, lo, hi)
+    apps = flow_week.work_apps(env, home)
+    if rows is None:
+        out["why"] = _blocks.NO_DB
+    elif flow_week._matcher(apps) is None:
+        out["why"] = NO_WORK_APPS
+    elif not rows:
+        out["why"] = no_rows
+    else:
+        out["days"] = metrics(rows, apps, _blocks.gap_s(env, home), break_after_s=_blocks.break_after_s(env, home),
+                              tz=tz)
+        out["pool"] = pooled(out["days"])
+        out["rows_end"] = max(r["end"] for r in rows)
+        if out["days"] is None:
+            out["why"] = no_rows
     return out

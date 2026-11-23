@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_overnight",
+TOOLS = ["limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_metrics",
+         "limitless_habit", "limitless_overnight",
          "limitless_quiet", "limitless_rides", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
@@ -203,6 +204,9 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(sleep_config(st))}
             if name == "limitless_blocks":   # one synthetic long block up to NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(blocks_config(st))}
+            if name == "limitless_flow_metrics":   # the same synthetic block, in its own state dir
+                (st / "flow").mkdir()
+                env = {"LIMITLESS_STATE": str(st / "flow"), "LIMITLESS_CONFIG": str(blocks_config(st / "flow"))}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))

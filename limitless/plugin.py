@@ -93,6 +93,10 @@ def _blocks(args, now):
     return tools.blocks(_reader(), now)
 
 
+def _flow_metrics(args, now):
+    return tools.flow_metrics(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -219,6 +223,15 @@ whether the person is in a long block now (past break_after_min), between blocks
 blocks and long blocks the last day had. A proxy: app activity, not attention. No work apps or no data is \
 unknown, never zero. No score, no target; the only suggestion anywhere is a short break after a long block, \
 sent by the break nudge job, never by this tool. Read-only; nothing is written or sent."), _blocks, "⏳"),
+    "limitless_flow_metrics": (_schema(
+        "limitless_flow_metrics",
+        "How broken up the person's work was over the last seven days, from observed app activity (the \
+ActivityWatch DB; work apps in config flow_work_apps): how often the foreground switched from a work app to \
+another app per work hour, the share of work time in blocks of at least break_after_min, and how soon work \
+resumed after such a switch, in plain words: work stayed in long blocks, work was broken up, mixed, or \
+unknown with the reason. A proxy (evidence_tier observed-activity): app activity, not attention or output; no \
+score, no target. Counts and the words only; the numbers need the person's raw opt-in. No work apps or no data \
+is unknown, never zero. Read-only; nothing is written or sent."), _flow_metrics, "🧩"),
 }
 
 

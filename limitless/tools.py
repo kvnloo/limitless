@@ -5,7 +5,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
+from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics,
+               habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                overnight as _overnight, owner_messages as _owner, passive_habit, prediction as _prediction,
                quiet as _quiet, rides as _rides, scorecard as _scorecard, sleep as _sleep)
 from .envelope import STALE_H, envelope, missing, with_label
@@ -507,4 +508,46 @@ def blocks(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = N
              "long_blocks": sum(1 for s, e in bs if e - s >= after)}
     out = envelope(value, "proxy", max(0.0, now - got["rows_end"]) / 3600)
     out["label"] = dict(label, label=BLOCK_LABELS[0] if long_now else BLOCK_LABELS[1])
+    return out
+
+
+FLOW_DAYS = 7
+
+
+def _flow_raw(m: dict) -> dict:
+    back = m.get("median_return_s")
+    return {"switches_per_work_h": None if m["switches_per_work_h"] is None else round(m["switches_per_work_h"], 2),
+            "long_block_share": None if m["long_block_share"] is None else round(m["long_block_share"], 2),
+            "median_return_min": None if back is None else round(back / 60, 1)}
+
+
+def flow_metrics(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_flow_metrics: how broken up the work was over the last FLOW_DAYS days (flow_metrics), read-only.
+
+    An envelope whose value is ``{days, work_days, label}`` (counts and the T1 words: work stayed in long
+    blocks, work was broken up, mixed) with the T1 label beside it; modality proxy, evidence_tier
+    observed-activity (stale when the newest activity row is over a day old), aged by that row. The numbers
+    (``switches_per_work_h``, ``long_block_share``, ``median_return_min`` and ``per_day``) are T0 and appear
+    only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No DB, no work apps or no activity row is value None with
+    the label "unknown: <why>", never zero. Observed app activity, not attention: no score, no target.
+    """
+    got = _flow_metrics.read_for(reader, now - FLOW_DAYS * 86400.0, now, env, home, tz,
+                                 no_rows="no activity rows in the last seven days")
+    th, pool = got["thresholds"], got["pool"]
+    label = {"tier": "T1", "modality": "proxy"}
+    if pool is None:
+        out = envelope(None, "proxy", None, reason=f"flow metrics unknown: {got['why']}")
+        out["label"] = dict(label, label=_flow_metrics.label(None, why=got["why"]))
+        return out
+    word = _flow_metrics.label(pool, th=th)
+    value = {"days": pool["days"], "work_days": pool["work_days"], "label": word}
+    if raw:
+        value.update(_flow_raw(pool))
+        value["per_day"] = [dict(day=d["day"], work_h=round(d["work_h"], 2), **_flow_raw(d),
+                                 label=_flow_metrics.label(d, th=th)) for d in got["days"]]
+    out = envelope(value, "proxy", max(0.0, now - got["rows_end"]) / 3600)
+    if out["evidence_tier"] != "stale":
+        out["evidence_tier"] = _flow_metrics.EVIDENCE_TIER
+    out["label"] = dict(label, label=word)
     return out
