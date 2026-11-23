@@ -142,13 +142,39 @@ def _read(path: Path, lo: float, hi: float):
     return windows, afk
 
 
+def unknown(reason: str) -> dict:
+    """Every field unknown (None), with the reason: no DB, an unreadable DB or no valid week."""
+    return {"deep_min": None, "block_hours": None, "feed_leak_min": None, "leak_per_block_hour": None,
+            "days_with_data": None, "modality": MODALITY,
+            "evidence": {"source": "activitywatch", "reason": reason}}
+
+
+def _week_start(week_of) -> Optional[date]:
+    if isinstance(week_of, datetime):
+        return week_of.date()
+    if isinstance(week_of, date):
+        return week_of
+    try:
+        return date.fromisoformat(week_of) if isinstance(week_of, str) else None
+    except ValueError:
+        return None
+
+
 def week(aw_db, week_of, tz: Optional[tzinfo], blocks=None, *, work_apps: Iterable = (),
          feed_apps: Iterable = ()) -> dict:
-    """The week's flow numbers; every unknown is None with its reason in ``evidence``."""
-    start = week_of if isinstance(week_of, date) else date.fromisoformat(str(week_of))
-    bounds = [_day_start(start + timedelta(days=i), tz) for i in range(DAYS + 1)]
-    lo, hi = bounds[0], bounds[-1]
-    windows, afk_rows = _read(Path(aw_db), lo, hi)
+    """The week's flow numbers; every unknown is None with its reason in ``evidence``. Never raises on
+    missing or bad input: no DB, an unreadable DB or a bad ``week_of`` gives ``unknown(reason)``."""
+    start = _week_start(week_of)
+    if start is None:
+        return unknown("no valid week_of date")
+    if not aw_db or not Path(aw_db).is_file():
+        return unknown("no ActivityWatch DB at the configured path")
+    try:
+        bounds = [_day_start(start + timedelta(days=i), tz) for i in range(DAYS + 1)]
+        lo, hi = bounds[0], bounds[-1]
+        windows, afk_rows = _read(Path(aw_db), lo, hi)
+    except (sqlite3.Error, OSError, ValueError, OverflowError, TypeError):
+        return unknown("the ActivityWatch DB could not be read (locked, broken or not an AW DB)")
     seen = [i for i in range(DAYS) if any(w["s"] < bounds[i + 1] and w["e"] > bounds[i] for w in windows)]
     covered = _merge((bounds[i], bounds[i + 1]) for i in seen)
     days = [(start + timedelta(days=i)).isoformat() for i in seen]
@@ -160,6 +186,9 @@ def week(aw_db, week_of, tz: Optional[tzinfo], blocks=None, *, work_apps: Iterab
     evidence = {"source": "activitywatch", "days": days, "afk_cut": bool(afk_rows)}
     out = {"deep_min": None, "block_hours": None, "feed_leak_min": None, "leak_per_block_hour": None,
            "days_with_data": len(days), "modality": MODALITY, "evidence": evidence}
+    if not days:
+        evidence["reason"] = "no ActivityWatch events this week: unknown, not zero"
+        return out
 
     work = _matcher(work_apps)
     if work is None:

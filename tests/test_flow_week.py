@@ -166,6 +166,65 @@ class FeedLeak(Base):
         self.assertIsNone(w["leak_per_block_hour"])
 
 
+UNKNOWN_FIELDS = ("deep_min", "block_hours", "feed_leak_min", "leak_per_block_hour", "days_with_data")
+
+
+class MissingIsUnknown(Base):
+    def assert_all_unknown(self, w, why):
+        for k in UNKNOWN_FIELDS:
+            self.assertIsNone(w[k], k)
+        self.assertEqual(w["modality"], "measured")
+        self.assertIn(why, w["evidence"]["reason"])
+
+    def test_no_db_path_is_all_unknown(self):
+        for path in (None, ""):
+            self.assert_all_unknown(flow_week.week(path, WEEK_OF, TZ, work_apps=WORK), "no ActivityWatch DB")
+
+    def test_missing_file_is_all_unknown_and_not_created(self):
+        self.assert_all_unknown(self.week(blocks=[(at(0, 9), at(0, 10))]), "no ActivityWatch DB")
+        self.assertFalse(self.db.exists())
+
+    def test_broken_db_is_all_unknown(self):
+        self.db.write_bytes(b"not a database at all")
+        self.assert_all_unknown(self.week(), "could not be read")
+        sqlite3.connect(str(Path(self.tmp.name) / "empty.db")).close()
+        w = flow_week.week(Path(self.tmp.name) / "empty.db", WEEK_OF, TZ, work_apps=WORK)
+        self.assert_all_unknown(w, "could not be read")      # no AW tables
+
+    def test_bad_week_of_is_all_unknown(self):
+        make_db(self.db, spans=[(at(0, 9), at(0, 10), "editor")])
+        for bad in ("next week", None, 7):
+            self.assert_all_unknown(self.week(week_of=bad), "no valid week")
+
+    def test_a_week_with_no_events_is_unknown_not_zero(self):
+        make_db(self.db, spans=[(at(-9, 9), at(-9, 10), "editor")])
+        w = self.week(blocks=[(at(0, 9), at(0, 10))])
+        self.assertEqual(w["days_with_data"], 0)
+        for k in UNKNOWN_FIELDS[:-1]:
+            self.assertIsNone(w[k], k)
+        self.assertIn("no ActivityWatch events", w["evidence"]["reason"])
+
+    def test_a_day_with_no_events_is_not_counted(self):
+        make_db(self.db, spans=[(at(0, 9), at(0, 10), "editor"), (at(3, 9), at(3, 9.5), "scroller"),
+                                (at(3, 9.5), at(3, 10), "editor")])
+        w = self.week(blocks=[(at(1, 9), at(1, 11)), (at(3, 9), at(3, 10))])   # day one has no data
+        self.assertEqual(w["days_with_data"], 2)
+        self.assertEqual(w["evidence"]["days"], ["2033-05-16", "2033-05-19"])
+        self.assertEqual(w["block_hours"], 1.0)
+        self.assertEqual(w["leak_per_block_hour"], 30.0)
+
+    def test_bad_rows_are_skipped_never_raise(self):
+        make_db(self.db, spans=[(at(0, 9), at(0, 10), "editor")])
+        con = sqlite3.connect(str(self.db))
+        con.execute("INSERT INTO events(bucketrow, starttime, endtime, data) VALUES (1, ?, ?, 'not json')",
+                    (int(at(1, 9) * NS), int(at(1, 10) * NS)))
+        con.execute("INSERT INTO events(bucketrow, starttime, endtime, data) VALUES (1, 'x', 'y', '{}')")
+        con.commit()
+        con.close()
+        w = self.week(blocks=["junk", (None, 1), {"start": "a"}])
+        self.assertEqual((w["deep_min"], w["days_with_data"], w["block_hours"]), (60.0, 1, None))
+
+
 class ReadOnly(Base):
     def test_db_bytes_and_mtime_are_unchanged(self):
         make_db(self.db, spans=[(at(0, 9), at(0, 10), "editor")])
