@@ -111,5 +111,44 @@ class InputRows(DoctorCase):
         self.assertEqual(r["reason"], "no inputs.json (with ageHours) in the state dir")
 
 
+def run(at, ok=True):
+    return json.dumps({"at": at, "job": "sync", "ok": ok, "took_s": 12.5})
+
+
+class SyncRunRow(DoctorCase):
+    def test_a_recent_ok_run_is_live_with_its_age_in_words(self):
+        self.write("runs.jsonl", "\n".join([run("2030-01-15T06:00:00Z", ok=False), "torn line",
+                                            run("2030-01-15T10:47:00Z")]))
+        r = self.row("last sync run")
+        self.assertEqual((r["kind"], r["status"]), ("run", "live"))
+        self.assertEqual(r["reason"], "the last sync run was about an hour ago and finished ok")
+
+    def test_hours_and_days_in_words(self):
+        cases = [("2030-01-15T11:40:00Z", "live", "under an hour ago"),
+                 ("2030-01-15T06:59:00Z", "live", "about five hours ago"),
+                 ("2030-01-14T13:00:00Z", "live", "about twenty-three hours ago"),
+                 ("2030-01-14T10:00:00Z", "stale", "about a day ago"),
+                 ("2030-01-12T09:00:00Z", "stale", "about three days ago"),
+                 ("2030-01-01T09:00:00Z", "stale", "over a week ago")]
+        for at, status, words in cases:
+            self.write("runs.jsonl", run(at))
+            r = self.row("last sync run")
+            self.assertEqual((r["status"], r["reason"]),
+                             (status, f"the last sync run was {words} and finished ok"), at)
+
+    def test_a_failed_last_run_is_stale_even_when_recent(self):
+        self.write("runs.jsonl", run("2030-01-15T11:00:00Z", ok=False))
+        r = self.row("last sync run")
+        self.assertEqual((r["status"], r["reason"]), ("stale", "the last sync run was about an hour ago and failed"))
+
+    def test_no_run_is_missing(self):
+        r = self.row("last sync run")
+        self.assertEqual((r["status"], r["reason"]), ("missing", "no timestamped row in runs.jsonl"))
+
+    def test_the_run_row_follows_the_inputs(self):
+        self.write("runs.jsonl", run("2030-01-15T11:00:00Z"))
+        self.assertEqual([r["kind"] for r in self.rows()][:3], ["state", "input", "run"])
+
+
 if __name__ == "__main__":
     unittest.main()
