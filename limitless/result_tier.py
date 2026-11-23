@@ -69,7 +69,7 @@ _TOKENS = "|".join((
     r"\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?)?(?:Z|[+-]\d{2}:?\d{2})?",
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",   # a uuid
     r"\d{1,2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?",                                          # a clock time
-    r"\d[0-9A-Za-z]*[A-Za-z][0-9A-Za-z]*\d[0-9A-Za-z]*",                             # a hex-like id
+    r"\d+[A-Za-z]+\d[0-9A-Za-z]*",   # a hex-like id: digits, letters, a digit, ... (linear: no nested stars)
     r"[-+]?(?:\d+(?:[.,]\d+)*|\.\d+)(?:[eE][-+]?\d+)?",                               # a number
 ))
 _NUMBER = re.compile(rf"{_START}(?:{_TOKENS})(?![0-9])")

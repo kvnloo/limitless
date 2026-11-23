@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -64,6 +65,18 @@ class Json(unittest.TestCase):
         _, n = rt.scrub(json.dumps(self.RESULT))
         self.assertEqual(n, 9)
         self.assertEqual(rt.scrub("hr 61 at 06:58")[1], 2)
+
+
+class Size(unittest.TestCase):
+    def test_a_long_alphanumeric_blob_is_linear(self):
+        # a quadratic id pattern took about a minute here; the host runs this inside every listed tool call
+        for blob in ("1" + "a" * 200000, "1a" * 100000 + "!", "7" + "Zm9vYmFy" * 25000):
+            t = time.perf_counter()
+            rt.scrub_text(blob)
+            self.assertLess(time.perf_counter() - t, 2.0, blob[:12])
+
+    def test_ids_starting_with_digits_then_letters(self):
+        self.assertEqual(rt.scrub_text("ids 3f9a2b7c 12ab34 1a 7x")[0], "ids a number a number a number a a number x")
 
 
 class Gates(unittest.TestCase):
