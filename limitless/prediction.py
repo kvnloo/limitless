@@ -31,7 +31,7 @@ from typing import Optional
 
 from . import jobs
 from .habit_replies import HABIT_FILE
-from .state_reader import StateReader
+from .state_reader import StateReader, normalize_digest, parse_ts
 
 PREDICTIONS_FILE = "predictions.jsonl"
 WEEK_DAYS = jobs.HABIT_WEEK_DAYS
@@ -174,3 +174,114 @@ def label(r: dict) -> str:
     if r["action"] == REFUSED:
         return f"refused: {r['reason']}"
     return f"{r['action']} this prediction"
+
+
+# --- receipts --------------------------------------------------------------------------------------------
+
+SUPPORTS, CONTRADICTS, INCONCLUSIVE = "supports", "contradicts", "inconclusive"
+WOULD_WRITE, WROTE = "would write", "wrote"
+MIN_DAYS = 3                  # fewer logged days (or state values) than this is inconclusive, never contradicts
+
+
+def receipt_for(state_dir, week_of) -> Optional[dict]:
+    """The receipt written for the prediction locked for ``week_of``, else None."""
+    p = locked(state_dir, week_of)
+    if p is None:
+        return None
+    for r in rows(state_dir):
+        if r.get("kind") == "receipt" and r.get("week_of") == p["week_of"] and r.get("locked_at") == p.get("locked_at"):
+            return r
+    return None
+
+
+def _logged_verdict(state_dir, start: date, direction: str):
+    m = _AT_LEAST.match(direction or "")
+    if not m:
+        return INCONCLUSIVE, "the locked direction cannot be read", None
+    k, of = int(m.group(1)), int(m.group(2))
+    answers = [c for _, c in week_days(state_dir, start)]
+    n, logged, unlogged = answers.count("Done"), answers.count("Done") + answers.count("No"), answers.count("unlogged")
+    outcome = f"{n} of {logged} logged days"
+    if logged < MIN_DAYS:
+        return INCONCLUSIVE, "fewer than three logged days: too little to judge", outcome
+    if n * of >= k * logged:
+        return SUPPORTS, "the done share of logged days reached the predicted share", outcome
+    if (n + unlogged) * of >= k * (logged + unlogged):
+        return INCONCLUSIVE, "the done share fell short, but unlogged days could have reached it", outcome
+    return CONTRADICTS, "the done share of logged days fell short of the predicted share", outcome
+
+
+def _values(state_dir, metric: str, first: date, last: date) -> list:
+    """The metric's value for each day first..last that has one (the day's latest digest row wins)."""
+    by_day = {}
+    for raw in StateReader(Path(state_dir)).digests():
+        row = normalize_digest(raw)
+        if not isinstance(row, dict) or not isinstance(row.get("metrics"), dict):
+            continue
+        d = _day(row.get("date"))
+        if d is None:
+            t = parse_ts(row.get("at"))
+            d = None if t is None else datetime.fromtimestamp(t, timezone.utc).date()
+        cell = row["metrics"].get(metric)
+        v = cell.get("value") if isinstance(cell, dict) else None
+        if d is None or not first <= d <= last or isinstance(v, bool) or not isinstance(v, (int, float)) \
+                or v != v or v in (float("inf"), float("-inf")):
+            continue
+        by_day[d] = float(v)
+    return list(by_day.values())
+
+
+def _state_verdict(state_dir, start: date, metric: str, direction: str):
+    answers = [c for _, c in week_days(state_dir, start)]
+    if answers.count("Done") + answers.count("No") < MIN_DAYS:
+        return INCONCLUSIVE, "fewer than three logged days: too little to judge", None
+    week = _values(state_dir, metric, start, start + timedelta(days=WEEK_DAYS - 1))
+    before = _values(state_dir, metric, start - timedelta(days=WEEK_DAYS), start - timedelta(days=1))
+    if len(week) < MIN_DAYS or len(before) < MIN_DAYS:
+        return INCONCLUSIVE, f"fewer than three days with {metric} in the week or the week before", None
+    a, b = sum(week) / len(week), sum(before) / len(before)
+    outcome = "higher" if a > b else "lower" if a < b else "unchanged"
+    want = "higher" if direction == UP else "lower"
+    if outcome == want:
+        return SUPPORTS, f"{metric} was {outcome} in the habit week than the week before", outcome
+    return CONTRADICTS, f"{metric} was {outcome} in the habit week, not {want}, against the week before", outcome
+
+
+def receipt(state_dir, week_of, write: bool = False, today: Optional[date] = None,
+            now: Optional[float] = None) -> dict:
+    """``{action, reason, receipt}``: action is would write, wrote or refused; receipt is the row.
+
+    Only after day seven, only for a locked prediction and only once per prediction (append-only).
+    """
+    today = date.today() if today is None else today
+    start = _day(week_of)
+    if start is None:
+        return {"action": REFUSED, "reason": "week_of is not a date: no receipt", "receipt": None}
+    p = locked(state_dir, start.isoformat())
+    if p is None:
+        return {"action": REFUSED, "reason": "no prediction is locked for that week: no receipt", "receipt": None}
+    if receipt_for(state_dir, start.isoformat()) is not None:
+        return {"action": REFUSED, "reason": "a receipt for that prediction is already written: one per prediction",
+                "receipt": None}
+    if today < start + timedelta(days=WEEK_DAYS):
+        return {"action": REFUSED, "reason": "the habit week is not over: a receipt comes after day seven",
+                "receipt": None}
+    if p.get("metric") == LOGGED:
+        verdict, why, outcome = _logged_verdict(state_dir, start, p.get("direction"))
+    elif p.get("metric") in STATE_METRICS and p.get("direction") in (UP, DOWN):
+        verdict, why, outcome = _state_verdict(state_dir, start, p["metric"], p["direction"])
+    else:
+        verdict, why, outcome = INCONCLUSIVE, "the locked metric or direction cannot be read", None
+    row = {"kind": "receipt", "week_of": p["week_of"], "locked_at": p.get("locked_at"), "verdict": verdict,
+           "reason": why, "outcome": outcome, "at": _now_iso(now)}
+    if not write:
+        return {"action": WOULD_WRITE, "reason": "dry run: nothing written", "receipt": row}
+    _append(state_dir, row)
+    return {"action": WROTE, "reason": "receipt written: it is never rewritten", "receipt": row}
+
+
+def receipt_label(r: dict) -> str:
+    """A digit-free label: would write this receipt: <verdict>, wrote this receipt: <verdict>, or refused: why."""
+    if r["action"] == REFUSED:
+        return f"refused: {r['reason']}"
+    return f"{r['action']} this receipt: {r['receipt']['verdict']}"
