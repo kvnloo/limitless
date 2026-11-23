@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_metrics",
+TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_metrics",
          "limitless_habit", "limitless_overnight",
          "limitless_quiet", "limitless_rides", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
@@ -66,6 +66,17 @@ def blocks_config(st: Path) -> Path:
     cfg = st / "blocks-config.json"
     cfg.write_text(json.dumps({"aw_db": "aw-blocks.db", "flow_work_apps": ["editor"]}))
     return cfg
+
+
+def anki_collection(st: Path) -> Path:
+    """A synthetic Anki collection in ``st``: a bare revlog table with one review an hour before NOW."""
+    path = st / "synthetic.anki2"
+    con = sqlite3.connect(str(path))
+    con.execute("CREATE TABLE revlog (id integer primary key, ease integer not null)")
+    con.execute("INSERT INTO revlog VALUES (?, 3)", (int((NOW - 3600) * 1000),))
+    con.commit()
+    con.close()
+    return path
 
 
 def rides_config(st: Path) -> Path:
@@ -200,6 +211,8 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(overnight_config(st))}
             if name == "limitless_rides":   # synthetic rides, two in the last seven days
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(rides_config(st))}
+            if name == "limitless_anki":   # a synthetic collection with one review before NOW
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_ANKI": str(anki_collection(st))}
             if name == "limitless_sleep":   # one synthetic wearable night before NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(sleep_config(st))}
             if name == "limitless_blocks":   # one synthetic long block up to NOW

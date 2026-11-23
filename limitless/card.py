@@ -12,6 +12,10 @@ While the post-wake peak applies (peak.read_for: from the wake event, never a cl
 window line's words when the card is full; nothing when the peak is closed or unknown.
 The habit line gains the passive habit days' T1 words (tools.habit ``passive``, a proxy) when there are any,
 e.g. "habit: none set this week; phone data shows the first hour mostly feed-free"; never a count.
+In a trough window with an Anki collection set (anki.offer: the window chain, Glide first, would deliver a
+trough job; never in a peak, asleep, an unknown window, a focus block or focused mode) the hook's card adds
+"trough: a short Anki review fits now", on a line of its own or after the last line's words when the card is
+full. Only the pre_llm_call card has it (CardCache); build() adds it only when given ``anki_offer``.
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
 MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -25,12 +29,15 @@ import time
 from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Optional
 
-from . import bedtime, flow_week, modes, peak as _peak
+from . import anki as _anki, bedtime, flow_week, modes, peak as _peak
 from . import labeler as _labeler
 from . import tier_audit, tools
+from .decision_window import UNKNOWN
 from .envelope import STALE_H, envelope, missing
+from .glide_provider import GlideProvider
 from .state_reader import StateReader, parse_ts, state_dir
 from .window import window
+from .window_chain import first_known
 
 MAX_LINES = 6
 ASKS_MAX_AGE_H = 36.0
@@ -153,10 +160,25 @@ def peak_label(reader: StateReader, now: float, env: Optional[Mapping[str, str]]
     return word if isinstance(word, str) and not any(c.isdigit() for c in word) else None
 
 
+def anki_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """anki.offer for this turn: the window chain (Glide first, then ``win``), focused mode applied, and
+    whether a collection is set (configured and the file is there; the DB is not opened). None when there is
+    no offer. Never raises."""
+    try:
+        path = _anki.collection_path(env)
+        state = first_known(GlideProvider.from_config(env, now=now))
+        if state.cls == UNKNOWN:
+            state = win
+        state = modes.apply(state, modes.load(reader.path))
+        return _anki.offer(state, {"set": path is not None and path.is_file()}) or None
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
-          owner: Optional[dict] = None, peak: Any = _UNSET) -> dict:
+          owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
     tools.owner_message envelope (read from ``env`` when not given)."""
@@ -195,6 +217,11 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
             lines.append(SAVED_LABEL)
         else:
             lines[-1] += f"; {SAVED_LABEL}"
+    if anki_offer:
+        if len(lines) < MAX_LINES:
+            lines.append(anki_offer)
+        else:
+            lines[-1] += f"; {anki_offer}"
     word = peak_label(reader, now, env) if peak is _UNSET else peak
     if word:
         if len(lines) < MAX_LINES:
@@ -231,12 +258,13 @@ class CardCache:
         win = window(reader, now, bands)
         owner = tools.owner_message(reader, now, env)
         word = peak_label(reader, now, env)   # the peak closes with time, not a file change: part of the key
+        offer = anki_offer(reader, now, win, env)   # Glide's block and the mode change it too: part of the key
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env), word)
+               _passive_mtime(reader, env), word, offer)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
-                               owner=owner, env=env, peak=word)["text"]
+                               owner=owner, env=env, peak=word, anki_offer=offer)["text"]
             self._key = key
             self.builds += 1
         return self._text

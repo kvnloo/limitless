@@ -45,7 +45,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
+from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
     jobs, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     rides as _rides, send_gate, sleep as _sleep, wake_proxy
 from .glide_provider import GlideProvider
@@ -74,7 +74,8 @@ _BODY[jobs.BREAK_NUDGE.name] = BREAK_BODY
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
-         overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "") -> str:
+         overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
+         anki_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -84,7 +85,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
     ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
-    proxy, in words), each as one more line when given, then ``Reply: Keep / Drop``. The first line's number
+    proxy, in words), then ``anki_line`` (week_anki: this week's Anki reviews in words), each as one more line
+    when given, then ``Reply: Keep / Drop``. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
     what runs tonight, count words only) when given, then ``Reply: Yes / No / Later``.
     """
@@ -92,7 +94,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
         return "\n".join(x for x in (_BODY[spec.name], overnight, one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, fragment, body_line,
-                                      rides_line, sleep_line, one_tap.choices_line(spec.answers)) if x)
+                                      rides_line, sleep_line, anki_line, one_tap.choices_line(spec.answers))
+                         if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
@@ -417,6 +420,20 @@ def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
         return ""
 
 
+def week_anki(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None, tz: Optional[tzinfo] = None, today: Optional[date] = None) -> str:
+    """The week review's Anki line (anki.review_line of anki.for_week over the habit week up to ``today``),
+    words only; "" when no week is named, no ``today`` is given, or the reviews are unknown (no collection
+    set, unreadable). The collection is opened read-only."""
+    start = jobs._week_start(habit)
+    if start is None or not isinstance(today, date):
+        return ""
+    try:
+        return _anki.review_line(_anki.for_week(start, today, tz, env, home))
+    except Exception:  # noqa: BLE001 - a broken collection must not stop the review
+        return ""
+
+
 def _break(v: jobs.Verdict, p: _Pass, now: float) -> jobs.Verdict:
     """The break nudge's verdict: narrowed by its block (jobs.break_verdict); with no trigger and unknown
     blocks, the reason says why they are unknown (no DB, no work apps), never that there was no block."""
@@ -470,8 +487,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 rides_line = week_rides(state_dir, env, home, today) if review else ""
                 sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
                 fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
+                anki_line = week_anki(state_dir, p.habit, env, home, tz, today) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
-                            body_line, plan, rides_line, sleep_line, fragment)
+                            body_line, plan, rides_line, sleep_line, fragment, anki_line)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
