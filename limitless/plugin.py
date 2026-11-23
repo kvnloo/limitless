@@ -45,10 +45,15 @@ def _window(args, now):
 
 
 def _habit(args, now):
-    if args.get("start") is None:
-        return tools.habit(_reader(), now, date.fromtimestamp(now))
-    return tools.habit_start(state_dir(), args.get("start"), date.fromtimestamp(now), now,
-                             confirm=args.get("confirm") is True)
+    today, confirm = date.fromtimestamp(now), args.get("confirm") is True
+    if args.get("start") is not None:
+        return tools.habit_start(state_dir(), args.get("start"), today, now, confirm=confirm)
+    if args.get("predict") is not None:
+        return tools.habit_predict(state_dir(), args.get("predict"), args.get("metric", "logged"),
+                                   args.get("direction"), today, now, confirm=confirm)
+    if args.get("receipt") is True:
+        return tools.habit_receipt(state_dir(), today, now, confirm=confirm)
+    return tools.habit(_reader(), now, today)
 
 
 def _scorecard(args, now):
@@ -100,11 +105,26 @@ TOOLS = {
         "the phone saw a feed app in the first hour after the latest wake: a hint, never the answer. "
         "With `start` it starts this week's one habit instead: "
         "pass `confirm: true` only after the person said yes to that habit in this turn; without it nothing "
-        "is written and the result says what would happen. A running week is never replaced.",
+        "is written and the result says what would happen. A running week is never replaced. "
+        "`prediction` shows a prediction locked for the week and its receipt when present. With `predict` it "
+        "locks one prediction for the week before its check-ins (`metric` logged with `direction` "
+        "\"at_least k of m\", or sleep_h / readiness with up or down); with `receipt` it judges the locked "
+        "prediction after day seven: supports, contradicts or inconclusive. Both write only with "
+        "`confirm: true` after the person said yes in this turn; a locked prediction or receipt is never "
+        "rewritten.",
         {"start": {"type": "string", "description": "The habit to start this week, in the person's words. "
                                                     "Only after the person asked to start a habit."},
+         "predict": {"type": "string", "description": "The person's prediction for this habit week, in "
+                                                      "their words. Only when they asked to lock one."},
+         "metric": {"type": "string", "enum": ["logged", "sleep_h", "readiness"],
+                    "description": "What the prediction is about: logged (N of M logged days, the default) "
+                                   "or a named state metric."},
+         "direction": {"type": "string", "description": "For logged: \"at_least k of m\"; for a state "
+                                                        "metric: up or down against the week before."},
+         "receipt": {"type": "boolean", "description": "true to judge the locked prediction after day seven."},
          "confirm": {"type": "boolean", "description": "true only when the person said yes to starting "
-                                                      "this habit in this turn; otherwise leave it out."}}),
+                                                      "this habit, locking this prediction or writing this "
+                                                      "receipt in this turn; otherwise leave it out."}}),
         _habit, "🌱"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
-               owner_messages as _owner, scorecard as _scorecard)
+               owner_messages as _owner, prediction as _prediction, scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
 from .window import MAX_AWAKE_H
@@ -85,6 +85,34 @@ def phone_hint(reader: StateReader, now: float, env: Optional[Mapping[str, str]]
 
 def habit(reader: StateReader, now: float, today: date, env: Optional[Mapping[str, str]] = None,
           home: Optional[Path] = None) -> dict:
+    """_habit_week plus ``prediction`` when one is locked for habit.json's week (prediction_view)."""
+    out = _habit_week(reader, now, today, env, home)
+    try:
+        start = date.fromisoformat(str((reader.habit() or {}).get("week_of")))
+    except ValueError:
+        return out
+    view = prediction_view(reader.path, start)
+    if view is not None:
+        out["prediction"] = view
+    return out
+
+
+def prediction_view(state_dir, week_of: date) -> Optional[dict]:
+    """The prediction locked for ``week_of`` and its receipt (or None), with a digit-free T1 label:
+    prediction locked, or receipt: supports | contradicts | inconclusive. None when nothing is locked."""
+    p = _prediction.locked(state_dir, week_of.isoformat())
+    if p is None:
+        return None
+    r = _prediction.receipt_for(state_dir, week_of.isoformat())
+    word = "prediction locked" if r is None else f"receipt: {r.get('verdict')}"
+    view = {k: p.get(k) for k in ("week_of", "text", "metric", "direction", "locked_at")}
+    view["receipt"] = None if r is None else {k: r.get(k) for k in ("verdict", "reason", "outcome", "at")}
+    view["label"] = {"label": word, "tier": "T1", "modality": "self_report"}
+    return view
+
+
+def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None) -> dict:
     """This week's one habit and its check-ins, week_of through today, and the one number so far.
 
     A 1-tap answer (habit.json) beats the sync's verdict (habit1.jsonl); a day with neither is unlogged.
@@ -140,6 +168,63 @@ def habit_start(state_dir, habit, today: date, now: float, confirm: bool = False
     out = envelope(r, "self_report", 0.0)
     out["label"] = {"label": _habit_start.label(r), "tier": "T1", "modality": "self_report"}
     return out
+
+
+def _labeled_row(r: dict, word: str) -> dict:
+    out = envelope(r, "self_report", 0.0)
+    out["label"] = {"label": word, "tier": "T1", "modality": "self_report"}
+    return out
+
+
+def _predict_week(state_dir, today: date) -> date:
+    """habit.json's week while it is running or set to start later, else today (the next start's week)."""
+    try:
+        start = date.fromisoformat(str((StateReader(Path(state_dir)).habit() or {}).get("week_of")))
+    except ValueError:
+        return today
+    return start if today < start + timedelta(days=_prediction.WEEK_DAYS) else today
+
+
+def habit_predict(state_dir, text, metric, direction, today: date, now: float, confirm: bool = False) -> dict:
+    """Lock a prediction for the habit week (prediction.lock), writing only when ``confirm`` is True.
+
+    The week is habit.json's while it runs or is set to start later, else today. An envelope whose value is
+    ``{action, reason, prediction}``, with a digit-free T1 label: would lock this prediction, locked this
+    prediction or refused: <why>. Without confirm it writes nothing and says what it would do.
+    """
+    week = _predict_week(state_dir, today)
+    r = _prediction.lock(state_dir, week.isoformat(), text, metric, direction, write=confirm is True,
+                         today=today, now=now)
+    return _labeled_row(r, _prediction.label(r))
+
+
+def _receipt_week(state_dir, today: date) -> Optional[str]:
+    """The newest locked prediction whose week is over and has no receipt, else the newest locked one."""
+    weeks = [r.get("week_of") for r in _prediction.rows(state_dir) if r.get("kind") == "prediction"]
+    weeks = [w for w in weeks if isinstance(w, str)]
+    for w in reversed(weeks):
+        try:
+            over = today >= date.fromisoformat(w) + timedelta(days=_prediction.WEEK_DAYS)
+        except ValueError:
+            continue
+        if over and _prediction.receipt_for(state_dir, w) is None:
+            return w
+    return weeks[-1] if weeks else None
+
+
+def habit_receipt(state_dir, today: date, now: float, confirm: bool = False) -> dict:
+    """Write the outcome receipt for the newest finished prediction (prediction.receipt), only with confirm.
+
+    An envelope whose value is ``{action, reason, receipt}``, with a digit-free T1 label: would write this
+    receipt: <verdict>, wrote this receipt: <verdict> or refused: <why>.
+    """
+    week = _receipt_week(state_dir, today)
+    if week is None:
+        r = {"action": _prediction.REFUSED, "reason": "no prediction is locked for that week: no receipt",
+             "receipt": None}
+    else:
+        r = _prediction.receipt(state_dir, week, write=confirm is True, today=today, now=now)
+    return _labeled_row(r, _prediction.receipt_label(r))
 
 
 def scorecard(path: Optional[Path], now: float) -> dict:
