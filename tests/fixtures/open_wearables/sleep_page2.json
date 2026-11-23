@@ -1,0 +1,51 @@
+{
+  "data": [
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "start_time": "2030-01-04T22:00:00Z",
+      "end_time": "2030-01-05T06:00:00Z",
+      "zone_offset": "+00:00",
+      "source": {"provider": "apple", "source": "Synthetic Sleep App", "device": null, "device_type": "phone", "device_id": null},
+      "duration_seconds": 28800,
+      "sleep_duration_seconds": 27000,
+      "time_in_bed_seconds": 28800,
+      "efficiency_percent": null,
+      "stages": null,
+      "sleep_stage_intervals": null,
+      "is_nap": false,
+      "is_final": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "start_time": "2030-01-05T23:00:00Z",
+      "end_time": "2030-01-06T06:00:00Z",
+      "zone_offset": "+00:00",
+      "source": {"provider": "polar", "source": "polar", "device": null, "device_type": "watch", "device_id": null},
+      "duration_seconds": 25200,
+      "sleep_duration_seconds": null,
+      "time_in_bed_seconds": 25200,
+      "efficiency_percent": 90.0,
+      "stages": null,
+      "sleep_stage_intervals": null,
+      "is_nap": false,
+      "is_final": true
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "start_time": "2030-01-06T22:30:00Z",
+      "end_time": "2030-01-07T06:30:00Z",
+      "zone_offset": "+00:00",
+      "source": {"provider": "polar", "source": "polar", "device": null, "device_type": null, "device_id": null},
+      "duration_seconds": 28800,
+      "sleep_duration_seconds": 26400,
+      "time_in_bed_seconds": 28800,
+      "efficiency_percent": null,
+      "stages": null,
+      "sleep_stage_intervals": null,
+      "is_nap": false,
+      "is_final": false
+    }
+  ],
+  "pagination": {"next_cursor": null, "previous_cursor": "c2ludGhldGljLXBhZ2Utb25l", "has_more": false, "total_count": 6},
+  "metadata": {}
+}
