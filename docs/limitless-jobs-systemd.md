@@ -16,6 +16,21 @@ The older wake-up brief sender, `bin/limitless-brief send`, now passes the same 
 `limitless-jobs` uses) to `kevin-push`, so on one wake whichever sender gets there first is the only
 brief that goes out.
 
+## Older senders
+
+A sender outside this repo (a shell script for the wind-down question, a nap notice) can ask for
+the same event key with `bin/limitless-once-key <job>` (`wake_brief`, `nap`, `miq` or
+`habit_checkin`) and pass it to `kevin-push`:
+
+```bash
+KEVIN_PUSH_ONCE=$(bin/limitless-once-key miq) kevin-push limitless "MIQ for tonight?" "..."
+```
+
+It prints `<job>:<event time>`, the key `limitless-jobs --send` passes for that event, so only the
+first of the two messages goes out. With no trigger event (or state it cannot read) it prints
+nothing and exits 3; `KEVIN_PUSH_ONCE` is then empty and the script sends as before, with no key.
+An unknown job exits 2. It only reads the state dir; it never sends or writes.
+
 Save as `~/.config/systemd/user/limitless-jobs.service`:
 
 ```ini
