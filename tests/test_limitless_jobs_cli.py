@@ -76,8 +76,10 @@ class LimitlessJobsCli(unittest.TestCase):
         r = self.run_cli()
         self.assertEqual(r.returncode, 0, r.stderr)
         lines = r.stdout.splitlines()
-        self.assertEqual(len(lines), 5, r.stdout)   # five jobs, one line each
+        self.assertEqual(len(lines), 6, r.stdout)   # six jobs, one line each
         self.assertTrue(any(ln.startswith("Back from nap: deliver") for ln in lines), r.stdout)
+        self.assertTrue(any(ln.startswith("Long focus block: not_triggered: focus blocks unknown") for ln in lines),
+                        r.stdout)   # the break nudge is listed like the others; no AW DB here: unknown
         self.assertEqual(self.push_calls(), [])
         self.assertEqual(self.sent(), [])
 

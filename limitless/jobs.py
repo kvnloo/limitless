@@ -1,5 +1,5 @@
 """Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in,
-the week review.
+the week review, the break nudge.
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no
@@ -10,7 +10,7 @@ Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Any, NamedTuple, Optional, Tuple
 
@@ -21,8 +21,9 @@ from .window import MAX_AWAKE_H
 
 # Events a job can wake on or end on. sleep_mode_on/off come from the phone; wake is a Sleep-mode
 # off after a long on, or a screen-event wake when Sleep mode is not used (merged_events); habit_cue is
-# HABIT_CUE_AFTER_S after a wake (merged_events) or comes from whatever automation marks it.
-EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end")
+# HABIT_CUE_AFTER_S after a wake (merged_events) or comes from whatever automation marks it. long_block is a
+# focus block in the activity data that ran as long as the person's usual long block (blocks.long_block_events).
+EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block")
 TRIGGER_AFTER = ("", "short_on")
 NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
 SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake_proxy) carries less
@@ -31,7 +32,8 @@ DELIVER, HOLD, DROP, NOT_TRIGGERED = "deliver", "hold", "drop", "not_triggered"
 ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
 _WORDS = {"wake": "wake", "sleep_mode_on": "Sleep-mode on", "sleep_mode_off": "Sleep-mode off",
-          "wind_down": "wind-down", "habit_cue": "habit cue", "focus_end": "focus-end", "nap": "nap"}
+          "wind_down": "wind-down", "habit_cue": "habit cue", "focus_end": "focus-end", "nap": "nap",
+          "long_block": "long focus block"}
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,7 @@ class JobSpec:
     trigger_after: str = ""                  # "short_on": only a Sleep-mode off after a short on (a nap)
     answers: Tuple[str, ...] = ()            # 1-tap replies the message offers
     stale_after_s: Optional[float] = None    # a trigger older than this drops the job: a late message is noise
+    focus_holds: bool = True                 # False: a running focus block (Glide) does not hold this job
 
     def __post_init__(self):
         if self.stale_after_s is not None and not self.stale_after_s > 0:
@@ -75,7 +78,14 @@ HABIT_CHECKIN = JobSpec("habit_checkin", "habit_cue", "anytime", "Habit check-in
 DECISIONS = ("Keep", "Drop")
 WEEK_REVIEW = JobSpec("week_review", "habit_cue", "anytime", "Week review", 1, "sleep_mode_on",
                       answers=DECISIONS, stale_after_s=HABIT_STALE_S)
-SPECS = {s.name: s for s in (WAKE_BRIEF, NAP, MIQ, HABIT_CHECKIN, WEEK_REVIEW)}
+# The break nudge: one soft message per long focus block. A running Glide block does not hold it (ending the
+# block is the point); Sleep mode, quiet and the daily cap still do. A trigger this old is missing data.
+BREAK_STALE_S = 6 * 3600
+BREAK_JUST_ENDED_S = 3600    # a block that ended longer ago than this is history: the nudge drops
+BLOCK_GAP_S = 600.0          # blocks.GAP_S (not imported: blocks -> flow_week -> feeds_evidence -> jobs)
+BREAK_NUDGE = JobSpec("break_nudge", "long_block", "anytime", "Long focus block", 1, "sleep_mode_on",
+                      stale_after_s=BREAK_STALE_S, focus_holds=False)
+SPECS = {s.name: s for s in (WAKE_BRIEF, NAP, MIQ, HABIT_CHECKIN, WEEK_REVIEW, BREAK_NUDGE)}
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
@@ -328,6 +338,8 @@ def should_fire(spec: JobSpec, events: list, window_state: Any, sent_log: list, 
     if count >= spec.max_per_window:
         return Verdict(DROP, f"already spoke {_times(count)} since the {label} event", trig)
     state, asleep = _window(window_state)
+    if not spec.focus_holds and state is not None and state.hold_asks:
+        state = replace(state, hold_asks=False)      # this job is about the block itself: it never waits for it
     w = decision_window.decide(spec.window_class, state, budget_left=spec.max_per_window - count, asleep=asleep)
     if w.action != decision_window.DELIVER:
         return Verdict(w.action, w.reason, trig)
@@ -341,15 +353,57 @@ def should_fire(spec: JobSpec, events: list, window_state: Any, sent_log: list, 
     return Verdict(DELIVER, f"{label} event; {w.reason}", trig)
 
 
+def _block_event(evs: list, trigger_at: Optional[float]) -> Optional[dict]:
+    for e in evs or ():
+        if isinstance(e, dict) and e.get("event") == "long_block" and parse_ts(e.get("at")) == trigger_at:
+            return e
+    return None
+
+
+def _num(v) -> Optional[float]:
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def block_start(evs: list, trigger_at: float) -> float:
+    """The start of the block a long_block trigger is about (its ``block_start``); a long_block row with
+    none (e.g. from events.jsonl) is its own time."""
+    e = _block_event(evs, trigger_at)
+    s = _num(e.get("block_start")) if e is not None else None
+    return trigger_at if s is None else s
+
+
+def break_verdict(v: Verdict, evs: list, now: float, gap_s: float = BLOCK_GAP_S) -> Verdict:
+    """should_fire's verdict for the break nudge, narrowed by the block it is about.
+
+    Only a deliver changes. A block whose last work row is ``gap_s`` or more before ``now`` has ended: within
+    BREAK_JUST_ENDED_S it "just ended" and delivers; later it drops (a late message is noise). A block still
+    going delivers as having "run past its usual length". The reason stays digit-free: it is the Why-now line.
+    """
+    if v.action != DELIVER or v.trigger_at is None:
+        return v
+    e = _block_event(evs, v.trigger_at) or {}
+    end = _num(e.get("block_end"))
+    end = v.trigger_at if end is None else end
+    rest = v.reason.split("; ", 1)[1] if "; " in v.reason else v.reason
+    if now - end >= gap_s:
+        if now - end > BREAK_JUST_ENDED_S:
+            return Verdict(DROP, "too late: the long focus block ended a while ago; a late message is noise",
+                           v.trigger_at)
+        return Verdict(DELIVER, f"a long focus block just ended; {rest}", v.trigger_at)
+    return Verdict(DELIVER, f"your focus block has run past its usual length; {rest}", v.trigger_at)
+
+
 _SPEAKS = {"wake": "when you wake up", "sleep_mode_on": "when Sleep mode goes on",
            "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
-           "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends"}
+           "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends",
+           "long_block": "when a focus block runs long"}
 _IN_WINDOW = {"peak": "in a peak window, at most one decision per window",
               "trough": "in a low-energy window, for a review or an easy read",
               "wind_down": "once your wind-down has started", "anytime": "any time you are awake"}
 _ENDS = {"wake": "when you next wake up", "sleep_mode_on": "when Sleep mode goes on",
          "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
-         "habit_cue": "at your habit's next cue", "focus_end": "when a focus block ends"}
+         "habit_cue": "at your habit's next cue", "focus_end": "when a focus block ends",
+         "long_block": "when a focus block next runs long"}
 _NUM = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 

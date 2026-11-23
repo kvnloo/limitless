@@ -35,6 +35,7 @@ EVENT = "long_block"
 BREAK_AFTER_MIN, BREAK_CONFIG = 90, "break_after_min"   # the person's usual long-block length, a duration
 GAP_MIN, GAP_CONFIG = 10, "block_gap_min"               # a gap this short does not end a block
 GAP_S = GAP_MIN * 60.0
+NO_DB = "no readable ActivityWatch DB (aw_db)"
 LOOKBACK_S = 24 * 3600.0   # how far back read_for reads: today's blocks, not a history
 
 
@@ -128,12 +129,9 @@ def read_for(reader, now: float, env: Optional[Mapping[str, str]] = None, home: 
     out = {"blocks": None, "rows_end": None, "why": "", "break_after_s": after, "gap_s": gap}
     db = reader.aw_db_path(env, home)
     apps = flow_week.work_apps(env, home)
-    if db is None:
-        out["why"] = "no ActivityWatch DB configured (aw_db)"
-        return out
-    rows = read_rows(db, now - LOOKBACK_S, now)
+    rows = None if db is None else read_rows(db, now - LOOKBACK_S, now)
     if rows is None:
-        out["why"] = "the ActivityWatch DB is missing or cannot be read"
+        out["why"] = NO_DB
         return out
     if flow_week._matcher(apps) is None:
         out["why"] = "no work apps set (flow_work_apps)"

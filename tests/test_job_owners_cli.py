@@ -128,7 +128,7 @@ class JobOwnersCli(unittest.TestCase):
         cfg.write_text(json.dumps({"external_jobs": ["wake_brief", "nap"]}))
         r = self.run_cli(LIMITLESS_CONFIG=str(cfg))
         lines = r.stdout.splitlines()
-        self.assertEqual(len(lines), 5, r.stdout)   # five jobs, one line each
+        self.assertEqual(len(lines), 6, r.stdout)   # six jobs, one line each
         self.assertTrue(self.line(r, "Wake-up brief").startswith("Wake-up brief: deliver"), r.stdout)
         self.assertIn(OWN, self.line(r, "Wake-up brief"))
         self.assertIn(OWN, self.line(r, "Back from nap"))
