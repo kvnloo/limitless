@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from limitless import card, jobs, jobs_runner  # noqa: E402
+from limitless import card, jobs, jobs_runner, weekly_target  # noqa: E402
 
 KD = "\nReply: Keep / Drop"   # the week review's choices line (one_tap), always its last line
 from limitless.state_reader import StateReader  # noqa: E402
@@ -85,7 +85,7 @@ class WeekReview(unittest.TestCase):
         return [b[:-len(KD)] for b in bodies]
 
     def test_body_adds_the_flow_line_after_the_review_text(self):
-        text = jobs.week_review_text(self.habit)
+        text = jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x."), text + "\nFlow: x." + KD)
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow=""), text + KD)
         check = jobs_runner.body(jobs.HABIT_CHECKIN, self.habit, flow="Flow: x.")
@@ -99,7 +99,8 @@ class WeekReview(unittest.TestCase):
         self.cfg.write_text(json.dumps({"aw_db": "aw.db", "flow_work_apps": ["editor"]}))
         bodies = self.review()
         self.assertEqual(len(bodies), 1)
-        first, flow, fragment = bodies[0].split("\n")
+        first, target, flow, fragment = bodies[0].split("\n")
+        self.assertEqual(target, weekly_target.REVIEW_ON_THE_WAY)
         self.assertEqual(first, jobs.week_review_text(self.habit))
         self.assertEqual(fragment, "Work pattern this week (observed app activity, not attention): "
                                    "work stayed in long blocks.")
@@ -109,11 +110,11 @@ class WeekReview(unittest.TestCase):
     def test_a_configured_db_with_no_week_data_says_not_recording(self):
         write_db(self.st / "aw.db", [])
         self.cfg.write_text(json.dumps({"aw_db": "aw.db"}))
-        self.assertEqual(self.review()[0].split("\n")[1],
+        self.assertEqual(self.review()[0].split("\n")[2],
                          "Flow: not recording this week (no ActivityWatch data).")
 
     def test_no_db_configured_leaves_the_review_unchanged(self):
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY])
 
     def test_the_db_is_never_written(self):
         db = self.st / "aw.db"

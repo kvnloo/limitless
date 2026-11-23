@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from limitless import card, jobs, jobs_runner  # noqa: E402
+from limitless import card, jobs, jobs_runner, weekly_target  # noqa: E402
 
 KD = "\nReply: Keep / Drop"   # the week review's choices line (one_tap), always its last line
 from limitless.state_reader import StateReader  # noqa: E402
@@ -63,7 +63,7 @@ class Review(unittest.TestCase):
         return text[:-len(KD)].split("\n")
 
     def test_body_puts_the_body_line_after_the_flow_line(self):
-        text = jobs.week_review_text(self.habit)
+        text = jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x.", body_line="Body: y."),
                          text + "\nFlow: x.\nBody: y." + KD)
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, body_line=""), text + KD)
@@ -72,7 +72,7 @@ class Review(unittest.TestCase):
     def test_the_review_carries_the_trend_words(self):
         self.configure(body_file="body.jsonl")
         self.write_body(body_rows())
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit),
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY,
                                          "Body fat trending down (calibrated estimate)."])
 
     def test_uncalibrated_and_not_enough(self):
@@ -88,18 +88,19 @@ class Review(unittest.TestCase):
         self.configure(body_file="body.jsonl", aw_db="aw.db", flow_work_apps=["editor"])
         self.write_body(body_rows())
         lines = self.review()
-        self.assertEqual(len(lines), 4)
-        self.assertTrue(lines[1].startswith("Flow ("), lines)
-        self.assertTrue(lines[2].startswith("Work pattern this week"), lines)   # flow_metrics, one hour: short
-        self.assertEqual(lines[3], "Body fat trending down (calibrated estimate).")
-        self.assertEqual(re.findall(r"\d", lines[3]), [])
+        self.assertEqual(len(lines), 5)
+        self.assertEqual(lines[1], weekly_target.REVIEW_ON_THE_WAY)
+        self.assertTrue(lines[2].startswith("Flow ("), lines)
+        self.assertTrue(lines[3].startswith("Work pattern this week"), lines)   # flow_metrics, one hour: short
+        self.assertEqual(lines[4], "Body fat trending down (calibrated estimate).")
+        self.assertEqual(re.findall(r"\d", lines[4]), [])
 
     def test_no_body_file_or_no_rows_leaves_the_review_unchanged(self):
         self.write_body(body_rows())
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
         self.configure(body_file="absent.jsonl")
         (self.st / "jobs-sent.jsonl").unlink()
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
 
     def test_week_body_helper(self):
         self.configure(body_file="body.jsonl")

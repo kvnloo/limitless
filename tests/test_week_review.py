@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from limitless import jobs, jobs_runner  # noqa: E402
+from limitless import jobs, jobs_runner, weekly_target  # noqa: E402
 
 UTC = timezone.utc
 NOW = 2_000_000_000.0          # an arbitrary epoch; only differences matter
@@ -105,7 +105,8 @@ class Text(unittest.TestCase):
 
     def test_runner_body_is_the_review_text(self):
         h = week(6, checkins={TODAY.isoformat(): "Done"})
-        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, h), jobs.week_review_text(h) + "\nReply: Keep / Drop")
+        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, h),
+                         jobs.week_review_text(h) + "\n" + weekly_target.REVIEW_ON_THE_WAY + "\nReply: Keep / Drop")
 
 
 class FakePush:
@@ -148,7 +149,7 @@ class Runner(unittest.TestCase):
                               (TODAY - timedelta(days=1)).isoformat(): "No"})
         row, calls = self.run_pass(h)
         self.assertEqual(row["action"], jobs.DELIVER, row)
-        self.assertEqual(calls, [("Week review", "Synthetic habit: 1 of 2 logged days this week.\nReply: Keep / Drop",
+        self.assertEqual(calls, [("Week review", "Synthetic habit: 1 of 2 logged days this week.\nhabit: on the way\nReply: Keep / Drop",
                                   f"week_review:{h['week_of']}")])
         self.assertEqual([s["job"] for s in self.sent()].count("week_review"), 1)
 

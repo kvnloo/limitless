@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from limitless import card, jobs, jobs_runner  # noqa: E402
+from limitless import card, jobs, jobs_runner, weekly_target  # noqa: E402
 
 KD = "\nReply: Keep / Drop"   # the week review's choices line (one_tap), always its last line
 from limitless.state_reader import StateReader  # noqa: E402
@@ -62,7 +62,7 @@ class Review(unittest.TestCase):
         return text[:-len(KD)].split("\n")
 
     def test_body_puts_the_rides_line_after_the_body_line(self):
-        text = jobs.week_review_text(self.habit)
+        text = jobs.week_review_text(self.habit) + "\n" + weekly_target.REVIEW_ON_THE_WAY
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x.", body_line="Body: y.",
                                           rides_line="Rides: z."),
                          text + "\nFlow: x.\nBody: y.\nRides: z." + KD)
@@ -72,7 +72,7 @@ class Review(unittest.TestCase):
     def test_the_review_carries_the_ride_words(self):
         self.configure(rides_file="rides.jsonl")
         self.write("rides.jsonl", ride_rows())
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit),
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY,
                                          "Rides this week: two, more than last week."])
 
     def test_a_week_with_no_ride_says_none_never_missed(self):
@@ -87,20 +87,20 @@ class Review(unittest.TestCase):
         self.write("rides.jsonl", ride_rows())
         self.write("body.jsonl", body_rows())
         lines = self.review()
-        self.assertEqual(lines[1:], ["Body fat trending down (calibrated estimate).",
+        self.assertEqual(lines[1:], [weekly_target.REVIEW_ON_THE_WAY, "Body fat trending down (calibrated estimate).",
                                      "Rides this week: two, more than last week."])
-        self.assertEqual(re.findall(r"\d", lines[2]), [])
+        self.assertEqual(re.findall(r"\d", lines[3]), [])
 
     def test_no_rides_file_or_no_ride_row_leaves_the_review_unchanged(self):
         self.write("rides.jsonl", ride_rows())
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
         self.configure(rides_file="absent.jsonl")
         (self.st / "jobs-sent.jsonl").unlink()
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
         self.configure(rides_file="rides.jsonl")
         self.write("rides.jsonl", ride_rows(kind="walking"))
         (self.st / "jobs-sent.jsonl").unlink()
-        self.assertEqual(self.review(), [jobs.week_review_text(self.habit)])
+        self.assertEqual(self.review(), [jobs.week_review_text(self.habit), weekly_target.REVIEW_ON_THE_WAY])
 
     def test_week_rides_helper(self):
         self.configure(rides_file="rides.jsonl")

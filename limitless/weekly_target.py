@@ -32,6 +32,7 @@ DEFAULT_TARGET_DAYS = 4
 NOT_STARTED, ON_THE_WAY, REACHED, CLOSED = "not started", "on the way", "target reached this week", "week closed"
 LABELS = (NOT_STARTED, ON_THE_WAY, REACHED, CLOSED)
 CHECKIN_REACHED = "Target reached this week."   # the habit check-in's one extra line, once reached
+REVIEW_REACHED, REVIEW_ON_THE_WAY = f"habit: {REACHED}", f"habit: {ON_THE_WAY}"   # the week review's line
 _DONE, _NO = "done", "no"
 
 
@@ -113,3 +114,13 @@ def for_habit(habit: Optional[dict], synced: Optional[dict] = None, target_days:
 def checkin_line(p: Optional[dict]) -> str:
     """The habit check-in's extra line: CHECKIN_REACHED once the target is reached, else "" (nothing)."""
     return CHECKIN_REACHED if p and p.get("reached") else ""
+
+
+def review_line(p: Optional[dict]) -> str:
+    """The week review's words-only line under its "N of M logged days" line: REVIEW_REACHED, or
+    REVIEW_ON_THE_WAY once there is a Done day; "" with none (that line already says what was logged)."""
+    if not p:
+        return ""
+    if p.get("reached"):
+        return REVIEW_REACHED
+    return REVIEW_ON_THE_WAY if p.get("done") else ""

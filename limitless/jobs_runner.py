@@ -81,7 +81,9 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
     a hint, no counts, times or app names; the answer stays the person's tap. The week review is
-    jobs.week_review_text: the habit and "N of M logged days" (``synced``: StateReader.habit_days()), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
+    jobs.week_review_text: the habit and "N of M logged days" (``synced``: StateReader.habit_days()), then the
+    weekly target in words (weekly_target.review_line: "habit: target reached this week" or "habit: on the way";
+    nothing with no Done day), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
     (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
     ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
@@ -96,7 +98,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     if spec.name == jobs.MIQ.name:
         return "\n".join(x for x in (_BODY[spec.name], overnight, one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
-        return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, fragment, body_line,
+        return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
+                                      passive, flow, fragment, body_line,
                                       rides_line, sleep_line, one_tap.choices_line(spec.answers)) if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
