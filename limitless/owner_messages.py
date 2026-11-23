@@ -69,8 +69,9 @@ def _number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def _newest_in(path, now: float):
-    """(True, ts | None) when the store was read, (False, None) when it could not be."""
+def _newest_in(path, bound: float):
+    """(True, ts | None) when the store was read, (False, None) when it could not be. Rows after ``bound``
+    (epoch seconds) are ignored."""
     if not path:
         return False, None
     p = Path(path)
@@ -82,7 +83,7 @@ def _newest_in(path, now: float):
     except sqlite3.Error:
         return False, None
     try:
-        row = con.execute(query_for(con), (float(now) + SKEW_S,)).fetchone()
+        row = con.execute(query_for(con), (float(bound),)).fetchone()
     except (sqlite3.Error, ValueError, TypeError, OverflowError):
         return False, None
     finally:
@@ -91,13 +92,19 @@ def _newest_in(path, now: float):
     return True, float(t) if _number(t) else None
 
 
-def newest_user_message(db_paths: Optional[Iterable], now: float) -> dict:
+def newest_user_message(db_paths: Optional[Iterable], now: float, until: Optional[float] = None) -> dict:
     """``{at, age_h, sources_read, sources_failed}``; ``at`` (ISO, UTC) and ``age_h`` are None when no store
-    read has a message from the person. Never raises, never returns content."""
+    read has a message from the person. ``until`` (epoch seconds) ignores messages after it, e.g. this
+    turn's own (catchup.py); by default the bound is ``now`` plus SKEW_S. Never raises, never returns
+    content."""
     newest, read, failed = None, 0, 0
+    try:
+        bound = float(now) + SKEW_S if until is None else float(until)
+    except (TypeError, ValueError):
+        bound = None
     for path in db_paths or ():
         try:
-            ok, t = _newest_in(path, now)
+            ok, t = _newest_in(path, bound) if bound is not None else (False, None)
         except (OSError, ValueError, TypeError):
             ok, t = False, None
         if not ok:
