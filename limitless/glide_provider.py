@@ -42,6 +42,21 @@ def _num(v) -> Optional[float]:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
+def attention(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[dict]:
+    """Glide's attention.json as a dict (path as GlideProvider.from_config), or None when it is not
+    configured, unreadable or not an object. Read-only; wind_down.line reads its ``nudged`` night."""
+    env = os.environ if env is None else env
+    path = env.get(ENV_KEY) or config(env, home).get(CONFIG_KEY)
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _unknown() -> WindowState:
     return WindowState(cls=UNKNOWN, source=SOURCE, confidence=0.0)
 
