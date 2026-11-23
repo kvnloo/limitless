@@ -43,7 +43,7 @@ test_the_description_is_the_frontmatter_one (test_coach_register.Register.test_t
 test_the_names_are_the_documented_ones (test_coach_register.Register.test_the_names_are_the_documented_ones) ... ok
 
 ----------------------------------------------------------------------
-Ran 7 tests in 0.092s
+Ran 7 tests in 0.076s
 
 OK
 ```
@@ -54,7 +54,7 @@ The checkout loaded as a directory plugin (`plugins.enabled: [limitless]`) into 
 `PluginManager`, which has `register_skill`:
 
 ```text
-list_plugin_skills('limitless'): ['coach']
+list_plugin_skills('limitless'): ['coach', 'learn']
 find_plugin_skill('limitless:coach') -> skills/coach/SKILL.md
 metadata: {'name': 'limitless:coach', 'description': 'Use when coaching over limitless tools. Act only on a yes.'}
 ```
