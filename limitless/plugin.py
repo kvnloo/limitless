@@ -3,7 +3,8 @@ ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=No
 description="", emoji="", override=False), ctx.register_hook(hook_name, callback) and, when the host has it,
 ctx.register_command(name, handler, description="", args_hint="") for the ``/limitless mode`` slash command
 (attention modes, modes.py) and, when the host has it, ctx.register_schedule_card(card) for each job's schedule card
-(schedule_cards.py; a proposed name, not in the published API yet). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
+(schedule_cards.py; a proposed name, not in the published API yet) and, when the host has it,
+ctx.register_skill(name, path, description="", frontmatter=None) for the coach skill (coach_skill.py). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
 bedtime.py) and pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
@@ -18,8 +19,8 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import (bedtime, capture, card, card_view, catchup, explain_back, focus_safe, jobs_runner, labeler, modes,
-               schedule_cards, scorecard, stop_rule, tier_audit, tools)
+from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs_runner,
+               labeler, modes, schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .prediction import LAG_DAYS as _PREDICTION_LAGS
 from .state_reader import StateReader, config, state_dir
@@ -539,3 +540,6 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", focus_safe.make_pre_tool_call(clock=lambda: time.time()))
     # every recurring job as a Hermes schedule card, when the host can take them (schedule_cards.py)
     _register_cards(ctx)
+    # the plugin's own coach skill, limitless:coach (skills/coach/SKILL.md), when the host has register_skill;
+    # read-only text, never raises (coach_skill.py)
+    coach_skill.register(ctx)
