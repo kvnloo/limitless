@@ -38,3 +38,4 @@ provides_hooks:
   - pre_llm_call
   - post_gateway_admission
   - pre_tool_call
+  - transform_tool_result

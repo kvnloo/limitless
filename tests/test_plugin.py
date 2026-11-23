@@ -177,7 +177,8 @@ class PluginSkeleton(unittest.TestCase):
         ctx = FakeCtx()
         load_plugin().register(ctx)
         self.assertEqual(sorted(ctx.tools), sorted(manifest_list("provides_tools")))
-        self.assertEqual(sorted(ctx.hooks), sorted(manifest_list("provides_hooks")))
+        # transform_tool_result is feature-detected: a bare fake ctx has no host (test_result_tier_register)
+        self.assertEqual(sorted(ctx.hooks), sorted(set(manifest_list("provides_hooks")) - {"transform_tool_result"}))
         for name, t in ctx.tools.items():
             self.assertEqual(t["schema"]["name"], name)
             self.assertEqual(t["toolset"], "limitless")

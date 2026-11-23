@@ -29,12 +29,19 @@ The hook (make_transform_tool_result, registered for Hermes ``transform_tool_res
 each call and, for each result it replaces, records one content-free tier_audit row (``result_event``: hook
 ``transform_tool_result:result_tier``, the glob that matched and the count of numbers replaced; never a
 value, the text or a hash; nothing when the audit is off). A failed audit write never stops the replacement.
+
+register(ctx) adds the hook only when the host knows the name: the published ctx API has no list of hook
+names, so it reads ``VALID_HOOKS`` from the host's already-loaded ``hermes_cli.plugins`` module
+(sys.modules only, never an import). A host without that module or without the name (an older Hermes, a test
+ctx) gets nothing and one content-free log line; the plugin's tools and other hooks load either way.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import json
+import logging
 import re
+import sys
 import time
 from fnmatch import fnmatchcase
 from typing import Callable, Mapping, Optional, Tuple
@@ -44,6 +51,11 @@ from .state_reader import config
 
 T0_KEY, OPT_IN_KEY = "t0_tools", "raw_numbers_opt_in"
 PLACEHOLDER = "a number"
+HOOK_NAME = "transform_tool_result"
+HOST_MODULE = "hermes_cli.plugins"
+NO_HOST = "limitless: host has no transform_tool_result hook; the result tier filter is not registered"
+HOST_FAILED = "limitless: the host refused the transform_tool_result hook; the result tier filter is not registered"
+logger = logging.getLogger(__name__)
 
 _START = r"(?<![A-Za-z0-9_.])"
 _TOKENS = "|".join((
@@ -164,3 +176,20 @@ def make_transform_tool_result(clock: Callable[[], float] = time.time) -> Callab
             pass
         return text
     return transform_tool_result
+
+
+def host_knows(hook_name: str) -> bool:
+    """True when the host's loaded plugins module lists ``hook_name`` in VALID_HOOKS; never imports."""
+    hooks = getattr(sys.modules.get(HOST_MODULE), "VALID_HOOKS", None)
+    return isinstance(hooks, (set, frozenset, list, tuple, dict)) and hook_name in hooks
+
+
+def register(ctx, clock: Callable[[], float] = time.time) -> None:
+    """Register the hook on a host that knows its name; otherwise one content-free line. Never raises."""
+    if not host_knows(HOOK_NAME):
+        logger.info(NO_HOST)
+        return
+    try:
+        ctx.register_hook(HOOK_NAME, make_transform_tool_result(clock=clock))
+    except Exception:  # noqa: BLE001 - a host's hook API must never break plugin registration
+        logger.warning(HOST_FAILED)
