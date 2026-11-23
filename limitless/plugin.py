@@ -81,6 +81,10 @@ def _rides(args, now):
     return tools.rides(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _quiet(args, now):
+    return tools.quiet(state_dir(), now)
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -186,6 +190,12 @@ last seven days against the seven before, in plain words: rides this week none, 
 same as, more than or fewer than last week. Counts and the label only; total minutes need the person's raw \
 opt-in; heart rate and power are never read. A week with no ride is none, never missed: no target, no streak, \
 no score, no advice. Read-only; nothing is sent."), _rides, "🚲"),
+    "limitless_quiet": (_schema(
+        "limitless_quiet",
+        "Whether pushes to the person's phone are muted now: mode on, off (until they reply on), quiet \
+tonight (until they wake up) or snoozed (until they write again), whether a push would be dropped and the \
+plain reason, with a label. The person sets it with one whole-message reply (quiet, quiet tonight, snooze, \
+on); there are no clock times or durations. Read-only; nothing is written or sent."), _quiet, "🔕"),
 }
 
 
