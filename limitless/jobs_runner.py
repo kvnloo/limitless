@@ -492,14 +492,20 @@ def _gated(hook: str, text: str, env: Optional[Mapping[str, str]], home: Optiona
 
 
 def miq_wind_down(evs: list, trigger_at: Optional[float], env: Optional[Mapping[str, str]] = None,
-                  home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
+                  home: Optional[Path] = None, tz: Optional[tzinfo] = None, state_dir=None,
+                  now: Optional[float] = None) -> str:
     """The MIQ body's wind-down line (wind_down.line: config ``wind_down_line``, and nothing when Glide's
     attention file says Glide already nudged on this night), through tier_audit.gate (hook ``miq:wind_down``).
+    With config ``wind_down_breathing_link`` set, the same line offers slow breathing in the person's own app,
+    "with live heart data" only when ``state_dir``'s inputs.json says the wearable is recording at ``now``
+    (wind_down.wearable_live, limitless_status's rule); without ``state_dir`` or ``now`` it is never live.
     "" when off, already nudged, blocked or unreadable. It rides in the one MIQ push: never a push of its own.
     Read-only."""
     try:
         night = night_date(evs, trigger_at, tz) if trigger_at is not None else None
-        text = wind_down.line(config(env, home), glide_provider.attention(env, home), night)
+        live = (state_dir is not None and now is not None
+                and wind_down.wearable_live(StateReader(Path(state_dir)).inputs(), now))
+        text = wind_down.line(config(env, home), glide_provider.attention(env, home), night, heart_live=live)
         return _gated("miq:wind_down", text, env, home)
     except Exception:  # noqa: BLE001 - a broken line must never stop the bedtime question
         return ""
@@ -688,7 +694,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             else:
                 miq = spec.name == jobs.MIQ.name
                 plan = _overnight.plan_for(state_dir, now, env, home) if miq else ""
-                wind = miq_wind_down(p.evs, v.trigger_at, env, home, tz) if miq else ""
+                wind = miq_wind_down(p.evs, v.trigger_at, env, home, tz, state_dir=state_dir, now=now) if miq else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, overnight=plan,
                             target_days=weekly_target.target_days(env, home), wind_down_line=wind)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
