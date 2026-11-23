@@ -273,5 +273,65 @@ class NeverSends(Base):
             self.assertNotIn(word, part, word)
 
 
+# test_schedule_cards.CLOCK: a clock time or a cron string in any form.
+CLOCK = re.compile(r"\d|:\d|\b(am|pm)\b|\*|@(daily|hourly|weekly|midnight)|\bevery\b|\bcron\b|o'clock", re.I)
+
+
+class ScheduleCard(Base):
+    def card(self):
+        from limitless import schedule_cards
+        return schedule_cards.noop_export_card()
+
+    def test_one_schedule_card_on_the_fresh_copy_event(self):
+        from limitless import schedule_cards
+        c = self.card()
+        self.assertEqual(set(c), {"id", "kind", "name", "description", "trigger", "ends", "window",
+                                  "stale_after_s", "once_key", "budget", "per_window", "sender", "words"})
+        self.assertEqual((c["id"], c["kind"], c["name"]), ("noop_export", "schedule", JOB))
+        self.assertEqual((c["trigger"], c["ends"]), ("noop_copy", "noop_copy"))
+        self.assertIn(c["trigger"], jobs.EVENTS)
+        self.assertEqual((c["budget"], c["sender"], c["per_window"]), (0, schedule_cards.LOCAL, 1))
+        self.assertEqual(c["once_key"], "noop_export:<sync run time>")
+        self.assertIn("after a sync that copied the NOOP database", c["words"]["speaks"])
+        self.assertIn("after a sync that copied the NOOP database", c["description"])
+        self.assertIn("nothing is sent", c["description"])
+        self.assertEqual(c["words"]["runs"], "limitless-jobs --send")
+
+    def test_the_card_has_no_clock_string_and_no_internal_id_in_its_words(self):
+        c = self.card()
+        for k in ("description", "once_key"):
+            self.assertNotRegex(c[k].replace("<sync run time>", ""), CLOCK, k)
+        for k, v in c["words"].items():
+            self.assertNotRegex(v, CLOCK, k)
+            self.assertNotIn("_", v, k)
+        self.assertNotIn("every", json.dumps(c).lower())
+
+    def test_cards_add_it_only_when_the_export_is_on(self):
+        from limitless import schedule_cards
+        self.assertEqual([x["id"] for x in schedule_cards.cards()], list(jobs.SPECS))
+        self.assertEqual([x["id"] for x in schedule_cards.cards(noop=True)], list(jobs.SPECS) + ["noop_export"])
+
+    def test_the_schedule_tool_shows_it_when_config_turns_it_on(self):
+        from limitless import tools
+        from limitless.state_reader import StateReader
+        self.config()
+        ids = [x["id"] for x in tools.schedule(StateReader(self.st), NOW, self.env, self.dir)["value"]["cards"]]
+        self.assertNotIn("noop_export", ids)
+        self.config(noop_export="write")
+        got = tools.schedule(StateReader(self.st), NOW, self.env, self.dir)
+        self.assertIn("noop_export", [x["id"] for x in got["value"]["cards"]])
+        self.assertIn("label", got, "the plain words stay digit-free")
+
+    def test_a_host_gets_the_card_at_register_when_the_export_is_on(self):
+        sys.path.insert(0, str(ROOT / "tests"))
+        from test_schedule_register import CardCtx, HostRegistration
+        self.config(noop_export="dry_run")
+        ctx = CardCtx()
+        reg = HostRegistration("test_the_method_name_is_the_documented_one")   # its register(): a pinned env
+        reg.register(ctx, {"LIMITLESS_CONFIG": str(self.cfg_path), "LIMITLESS_STATE": str(self.st)})
+        reg.doCleanups()
+        self.assertEqual([c["id"] for c in ctx.cards], list(jobs.SPECS) + ["noop_export"])
+
+
 if __name__ == "__main__":
     unittest.main()
