@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kevin-push [--once KEY] <tag> <title> <body>: the ONE way agents reach Kevin's phone (Telegram).
+"""kevin-push [--once KEY] [--why REASON] <tag> <title> <body>: the ONE way agents reach Kevin's phone (Telegram).
 
 Policy lives in limitless/send_gate.py: decision|critical (or the wake brief / back-from-nap) go to
 Telegram; reports are log-only; 12 h dedupe; 6 sends/day; Sleep mode holds non-critical; the
@@ -11,6 +11,14 @@ so callers (brief-sent.json) can record 'sent' only on real delivery.
 the first delivery claims the key and any other message with it in the next 12 h is dropped, whatever
 its words, so two senders for one event send once. Only a real delivery claims a key; a held, log-only
 or failed send does not, so a later retry can still go out.
+Quiet (limitless/quiet.py, quiet.json in the state dir): while it holds, every message that would reach the
+phone is dropped with "log (quiet: ...)", whatever its class (no urgent override) and never held for
+later; with --once its key is claimed, so a retry for that event is dropped too. Missing or broken
+quiet.json is on.
+Every delivered message ends with one plain "Why now: ..." line (send_gate.outgoing): from --why REASON
+(or $KEVIN_PUSH_WHY, e.g. the decision-window reason), else the event of an always-sent message, else the
+decision window's reason for the class. Digits and card ids are left out of it; the dedupe key is the
+message without it.
 """
 import json
 import os
@@ -22,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import quiet as q  # noqa: E402
 from limitless import send_gate as g  # noqa: E402
 
 ST = Path.home() / ".local/state/kevin-push"
@@ -44,26 +53,33 @@ PUSH_PROFILE = os.environ.get("KEVIN_PUSH_PROFILE", "intake")      # Hermes prof
 PUSH_TO = os.environ.get("KEVIN_PUSH_TO", "telegram:kevin")        # contact alias, not a chat id
 HOW = {"log": "log", "fold": "folded (brief line)", "hold": "held (sleep mode)",
        "duplicate": "log (duplicate)", "cap": "log (daily cap)", "drop": "log (dropped)"}
-USAGE = "usage: kevin-push [--once KEY] <tag> <title> <body>"
+USAGE = "usage: kevin-push [--once KEY] [--why REASON] <tag> <title> <body>"
+
+
+def split_opts(args, names=("--once", "--why")):
+    """(positional args, {name: value}, ok): pulls `NAME VALUE` / `NAME=VALUE` for each name out of args."""
+    rest, opts = [], {}
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in names:
+            if i + 1 >= len(args):
+                return rest, opts, False
+            opts[a], i = args[i + 1], i + 2
+            continue
+        name = next((n for n in names if a.startswith(n + "=")), None)
+        if name:
+            opts[name] = a[len(name) + 1:]
+        else:
+            rest.append(a)
+        i += 1
+    return rest, opts, True
 
 
 def split_once(args):
     """(positional args, once key or None, ok): pulls `--once KEY` / `--once=KEY` out of args."""
-    rest, once = [], None
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == "--once":
-            if i + 1 >= len(args):
-                return rest, None, False
-            once, i = args[i + 1], i + 2
-            continue
-        if a.startswith("--once="):
-            once = a[len("--once="):]
-        else:
-            rest.append(a)
-        i += 1
-    return rest, once, True
+    rest, opts, ok = split_opts(args, ("--once",))
+    return rest, opts.get("--once"), ok
 
 
 def asleep():
@@ -78,7 +94,8 @@ def asleep():
 
 
 def main(argv):
-    args, once, ok = split_once(argv[1:])
+    args, opts, ok = split_opts(argv[1:])
+    once, why = opts.get("--once"), opts.get("--why")
     if not ok or len(args) < 3:
         print(USAGE, file=sys.stderr)
         return 2
@@ -89,9 +106,14 @@ def main(argv):
     now = time.time()
     sent = json.loads(SENT.read_text()) if SENT.exists() else []
     sent = [s for s in sent if now - s["t"] < 86400]
-    verdict = g.decide(tag, title, body, cls, now, sent, asleep(), once_key=once)
+    quiet = q.check(state_dir(), now)
+    verdict = g.decide(tag, title, body, cls, now, sent, asleep(), once_key=once, quiet=quiet)
     how = HOW.get(verdict, "log")
-    if verdict == "drop" and g.once_sent(sent, once, now):
+    if verdict == "drop" and g.quiet_reason(quiet) is not None:
+        how = f"log ({g.quiet_reason(quiet)})"
+        if once:
+            sent.append(g.quiet_row(now, once))   # this event is dropped, not queued: a retry is dropped too
+    elif verdict == "drop" and g.once_sent(sent, once, now):
         how = f"log ({g.ONCE_DROP})"
     if verdict == "fold":
         lines = [ln for ln in body.splitlines() if ln.strip()]
@@ -100,20 +122,23 @@ def main(argv):
         with open(ST / "held.jsonl", "a") as f:  # delivered inside the 'Back from nap' message
             f.write(json.dumps({"at": int(now), "tag": tag, "title": title, "body": body[:1000]}) + "\n")
     elif verdict == "send":
+        reason = why if why is not None else os.environ.get("KEVIN_PUSH_WHY", "")
+        text = g.outgoing(body, g.why_line(reason if reason.strip() else g.why_reason(cls, title)))
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-            f.write(body)
+            f.write(text)
         r = subprocess.run(["hermes", "-p", PUSH_PROFILE, "send", "--to", PUSH_TO, "--subject", title,
                             "--file", f.name, "-q"], capture_output=True, text=True, timeout=60)
         os.unlink(f.name)
         how = "telegram" if r.returncode == 0 else f"log (telegram rc={r.returncode})"
         if r.returncode == 0:
-            row = {"t": now, "k": g.key(title, body)}
+            row = {"t": now, "k": g.key(title, body)}   # the key is the message without its why line
             if once:
                 row["once"] = once        # claimed only on real delivery
             sent.append(row)
     SENT.write_text(json.dumps(sent))
     with open(LOG, "a") as f:
-        f.write(json.dumps({"at": int(now), "tag": tag, "cls": cls, "title": title, "body": body[:2000], "how": how}) + "\n")
+        shown = text if verdict == "send" else body
+        f.write(json.dumps({"at": int(now), "tag": tag, "cls": cls, "title": title, "body": shown[:2000], "how": how}) + "\n")
     print(f"kevin-push: {how}")
     if os.environ.get("KEVIN_PUSH_STRICT") == "1" and how != "telegram":
         return 3
