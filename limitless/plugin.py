@@ -136,7 +136,11 @@ TOOLS = {
         "decisions in peak, reviews in trough; capture works anytime. `asks` plans the queue of asks waiting on "
         "the person (LIMITLESS_ASKS or config asks_path): deliver, hold and fold counts and a plain label "
         "(one decision ready, decisions waiting, nothing waiting); at most one decision per peak window, a "
-        "focus block holds all but urgent asks. It only reads the queue: nothing is sent."), _window, "🪟"),
+        "focus block holds all but urgent asks. It only reads the queue: nothing is sent. `post_wake_peak` says "
+        "whether the stretch right after the detected wake event (config post_wake_peak_h, default two hours; "
+        "wording, not a target) is open, in use (a focus block started inside it), closed or unknown (no wake "
+        "seen), in T1 words; while it is open the person's pre-planned task fits now. Cued by the wake event, "
+        "never a clock time."), _window, "🪟"),
     "limitless_habit": (_schema(
         "limitless_habit",
         "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped), plus "

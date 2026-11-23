@@ -7,7 +7,8 @@ from typing import Mapping, Optional
 
 from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics,
                habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
-               overnight as _overnight, owner_messages as _owner, passive_habit, prediction as _prediction,
+               overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
+               prediction as _prediction,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
                sleep as _sleep)
 from .envelope import STALE_H, envelope, missing, with_label
@@ -38,11 +39,22 @@ def asks_view(reader: StateReader, now: float, bands: Optional[Mapping] = None,
     return _asks.summary(todo, _asks.plan(todo, state, sent))
 
 
+def post_wake_peak(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> dict:
+    """``{open, in_use, why, label}`` (peak.read_for) with a digit-free T1 label, a proxy: post-wake peak: open,
+    post-wake peak: in use, post-wake peak: closed, or unknown (no wake seen, or too old)."""
+    p = _peak.read_for(reader, now, env, home)
+    word = p["label"] or (_peak.CLOSED if p["why"].startswith("closed") else _labeler.UNKNOWN)
+    return {"open": p["open"], "in_use": p["in_use"], "why": p["why"],
+            "label": {"label": word, "tier": "T1", "modality": "proxy"}}
+
+
 def window(reader: StateReader, now: float, bands: Optional[Mapping] = None,
            env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
-    """limitless_window: the window.py envelope plus ``asks`` (asks_view)."""
+    """limitless_window: the window.py envelope plus ``asks`` (asks_view) and ``post_wake_peak``."""
     out = _window(reader, now, bands)
     out["asks"] = asks_view(reader, now, bands, env, home)
+    out["post_wake_peak"] = post_wake_peak(reader, now, env, home)
     return out
 
 

@@ -32,6 +32,7 @@ from .window import MAX_AWAKE_H
 
 PEAK_H, PEAK_CONFIG = 2.0, "post_wake_peak_h"
 OPEN, IN_USE = "post-wake peak: open", "post-wake peak: in use"
+CLOSED = "post-wake peak: closed"   # the tool's word only: the card says nothing when closed
 LONG_S = _blocks.BREAK_AFTER_MIN * 60.0
 NO_WAKE = "unknown: no wake seen"
 
