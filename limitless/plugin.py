@@ -83,6 +83,10 @@ def _rides(args, now):
     return tools.rides(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _anki(args, now):
+    return tools.anki(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _sleep(args, now):
     return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
@@ -208,6 +212,14 @@ last seven days against the seven before, in plain words: rides this week none, 
 same as, more than or fewer than last week. Counts and the label only; total minutes need the person's raw \
 opt-in; heart rate and power are never read. A week with no ride is none, never missed: no target, no streak, \
 no score, no advice. Read-only; nothing is sent."), _rides, "🚲"),
+    "limitless_anki": (_schema(
+        "limitless_anki",
+        "Anki reviews this week, measured from Anki's own review log (config anki_collection or LIMITLESS_ANKI; \
+none by default), in plain words: no reviews this week, some reviews this week or reviewed most days this week \
+(days with a review out of the days so far; wording, not a target). This week is the running habit week, else \
+the last seven days. The label only; the raw count needs the person's raw opt-in. Unknown (no collection set, \
+locked or unreadable) is never zero. No streak, no target, no clock-time rule: reviews fit a trough window. \
+Read-only: the collection is never written; nothing is sent."), _anki, "🗂️"),
     "limitless_sleep": (_schema(
         "limitless_sleep",
         "Sleep over the last seven nights from two sources kept apart: the wearable's nightly summary (config \

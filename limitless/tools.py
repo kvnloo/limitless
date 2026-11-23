@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics,
+from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics,
                habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction,
@@ -434,6 +434,29 @@ def rides(reader: StateReader, now: float, today: date, raw: bool = False, env: 
     if raw:
         value.update(minutes_this_week=w["minutes_this_week"], minutes_last_week=w["minutes_last_week"])
     out = envelope(value, _rides.MODALITY, age_h)
+    out["label"] = w["label"]
+    return out
+
+
+def anki(reader: StateReader, now: float, today: date, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+         home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_anki: this week's Anki reviews (anki.for_week), measured from Anki's own review log.
+
+    "This week" is the running habit week when today is one of its days, else the seven days ending today
+    (anki.week_first). An envelope whose value is ``{label}`` (the T1 words) with the T1 label beside it;
+    modality measured, age_h from the newest review (stale when it is over a day old or there is none). The
+    raw count and the day counts (``count``, ``days_with_review``, ``days_so_far``) are T0 and appear only
+    with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No collection set or an unreadable one is value None with a
+    path-free reason (unknown, not zero). The collection is opened read-only and never written.
+    """
+    w = _anki.for_week(_anki.week_first(reader.habit(), today), today, tz, env, home)
+    if w["count"] is None:
+        return missing(w["reason"] or _anki.NO_COLLECTION)
+    age_h = None if w["newest_s"] is None else max(0.0, now - w["newest_s"]) / 3600
+    value = {"label": w["label"]["label"]}
+    if raw:
+        value.update(count=w["count"], days_with_review=w["days_with_review"], days_so_far=w["days_so_far"])
+    out = envelope(value, _anki.MODALITY, age_h)
     out["label"] = w["label"]
     return out
 

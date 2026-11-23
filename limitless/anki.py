@@ -15,6 +15,16 @@ writes, creates or locks the collection. A missing path, a missing file, a locke
 file that is not a collection is unknown: ``count`` None with a reason that never names the path. Unknown is
 never zero, and nothing here raises.
 
+Week, in words (``week(db_path, first, today, tz)``): the days from ``first`` to ``today`` (at most seven) are
+the days so far; a day with a review is a local day (in ``tz``) with at least one. The T1 label, digit-free:
+
+- "no reviews this week": the week so far has no review (a known none, not a failure);
+- "reviewed most days this week": more than half of the days so far had a review;
+- "some reviews this week": anything in between; "unknown" when the count is unknown.
+
+These are wording, not targets: nothing here says how many reviews are enough, keeps a streak or marks a
+day missed. A day with no review is unlogged.
+
 Where: $LIMITLESS_ANKI, else config ``anki_collection``; none by default (then "no Anki collection set").
 Stdlib only, Python 3.9+.
 """
@@ -23,6 +33,7 @@ from __future__ import annotations
 import math
 import os
 import sqlite3
+from datetime import date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import Mapping, Optional
 from urllib.parse import quote
@@ -111,3 +122,73 @@ def reviews(db_path, since_s, until_s, *, immutable: bool = False, timeout_s: fl
         return unknown(NOT_ANKI)
     return {"count": len(ids), "newest_s": None if newest is None else newest / 1000,
             "stamps_s": [i / 1000 for i in ids], "reason": None}
+
+
+# --- the week, in words -----------------------------------------------------------------------------------
+
+WEEK_DAYS = 7
+UNKNOWN = "unknown"
+NONE, SOME, MOST = "no reviews this week", "some reviews this week", "reviewed most days this week"
+LABELS = (UNKNOWN, NONE, SOME, MOST)
+
+
+def t1(word: str) -> dict:
+    return {"label": word, "tier": "T1", "modality": MODALITY}
+
+
+def _day_start(d: date, tz: Optional[tzinfo]) -> float:
+    return datetime.combine(d, time(), tzinfo=tz).timestamp()
+
+
+def _word(count: int, days_with: int, days_so_far: int) -> str:
+    if count == 0:
+        return NONE
+    return MOST if days_with * 2 > days_so_far else SOME
+
+
+def week(db_path, first: date, today: date, tz: Optional[tzinfo] = None, *, immutable: bool = False) -> dict:
+    """This week's reviews: ``{set, count, days_with_review, days_so_far, newest_s, label, reason}``.
+
+    ``set`` is whether a collection is configured at all (``db_path`` given). Unknown (no collection, an
+    unreadable one, ``today`` before ``first``) has ``count`` and the day counts None and label "unknown",
+    with the reason. Never raises."""
+    out = {"set": db_path is not None and not (isinstance(db_path, str) and not db_path.strip()),
+           "count": None, "days_with_review": None, "days_so_far": None, "newest_s": None,
+           "label": t1(UNKNOWN), "reason": None}
+    if not isinstance(first, date) or not isinstance(today, date) or today < first:
+        out["reason"] = BAD_RANGE if out["set"] else NO_COLLECTION
+        return out
+    last = min(today, first + timedelta(days=WEEK_DAYS - 1))
+    try:
+        lo, hi = _day_start(first, tz), _day_start(last + timedelta(days=1), tz)
+    except (OverflowError, ValueError, OSError):
+        out["reason"] = BAD_RANGE
+        return out
+    got = reviews(db_path, lo, hi, immutable=immutable)
+    out["newest_s"] = got["newest_s"]
+    if got["count"] is None:
+        out["reason"] = got["reason"]
+        return out
+    days = {datetime.fromtimestamp(s, tz).date() for s in got["stamps_s"]}
+    so_far = (last - first).days + 1
+    out.update(count=got["count"], days_with_review=len(days), days_so_far=so_far,
+               label=t1(_word(got["count"], len(days), so_far)))
+    return out
+
+
+def week_first(habit: Optional[dict], today: date) -> date:
+    """The first day of "this week": the running habit week's ``week_of`` when ``today`` is one of its seven
+    days, else the seven days ending ``today``."""
+    try:
+        start = date.fromisoformat(str((habit or {}).get("week_of"))) if isinstance(habit, dict) else None
+    except ValueError:
+        start = None
+    if start is not None and start <= today < start + timedelta(days=WEEK_DAYS):
+        return start
+    return today - timedelta(days=WEEK_DAYS - 1)
+
+
+def for_week(first: date, today: date, tz: Optional[tzinfo] = None, env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None) -> dict:
+    """week() over the configured collection (collection_path, is_copy). Read-only."""
+    return week(collection_path(env, home), first, today, tz, immutable=is_copy(env, home))
