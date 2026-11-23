@@ -60,7 +60,7 @@ from . import anki as _anki, aw_desktop, aw_reader, blocks as _blocks, body_cali
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
     wind_down
-from . import glide_provider, noop_export as _noop_export
+from . import glide_provider, mock_guard, noop_export as _noop_export
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -748,7 +748,7 @@ def _break(v: jobs.Verdict, p: _Pass, now: float) -> jobs.Verdict:
 NOOP_MARK = "noop-export.json"
 NOOP_DONE, NOOP_NOTHING, NOOP_NOT_WRITTEN, NOOP_FAILED = "done", "nothing to export", "a file was not written", \
     "failed"
-_NOOP_NOTHING = (_noop_export.NO_DB, _noop_export.NO_FILE, _noop_export.NOT_NOOP)
+_NOOP_NOTHING = (_noop_export.NO_DB, _noop_export.NO_FILE, _noop_export.NOT_NOOP, mock_guard.ONLY_DEMO)
 _DIGITS = re.compile(r"\d+(?:[.,:]\d+)*")
 # the CLI's dry-run hint, said the way the job is switched to writing
 _NOOP_CLI_HINT = "(run with --write to write them)"

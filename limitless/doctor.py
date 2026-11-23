@@ -27,7 +27,7 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import card, noop_mcp, tier_audit, tools
+from . import card, mock_guard, noop_mcp, tier_audit, tools
 from .envelope import STALE_H
 from .state_reader import StateReader, config, parse_ts
 
@@ -66,6 +66,7 @@ INPUT_WORDS = {   # limitless_status's state per input -> (status, reason)
     "not recording": (STALE, "not recording: no update for over a day"),
     "down": (STALE, "not recording: the sync reports it down"),
     "unknown": (MISSING, "no age for this input in inputs.json"),
+    "demo": (MISSING, "a demo or sample device: demo rows never count as live"),
 }
 
 
@@ -142,7 +143,8 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     ran = f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync that copied the NOOP " \
           f"database"
     if outcome == jobs_runner.NOOP_DONE:
-        return _row(NOOP_ROW, "job", LIVE, f"{ran}: {outcome}")
+        demo = f"; {mock_guard.LEFT_OUT}" if any(mock_guard.LEFT_OUT in s for s in mark.get("said") or ()) else ""
+        return _row(NOOP_ROW, "job", LIVE, f"{ran}: {outcome}{demo}")
     if outcome == jobs_runner.NOOP_NOTHING:
         return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}: {said}")
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
@@ -381,7 +383,7 @@ def report(cfg: Mapping, now: float) -> list:
     as they do inside Hermes."""
     path = state_path(cfg)
     reader = StateReader(path)
-    rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
+    rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), voice_miq_row(reader, cfg, now)]

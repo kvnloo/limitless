@@ -46,6 +46,10 @@ The tool asks for the last thirty days (`start_date` thirty days before today, `
 - **Skipped and counted:** naps (`is_nap`), sessions from a phone, tablet, scale or smart display
   (`source.device_type`), sessions with no asleep time, and spans that are not a night (end before start, over a
   day, unreadable times). Of several sessions in one night, the one with the most sleep is the night.
+- **Demo rows never count** ([mock-guard.md](mock-guard.md)): a session whose `source.device` or
+  `source.device_id` is a demo device, or matches config `mock_device_patterns`, is dropped. With sessions to
+  read, the user record (`GET /api/v1/users/{user_id}`) is read once: a seed user's sessions are all demo
+  rows. An unreadable user record changes nothing. Only demo rows is "no wearable data", a failed run.
 - **Privacy:** the rows carry only those fields: no provider, device, user id or session id. The output is counts
   in words: never a path, the URL, the user, the key or a reading.
 
@@ -87,12 +91,14 @@ the Open Wearables export is off (config open_wearables_export)
 $ limitless-ow-export   (open_wearables_export=write)
   GET /api/v1/users/00000000-0000-4000-8000-0000000000aa/events/sleep (header X-Open-Wearables-API-Key)
   GET /api/v1/users/00000000-0000-4000-8000-0000000000aa/events/sleep (cursor, header X-Open-Wearables-API-Key)
+  GET /api/v1/users/00000000-0000-4000-8000-0000000000aa (header X-Open-Wearables-API-Key)
 dry run: three nights of wearable sleep from Open Wearables; skipped one nap, one session not from a wearable, one session with no asleep time; nothing written (run with --write to write them)
   (exit 0)
 
 $ limitless-ow-export --write   (open_wearables_export=write)
   GET /api/v1/users/00000000-0000-4000-8000-0000000000aa/events/sleep (header X-Open-Wearables-API-Key)
   GET /api/v1/users/00000000-0000-4000-8000-0000000000aa/events/sleep (cursor, header X-Open-Wearables-API-Key)
+  GET /api/v1/users/00000000-0000-4000-8000-0000000000aa (header X-Open-Wearables-API-Key)
 found three nights of wearable sleep from Open Wearables; skipped one nap, one session not from a wearable, one session with no asleep time
 sleep file: written, two nights new or changed; one night kept from another source
   (exit 0)
@@ -100,6 +106,7 @@ sleep file: written, two nights new or changed; one night kept from another sour
 $ limitless-ow-export --write   (open_wearables_export=write)
   GET /api/v1/users/00000000-0000-4000-8000-0000000000aa/events/sleep (header X-Open-Wearables-API-Key)
   GET /api/v1/users/00000000-0000-4000-8000-0000000000aa/events/sleep (cursor, header X-Open-Wearables-API-Key)
+  GET /api/v1/users/00000000-0000-4000-8000-0000000000aa (header X-Open-Wearables-API-Key)
 found three nights of wearable sleep from Open Wearables; skipped one nap, one session not from a wearable, one session with no asleep time
 sleep file: unchanged; one night kept from another source
   (exit 0)

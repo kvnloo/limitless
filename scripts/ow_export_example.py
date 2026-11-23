@@ -35,6 +35,8 @@ def server(status=200):
     def http(url, headers, timeout):
         u = urlsplit(url)
         print(f"  GET {u.path} ({'cursor, ' if 'cursor=' in u.query else ''}header {ow.HEADER})")
+        if status == 200 and not u.path.endswith("/events/sleep"):   # the user record: a real, not a seed, user
+            return 200, json.dumps({"id": USER, "first_name": "Synthetic"}).encode()
         return (status, pages.pop(0)) if status == 200 else (status, b"")
     return http
 

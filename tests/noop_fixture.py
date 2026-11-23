@@ -40,11 +40,12 @@ def stages(onset, asleep_s, awake_s=0):
     return json.dumps(out)
 
 
-def make_db(path, *, sessions=(), hr=(), devices=None, dismissed=(), drop=None, drop_column=None):
+def make_db(path, *, sessions=(), hr=(), devices=None, dismissed=(), drop=None, drop_column=None, names=()):
     """Write a synthetic NOOP DB at ``path``.
 
     sessions: (deviceId, startTs, endTs, efficiency, stagesJSON[, startTsAdjusted]) tuples.
     hr: (deviceId, ts, bpm) tuples. devices: pairedDevice rows as dicts (default: one ring, one import).
+    names: (id, name) rows for the ``device`` table (default: none).
     drop: a table name to leave out; drop_column: (table, column) to leave out of the schema.
     """
     path = Path(path)
@@ -80,6 +81,8 @@ def make_db(path, *, sessions=(), hr=(), devices=None, dismissed=(), drop=None, 
                             vals)
         if drop != "hrSample":
             con.executemany("INSERT INTO hrSample (deviceId, ts, bpm) VALUES (?, ?, ?)", list(hr))
+        if drop != "device":
+            con.executemany("INSERT INTO device (id, name) VALUES (?, ?)", list(names))
         if drop != "dismissedSleep":
             con.executemany("INSERT INTO dismissedSleep (deviceId, startTs, endTs) VALUES (?, ?, ?)",
                             list(dismissed))
