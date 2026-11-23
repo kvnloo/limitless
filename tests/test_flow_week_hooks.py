@@ -15,6 +15,8 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from limitless import card, jobs, jobs_runner  # noqa: E402
+
+KD = "\nReply: Keep / Drop"   # the week review's choices line (one_tap), always its last line
 from limitless.state_reader import StateReader  # noqa: E402
 
 UTC = timezone.utc
@@ -78,12 +80,14 @@ class WeekReview(unittest.TestCase):
         rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=False, env=self.env, home=self.root, tz=UTC)
         row = {r["job"]: r for r in rows}["Week review"]
         self.assertEqual(row["action"], jobs.DELIVER, row)
-        return [c[1] for c in push.calls if c[0] == "Week review"]
+        bodies = [c[1] for c in push.calls if c[0] == "Week review"]
+        self.assertTrue(all(b.endswith(KD) for b in bodies), bodies)
+        return [b[:-len(KD)] for b in bodies]
 
     def test_body_adds_the_flow_line_after_the_review_text(self):
         text = jobs.week_review_text(self.habit)
-        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x."), text + "\nFlow: x.")
-        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow=""), text)
+        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x."), text + "\nFlow: x." + KD)
+        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow=""), text + KD)
         check = jobs_runner.body(jobs.HABIT_CHECKIN, self.habit, flow="Flow: x.")
         self.assertNotIn("Flow", check)
 

@@ -414,7 +414,8 @@ def week_logged(habit: Optional[dict], synced: Optional[dict] = None) -> Tuple[i
 
 
 def week_review_text(habit: Optional[dict], synced: Optional[dict] = None) -> str:
-    """The week review's one message: the habit, "N of M logged days" and the Keep / Drop ask.
+    """The week review's first line: the habit and "N of M logged days". Its Keep / Drop ask is the choices
+    line (one_tap.choices_line(WEEK_REVIEW.answers)) jobs_runner.body puts last.
 
     With no Done or No day it says no days were logged, never that the week failed.
     """
@@ -422,4 +423,4 @@ def week_review_text(habit: Optional[dict], synced: Optional[dict] = None) -> st
     name = name.strip() if isinstance(name, str) and name.strip() else "Your habit"
     n, m = week_logged(habit, synced)
     what = f"{n} of {m} logged days this week" if m else "no days were logged this week"
-    return f"{name}: {what}. Reply {' or '.join(WEEK_REVIEW.answers)}."
+    return f"{name}: {what}."

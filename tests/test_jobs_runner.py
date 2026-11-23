@@ -191,7 +191,7 @@ class EventsAndWindow(Base):
         self.assertEqual(self.by_job(rows)["Habit check-in"]["action"], jobs.DELIVER)
         bodies = dict(push.calls)
         self.assertIn("Stretch for two minutes", bodies["Habit check-in"])
-        self.assertIn("Done, No or Skip", bodies["Habit check-in"])
+        self.assertEqual(bodies["Habit check-in"].splitlines()[-1], "Reply: Done / No / Skip")
 
     def test_wind_down_job_needs_the_glide_wind_down_window(self):
         self.awake_after_night()

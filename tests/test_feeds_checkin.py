@@ -40,12 +40,12 @@ class Body(unittest.TestCase):
     def test_seen_adds_one_line(self):
         plain = jobs_runner.body(jobs.HABIT_CHECKIN, HABIT)
         got = jobs_runner.body(jobs.HABIT_CHECKIN, HABIT, phone={"seen": True, "count": 3})
-        self.assertEqual(got, plain + "\n" + SEEN_LINE)
+        self.assertEqual(got.splitlines(), [plain.splitlines()[0], SEEN_LINE, "Reply: Done / No / Skip"])   # the choices stay last
 
     def test_not_seen_adds_one_line(self):
         plain = jobs_runner.body(jobs.HABIT_CHECKIN, HABIT)
         got = jobs_runner.body(jobs.HABIT_CHECKIN, HABIT, phone={"seen": False, "count": 0})
-        self.assertEqual(got, plain + "\n" + NOT_SEEN_LINE)
+        self.assertEqual(got.splitlines(), [plain.splitlines()[0], NOT_SEEN_LINE, "Reply: Done / No / Skip"])
 
     def test_unknown_adds_nothing(self):
         plain = jobs_runner.body(jobs.HABIT_CHECKIN, HABIT)
@@ -57,7 +57,7 @@ class Body(unittest.TestCase):
             line = feeds_evidence.line({"seen": seen, "count": 7})
             self.assertIsNone(re.search(r"\d", line), line)
             got = jobs_runner.body(jobs.HABIT_CHECKIN, HABIT, phone={"seen": seen, "count": 7})
-            self.assertIn("Reply Done, No or Skip.", got)
+            self.assertEqual(got.splitlines()[-1], "Reply: Done / No / Skip")
 
     def test_other_jobs_never_get_the_line(self):
         for spec in (jobs.WAKE_BRIEF, jobs.NAP, jobs.MIQ):
@@ -66,6 +66,11 @@ class Body(unittest.TestCase):
 
 
 class RunOnce(unittest.TestCase):
+    def with_line(self, line):
+        """The plain check-in with the phone line between its question and its choices line (last)."""
+        q, choices = self.plain().split("\n")
+        return f"{q}\n{line}\n{choices}"
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
@@ -94,12 +99,12 @@ class RunOnce(unittest.TestCase):
     def test_feed_app_in_the_hour(self):
         make_db(self.db, unlocks=[EVENING, WAKE],
                 spans=[(WAKE + 600, WAKE + 900, "feedapp"), (WAKE + H + 60, WAKE + H + 90, "reader")])
-        self.assertEqual(self.checkin(self.env), self.plain() + "\n" + SEEN_LINE)
+        self.assertEqual(self.checkin(self.env), self.with_line(SEEN_LINE))
 
     def test_no_feed_app_in_the_hour(self):
         make_db(self.db, unlocks=[EVENING, WAKE],
                 spans=[(WAKE + 600, WAKE + 900, "reader"), (WAKE + H + 60, WAKE + H + 90, "feedapp")])
-        self.assertEqual(self.checkin(self.env), self.plain() + "\n" + NOT_SEEN_LINE)
+        self.assertEqual(self.checkin(self.env), self.with_line(NOT_SEEN_LINE))
 
     def test_data_short_of_the_hour_says_nothing(self):
         make_db(self.db, unlocks=[EVENING, WAKE], spans=[(WAKE + 600, WAKE + 900, "reader")])
@@ -116,7 +121,7 @@ class RunOnce(unittest.TestCase):
                 spans=[(WAKE + 600, WAKE + 900, "feedapp"), (WAKE + H + 60, WAKE + H + 90, "reader")])
         cfg = self.root / "config.json"
         cfg.write_text(json.dumps({"aw_db": "aw.db", "feed_apps": ["feedapp"]}))
-        self.assertEqual(self.checkin({"LIMITLESS_CONFIG": str(cfg)}), self.plain() + "\n" + SEEN_LINE)
+        self.assertEqual(self.checkin({"LIMITLESS_CONFIG": str(cfg)}), self.with_line(SEEN_LINE))
 
     def test_the_hint_never_writes_habit_json_or_logs_an_answer(self):
         make_db(self.db, unlocks=[EVENING, WAKE],

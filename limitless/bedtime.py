@@ -5,7 +5,8 @@
 Capture applies only when the window from state (window_chain: Glide's wind-down nudge, Sleep mode) is
 ``asleep`` or ``wind_down``; it never reads a clock time. A slash command, a message with an urgent word
 (config ``bedtime_urgent_words``, default ``["urgent", "now"]``, whole words, any case) and a bare habit
-or week answer (Done, No, Skip, Keep, Drop: their own jobs read those) pass to the agent as usual.
+or week answer (Done, No, Skip, Keep, Drop: their own jobs read those) and a bare MIQ answer (Yes, No,
+Later: one_tap) pass to the agent as usual.
 Config ``bedtime_capture``: ``"on"`` turns it on; anything else (the default) is off.
 
     make_post_gateway_admission(env, clock) -> the Hermes ``post_gateway_admission`` hook
@@ -32,7 +33,7 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Optional
 
-from . import capture, habit_replies, jobs, jobs_runner
+from . import capture, habit_replies, jobs, jobs_runner, one_tap
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts, state_dir
 from .window_chain import EventProvider, first_known
@@ -81,6 +82,8 @@ def route(message_text, window_class: Optional[str], opt_out: bool,
     if text.startswith("/") or _urgent(text, urgent_words):
         return _pass()
     if len(text.split()) == 1 and (habit_replies.tap(text) or habit_replies.decision(text)):
+        return _pass()
+    if one_tap.parse(text, jobs_runner.MIQ_ANSWERS):    # the MIQ's own one-tap reply, never an idea
         return _pass()
     return {"action": CAPTURE, "reply": REPLY}
 

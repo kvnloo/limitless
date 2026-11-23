@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from limitless import card, jobs, jobs_runner  # noqa: E402
+
+KD = "\nReply: Keep / Drop"   # the week review's choices line (one_tap), always its last line
 from limitless.state_reader import StateReader  # noqa: E402
 from test_body_review import body_rows  # noqa: E402
 from test_flow_week_hooks import FakePush  # noqa: E402
@@ -56,14 +58,15 @@ class Review(unittest.TestCase):
         rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=False, env=self.env, home=self.root, tz=UTC)
         self.assertEqual({r["job"]: r for r in rows}["Week review"]["action"], jobs.DELIVER)
         (text,) = [c[1] for c in push.calls if c[0] == "Week review"]
-        return text.split("\n")
+        self.assertTrue(text.endswith(KD), text)
+        return text[:-len(KD)].split("\n")
 
     def test_body_puts_the_rides_line_after_the_body_line(self):
         text = jobs.week_review_text(self.habit)
         self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, flow="Flow: x.", body_line="Body: y.",
                                           rides_line="Rides: z."),
-                         text + "\nFlow: x.\nBody: y.\nRides: z.")
-        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, rides_line=""), text)
+                         text + "\nFlow: x.\nBody: y.\nRides: z." + KD)
+        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, self.habit, rides_line=""), text + KD)
         self.assertNotIn("Rides", jobs_runner.body(jobs.HABIT_CHECKIN, self.habit, rides_line="Rides: z."))
 
     def test_the_review_carries_the_ride_words(self):

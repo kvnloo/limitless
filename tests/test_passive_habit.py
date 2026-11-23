@@ -219,14 +219,16 @@ class ConfirmedWeek(WithPassive):
         line = jobs_runner.week_passive(self.st, h, self.env)
         self.assertEqual(line, "Phone data (a proxy, not a check-in): the first hour rarely feed-free.")
         text = jobs_runner.body(jobs.WEEK_REVIEW, h, synced={}, passive=line, flow="Flow: synthetic.")
-        self.assertEqual(text.split("\n"), [jobs.week_review_text(h, {}), line, "Flow: synthetic."])
+        self.assertEqual(text.split("\n"), [jobs.week_review_text(h, {}), line, "Flow: synthetic.",
+                                                "Reply: Keep / Drop"])
         self.assertIn("2 of 3 logged days", text.split("\n")[0])
         self.assertEqual(jobs.week_logged(h, {}), (2, 3))
 
     def test_week_review_without_rows_is_unchanged(self):
         h = StateReader(self.st).habit()
         self.assertEqual(jobs_runner.week_passive(self.st, h, self.env), "")
-        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, h, synced={}, passive=""), jobs.week_review_text(h, {}))
+        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, h, synced={}, passive=""),
+                         jobs.week_review_text(h, {}) + "\nReply: Keep / Drop")
 
 
 class CardAndCatchup(WithPassive):
@@ -294,8 +296,9 @@ class WeekReviewSend(WithPassive):
         push = FakePush()
         jobs_runner.run_once(self.st, NOW, push=push, dry_run=False, env=self.env, home=self.root, tz=timezone.utc)
         bodies = [b for t, b, _ in push.calls if t == "Week review"]
-        self.assertEqual(bodies, ["Synthetic habit: 1 of 2 logged days this week. Reply Keep or Drop.\n"
-                                  "Phone data (a proxy, not a check-in): the first hour mostly feed-free."])
+        self.assertEqual(bodies, ["Synthetic habit: 1 of 2 logged days this week.\n"
+                                  "Phone data (a proxy, not a check-in): the first hour mostly feed-free.\n"
+                                  "Reply: Keep / Drop"])
         self.assertEqual(json.loads((self.st / "habit.json").read_text())["checkins"],
                          {week_of.isoformat(): "Done", (day7 - timedelta(days=1)).isoformat(): "No"})
 

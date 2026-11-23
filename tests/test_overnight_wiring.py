@@ -18,7 +18,8 @@ from limitless import brief_post, jobs, jobs_runner  # noqa: E402
 
 NOW = 2_000_000_000.0
 H = 3600.0
-MIQ_Q = "Your wind-down has started. What is the one thing that matters most tomorrow?"
+MIQ_Q = "Your wind-down has started. Do you know the one thing that matters most tomorrow?"
+CHOICES = "Reply: Yes / No / Later"   # one_tap: the MIQ is one tap, its choices line last
 PLAN = "Overnight: a few tasks running, one queued"
 
 
@@ -40,11 +41,11 @@ class FakePush:
 
 class MiqBody(unittest.TestCase):
     def test_plan_line_follows_the_question(self):
-        self.assertEqual(jobs_runner.body(jobs.MIQ, overnight=PLAN), f"{MIQ_Q}\n{PLAN}")
+        self.assertEqual(jobs_runner.body(jobs.MIQ, overnight=PLAN), f"{MIQ_Q}\n{PLAN}\n{CHOICES}")
 
     def test_no_plan_line_keeps_the_body(self):
-        self.assertEqual(jobs_runner.body(jobs.MIQ), MIQ_Q)
-        self.assertEqual(jobs_runner.body(jobs.MIQ, overnight=""), MIQ_Q)
+        self.assertEqual(jobs_runner.body(jobs.MIQ), f"{MIQ_Q}\n{CHOICES}")
+        self.assertEqual(jobs_runner.body(jobs.MIQ, overnight=""), f"{MIQ_Q}\n{CHOICES}")
 
     def test_other_jobs_never_get_the_line(self):
         self.assertNotIn("Overnight", jobs_runner.body(jobs.WAKE_BRIEF, overnight=PLAN))
@@ -81,12 +82,12 @@ class WindDownRun(unittest.TestCase):
             put(q, "running", n, NOW - H)
         put(q, "queue", "synthetic-gamma", NOW - H)
         body = self.miq_body()
-        self.assertEqual(body.splitlines(), [MIQ_Q, PLAN])
+        self.assertEqual(body.splitlines(), [MIQ_Q, PLAN, CHOICES])
         self.assertNotIn("synthetic", body)
 
     def test_no_work_queue_configured_keeps_the_message(self):
         self.cfg.write_text("{}")
-        self.assertEqual(self.miq_body(), MIQ_Q)
+        self.assertEqual(self.miq_body(), f"{MIQ_Q}\n{CHOICES}")
 
 
 class Finalize(unittest.TestCase):

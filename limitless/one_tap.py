@@ -7,7 +7,10 @@ four one-word replies on one plain last line, and a reply is read back whole:
     parse("done.", ("Done", "No", "Skip"))   -> "Done"      (a voice transcript counts)
     parse("done for today", ...)             -> None        (not a tap: the ask stays unanswered)
     choices_of("Reply: Keep / Drop")         -> ("Keep", "Drop")
-    is_one_tap(body)                         -> False when the body asks but carries no choices line
+    asks(body)                               -> True when a line has a "?", asks for a reply in words or
+                                                is a choices line
+    is_one_tap(body)                         -> False when the body asks but its last line (before any
+                                                "Why now" line) is not a choices line
 
 An option is one word of letters only: no digits, no card ids, no spaces or punctuation, and no two
 options alike in any case. ``parse`` takes the whole message, case-insensitive, with surrounding spaces,
@@ -18,11 +21,15 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
+
+from .send_gate import WHY_PREFIX
 
 PREFIX, SEP = "Reply: ", " / "
 MIN_OPTIONS, MAX_OPTIONS = 2, 4
 YES_NO_LATER = ("Yes", "No", "Later")
+# A line asks for input when it has a question mark or one of these words (whole words, any case).
+_ASKS_INPUT = re.compile(r"(?i)\b(reply|replies|answer|respond|tell me|let me know)\b")
 _MODIFIERS = {"\ufe0f", "\ufe0e", "\u200d", "\u20e3"} | {chr(c) for c in range(0x1F3FB, 0x1F400)}
 
 
@@ -85,3 +92,27 @@ def parse(text, options: Iterable[str]) -> Optional[str]:
         if isinstance(o, str) and o.lower() == word.lower():
             return o
     return None
+
+
+def _lines(body) -> List[str]:
+    """The body's non-blank lines without the trailing "Why now" line(s) send_gate.outgoing adds."""
+    lines = [ln.strip() for ln in (body if isinstance(body, str) else "").splitlines() if ln.strip()]
+    while lines and lines[-1].startswith(WHY_PREFIX):
+        lines.pop()
+    return lines
+
+
+def asks(body) -> bool:
+    """True when the body asks the person something: it has a choices line, or a line (other than the why-now
+    line) with a question mark or one that asks for input in words (reply, answer, respond, tell me, let me
+    know)."""
+    return any(choices_of(ln) is not None or "?" in ln or _ASKS_INPUT.search(ln) for ln in _lines(body))
+
+
+def is_one_tap(body) -> bool:
+    """True when the body asks nothing, or asks and its last line (before any why-now line) is a choices
+    line of 2-4 one-word options. Pure: a check, never a rewrite."""
+    if not asks(body):
+        return True
+    lines = _lines(body)
+    return bool(lines) and choices_of(lines[-1]) is not None

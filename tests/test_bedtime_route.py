@@ -48,6 +48,12 @@ class Route(unittest.TestCase):
         for text in ("", "   ", None, 7):
             self.assertEqual(bedtime.route(text, "asleep", False)["action"], "pass", repr(text))
 
+    def test_a_bare_miq_answer_passes(self):
+        # the MIQ goes out at wind-down and ends in "Reply: Yes / No / Later": its one-tap reply is no idea
+        for text in ("Yes", "yes.", "Later", "later 👍", "No"):
+            self.assertEqual(bedtime.route(text, "wind_down", False)["action"], "pass", text)
+        self.assertEqual(bedtime.route("yes and also a new idea", "wind_down", False)["action"], "capture")
+
     def test_a_bare_habit_or_week_answer_passes(self):
         # the habit check-in and week review read these replies from the session; never swallow them
         for text in ("Done", "skip", "No.", "Keep", "drop"):

@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, passive_habit, \
-    quiet as _quiet, rides as _rides, send_gate, sleep as _sleep, wake_proxy
+    one_tap, quiet as _quiet, rides as _rides, send_gate, sleep as _sleep, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -56,36 +56,36 @@ QUIET_DROP = f"({_quiet.PREFIX}"   # how kevin-push reports a push quiet dropped
 _BODY = {
     jobs.WAKE_BRIEF.name: "You are up. Your brief comes next.",
     jobs.NAP.name: "Welcome back from your nap. Anything held while you slept is in your brief.",
-    jobs.MIQ.name: "Your wind-down has started. What is the one thing that matters most tomorrow?",
+    jobs.MIQ.name: "Your wind-down has started. Do you know the one thing that matters most tomorrow?",
 }
+# L14: an ask is one tap or one spoken word. The MIQ asks Yes / No / Later instead of a typed answer.
+MIQ_ANSWERS = one_tap.YES_NO_LATER
 
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "") -> str:
-    """The plain-words message for one job. The habit check-in names this week's habit and its taps.
+    """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
+    (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
     a hint, no counts, times or app names; the answer stays the person's tap. The week review is
-    jobs.week_review_text: the habit, "N of M logged days" (``synced``: StateReader.habit_days()) and
-    "Reply Keep or Drop.", then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
+    jobs.week_review_text: the habit and "N of M logged days" (``synced``: StateReader.habit_days()), then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
     (flow_week.review_line), then ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
-    proxy, in words), each as one more line when given. The first line's number
+    proxy, in words), each as one more line when given, then ``Reply: Keep / Drop``. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
-    what runs tonight, count words only) when given.
+    what runs tonight, count words only) when given, then ``Reply: Yes / No / Later``.
     """
     if spec.name == jobs.MIQ.name:
-        return "\n".join(x for x in (_BODY[spec.name], overnight) if x)
+        return "\n".join(x for x in (_BODY[spec.name], overnight, one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, body_line, rides_line,
-                                      sleep_line) if x)
+                                      sleep_line, one_tap.choices_line(spec.answers)) if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
-        text = f"{what} Reply {', '.join(spec.answers[:-1])} or {spec.answers[-1]}."
-        line = feeds_evidence.line(phone)
-        return f"{text}\n{line}" if line else text
+        return "\n".join(x for x in (what, feeds_evidence.line(phone), one_tap.choices_line(spec.answers)) if x)
     return _BODY.get(spec.name, spec.send_title)
 
 

@@ -1,7 +1,7 @@
 """Day seven sends one number: the week review. Synthetic data only; fake push only.
 
 The week review wakes on the first habit cue event on or after day seven of a started week (an event,
-never a clock time), says the habit, "N of M logged days" and "Reply Keep or Drop.", and goes out once
+never a clock time), says the habit, "N of M logged days" and ends in "Reply: Keep / Drop", and goes out once
 per week (event key ``week_review:<week_of>``). Skipped and unlogged days stay out of M.
 """
 import json
@@ -86,7 +86,7 @@ class Text(unittest.TestCase):
                               (TODAY - timedelta(days=3)).isoformat(): "Done"})
         self.assertEqual(jobs.week_logged(h), (2, 3))
         self.assertEqual(jobs.week_review_text(h),
-                         "Synthetic habit: 2 of 3 logged days this week. Reply Keep or Drop.")
+                         "Synthetic habit: 2 of 3 logged days this week.")
 
     def test_sync_verdicts_count_and_taps_win(self):
         d0, d1 = (TODAY - timedelta(days=6)).isoformat(), (TODAY - timedelta(days=5)).isoformat()
@@ -100,12 +100,12 @@ class Text(unittest.TestCase):
     def test_no_logged_days_says_so_never_failed(self):
         h = week(6, checkins={(TODAY - timedelta(days=2)).isoformat(): "Skipped"})
         text = jobs.week_review_text(h)
-        self.assertEqual(text, "Synthetic habit: no days were logged this week. Reply Keep or Drop.")
+        self.assertEqual(text, "Synthetic habit: no days were logged this week.")
         self.assertNotIn("fail", text.lower())
 
     def test_runner_body_is_the_review_text(self):
         h = week(6, checkins={TODAY.isoformat(): "Done"})
-        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, h), jobs.week_review_text(h))
+        self.assertEqual(jobs_runner.body(jobs.WEEK_REVIEW, h), jobs.week_review_text(h) + "\nReply: Keep / Drop")
 
 
 class FakePush:
@@ -148,7 +148,7 @@ class Runner(unittest.TestCase):
                               (TODAY - timedelta(days=1)).isoformat(): "No"})
         row, calls = self.run_pass(h)
         self.assertEqual(row["action"], jobs.DELIVER, row)
-        self.assertEqual(calls, [("Week review", "Synthetic habit: 1 of 2 logged days this week. Reply Keep or Drop.",
+        self.assertEqual(calls, [("Week review", "Synthetic habit: 1 of 2 logged days this week.\nReply: Keep / Drop",
                                   f"week_review:{h['week_of']}")])
         self.assertEqual([s["job"] for s in self.sent()].count("week_review"), 1)
 
