@@ -172,9 +172,13 @@ class Cli(Base):
         self.assertEqual((p.returncode, p.stdout.splitlines()[0]), (0, "0 injections"))
 
     def test_writes_nothing(self):
+        cache = ROOT / "bin" / "__pycache__"
+        mine = lambda: sorted(p.name for p in cache.glob("limitless-tier-audit*")) if cache.is_dir() else []
+        before = mine()   # other bin scripts may have their own bytecode here (a deployed tree); only ours counts
         self.run_cli(env=self.env)
         self.assertFalse(self.log.exists())
-        self.assertFalse((ROOT / "bin" / "__pycache__").exists())
+        self.assertEqual(mine(), before)
+        self.assertEqual(before, [])
 
 
 if __name__ == "__main__":
