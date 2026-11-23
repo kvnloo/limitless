@@ -7,7 +7,10 @@
 The first non-blank line is the TLDR: kept as it is, in first place. The closing ``Reply: A / B / C`` line
 (one_tap.choices_line, the last line before any why-now line; also any closing line with the word "reply",
 such as an asks list's "Reply in any bot chat with the id") and the ``Why now: ...`` line
-(send_gate.outgoing) are always kept in their places; the Reply line is never cut, so a tap still parses.
+(send_gate.outgoing) are always kept in their places; the Reply line is never cut, so a tap still parses. A
+closing pre-filled reply (the wake brief's app-lists ask: the line that says reply, then the ``work apps: ...`` /
+``feed apps: ...`` lines, apps_reply.starts_reply) is kept whole the same way, never folded or cut, so it can be
+sent back as it is; with ``max_lines`` under its size the message may run past the limit by those lines.
 When the message has more than ``max_lines`` non-blank lines, the middle lines past the limit are folded into
 one plain line, "and four more lines in the plugin", the count said in words. Any other line longer than
 ``max_line_chars`` is cut at a word boundary and ends with an ellipsis, except a line that offers a link
@@ -28,7 +31,7 @@ from __future__ import annotations
 import re
 from typing import Mapping, Optional, Tuple
 
-from . import one_tap
+from . import apps_reply, one_tap
 from .send_gate import WHY_PREFIX
 from .tier_audit import SHAPE_HOOK as AUDIT_HOOK  # noqa: F401 - the hook of the one row kevin-push writes
 
@@ -89,6 +92,27 @@ def _asks_reply(line: str) -> bool:
     return one_tap.choices_of(line.strip()) is not None or bool(_REPLY_WORD.search(line))
 
 
+def _prefilled(line: str) -> bool:
+    """A pre-filled reply line the person can send back as is (apps_reply: ``work apps: ...`` / ``feed apps: ...``)."""
+    return apps_reply.starts_reply(line)
+
+
+def _closing(rest: list) -> list:
+    """Pop and return the closing lines that make the message answerable: a trailing run of pre-filled reply lines
+    with the one line before it that says reply (the app-lists ask), else one Reply / reply line, else none."""
+    j = len(rest)
+    while j > 0 and _prefilled(rest[j - 1]):
+        j -= 1
+    if j < len(rest):
+        if j > 0 and _REPLY_WORD.search(rest[j - 1]):
+            j -= 1
+    elif rest and _asks_reply(rest[-1]):
+        j -= 1
+    out = rest[j:]
+    del rest[j:]
+    return out
+
+
 def fit(title: str, body: str, lim: Optional[Mapping] = None) -> Tuple[str, int, int]:
     """(text, folded, cut): ``body`` held to ``lim`` (limits(); None = defaults), the number of middle lines
     folded into the one fold line, and the number of lines cut short."""
@@ -98,7 +122,7 @@ def fit(title: str, body: str, lim: Optional[Mapping] = None) -> Tuple[str, int,
     rows = [ln for ln in body.splitlines() if ln.strip()]
     head, rest = rows[0], rows[1:]
     why = [rest.pop()] if rest and _is_why(rest[-1]) else []
-    reply = [rest.pop()] if rest and _asks_reply(rest[-1]) else []
+    reply = _closing(rest)
     budget = lim["max_lines"] - 1 - len(reply) - len(why)
     folded = 0
     if len(rest) > budget:

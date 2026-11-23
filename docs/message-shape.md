@@ -9,6 +9,9 @@ attention is a currency. Many features add one line each to the wake brief, the 
 - The first line is the TLDR. It is kept as it is, in first place: never folded, never cut.
 - The closing Reply line (`Reply: Keep / Drop`, one_tap.choices_line) and the Why now line
   (send_gate.outgoing) are always kept in their places. The Reply line is never cut, so a tap still parses.
+- A closing pre-filled reply, the wake brief's app-lists ask ([apps-ask.md](apps-ask.md): the line that says
+  reply, then `work apps: ...` / `feed apps: ...`), is kept whole the same way, never folded or cut, so it can be
+  sent back as it is. With `message_max_lines` under its size the message runs past the limit by those lines.
 - A message with more than `message_max_lines` non-blank lines (default 6) keeps its first middle lines and
   folds the rest into one plain line, "and eleven more lines in the plugin", the count said in words. The
   week review's full text stays on its card (limitless_card_view).

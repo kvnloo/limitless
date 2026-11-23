@@ -14,7 +14,8 @@ when written within STALE_H, else stale; read from the packet's own generated_at
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
 live, or unknown as status missing; words only, never its value), then the apps lists row (off, or each list
-set from the environment, from config or from a reply; never an app name).
+set from the environment, from config or from a reply; never an app name), then the apps ask row (the wake
+brief's app-lists ask: off, waiting, told recently or not needed; words only).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -411,12 +412,31 @@ def apps_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> dict:
     return _row(APPS_ROW, "source", LIVE, "; ".join(words))
 
 
+APPS_ASK_ROW = "apps ask"
+APPS_ASK_WORDS = {   # apps_ask.state -> (status, reason); never an app name, a count or a date
+    "off": (OFF, "the wake brief never asks for the app lists (config apps_ask)"),
+    "waiting": (LIVE, "waiting: the next wake brief proposes the app lists once app time names a work or feed app"),
+    "told recently": (LIVE, "told recently: asked in a delivered brief this week; asked again after a week if "
+                            "both lists stay unset"),
+    "not needed": (LIVE, "not needed: an app list is set"),
+}
+
+
+def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The app-lists ask in the wake brief (apps_ask.state): off, waiting, told recently or not needed (a list is
+    set), words only. Reads config and the small apps.json / apps-ask.json files, never app time. Kind
+    ``source``: --strict does not count it. Read-only."""
+    from . import apps_ask
+    status, reason = APPS_ASK_WORDS[apps_ask.state(cfg, state_path(cfg, env), now, env)]
+    return _row(APPS_ASK_ROW, "source", status, reason)
+
+
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
-    come from (apps_row), then the voice MIQ's row (voice_miq_row) just before the context packet's.
+    come from (apps_row), then the app-lists ask (apps_ask_row), then the voice MIQ's row (voice_miq_row) just before the context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -425,7 +445,8 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
-    rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), voice_miq_row(reader, cfg, now)]
+    rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
+             voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
