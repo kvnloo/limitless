@@ -14,6 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from limitless import delivery_audit  # noqa: E402
+from limitless import held as held_mod  # noqa: E402
+
 CLI = ROOT / "bin" / "kevin-push"
 KEY = "wake_brief:1999990000"
 
@@ -72,6 +77,13 @@ class KevinPushHeld(unittest.TestCase):
         self.assertEqual([x["how"] for x in self.logs()], ["held (sleep mode)"] * 4)
         self.assertEqual([x["body"] for x in self.logs()], ["brief one", "brief two", "brief three", "brief four"])
         self.assertEqual(self.calls(), 0)
+
+    def test_the_audit_still_sees_every_attempt_and_the_reader_lists_one(self):
+        for _ in range(3):
+            self.push("limitless", "Wake-up brief", "the brief", "--once", KEY, CIRCADIAN_CLASS="digest")
+        rows, skipped = delivery_audit.read_log(self.st / "log.jsonl")
+        self.assertEqual(([r["how"] for r in rows], skipped), (["held (sleep mode)"] * 3, 0))
+        self.assertEqual([r["body"] for r in held_mod.rows(self.st / "held.jsonl")], ["the brief"])
 
     def test_same_title_and_body_without_a_key_is_held_once(self):
         self.push("x", "Pick one", "keep the loop")
