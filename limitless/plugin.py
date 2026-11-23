@@ -185,6 +185,10 @@ def _experiment(args, now):
     return tools.experiment(state_dir(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _result_tier(args, now):
+    return result_tier.tool()
+
+
 def _card_view(args, now):
     kind = args.get("kind", "state")
     return card_view.view(state_dir(), now, date.fromtimestamp(now), kind if isinstance(kind, str) else "",
@@ -527,6 +531,16 @@ off), protected_devices and last_warnings_this_week in words such as two devices
 when the audit log is off}; modality derived, age_h null, a digit-free T1 label. Never names a serial or a \
 display. Test phone and desktop UI on an agent display, never on the person's screen. Read-only; nothing is \
 written, sent or run on a device."), _focus_safe, "🖥️"),
+    "limitless_result_tier": (_schema(
+        "limitless_result_tier",
+        "Whether the result tier filter is on: when config t0_tools lists health tools by name glob (an MCP \
+tool is mcp__<server>__<tool>, so mcp__<server>__* covers one server), every number in such a tool's result \
+(readings with or without a unit, timestamps, ids that are numbers) becomes the words a number before the result \
+enters context, keys and words kept and JSON kept valid; off with no globs or with config raw_numbers_opt_in. \
+Each replaced result leaves one content-free audit row (the glob and the count, never a value). The value is \
+{filter (on or off), tool_globs and raw_numbers_opt_in in words, host_hook (known, or unknown when this host has \
+no transform_tool_result hook)}; modality derived, age_h null, a digit-free T1 label. Never names a glob or a \
+tool. Read-only; nothing is written or sent."), _result_tier, "🔢"),
 }
 
 

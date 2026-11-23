@@ -34,6 +34,12 @@ register(ctx) adds the hook only when the host knows the name: the published ctx
 names, so it reads ``VALID_HOOKS`` from the host's already-loaded ``hermes_cli.plugins`` module
 (sys.modules only, never an import). A host without that module or without the name (an older Hermes, a test
 ctx) gets nothing and one content-free log line; the plugin's tools and other hooks load either way.
+
+The tool (``tool``, limitless_result_tier) is read-only: ``value {filter (on or off), tool_globs (no globs, one
+glob, two globs ... ten globs, many globs), raw_numbers_opt_in (on or off), host_hook (known, or unknown: this
+host has no transform_tool_result hook)}``, modality derived, age_h None and a digit-free T1 label (result
+filter off: no health tools listed; result filter off: raw numbers opted in; result filter on: two tool globs,
+with ``, but this host has no result hook`` when the host lacks the hook). It never names a glob or a tool.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -193,3 +199,35 @@ def register(ctx, clock: Callable[[], float] = time.time) -> None:
         ctx.register_hook(HOOK_NAME, make_transform_tool_result(clock=clock))
     except Exception:  # noqa: BLE001 - a host's hook API must never break plugin registration
         logger.warning(HOST_FAILED)
+
+
+MODALITY = "derived"
+HOOK_UNKNOWN = "unknown: this host has no transform_tool_result hook"
+_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def _globs_in_words(n: int, noun: str = "glob") -> str:
+    if n <= 0:
+        return f"no {noun}s"
+    if n == 1:
+        return f"one {noun}"
+    return f"{_WORDS[n - 1]} {noun}s" if n <= len(_WORDS) else f"many {noun}s"
+
+
+def label(globs: tuple, opt_in: bool, known: bool) -> str:
+    if not globs:
+        return "result filter off: no health tools listed"
+    if opt_in:
+        return "result filter off: raw numbers opted in"
+    on = f"result filter on: {_globs_in_words(len(globs), 'tool glob')}"
+    return on if known else on + ", but this host has no result hook"
+
+
+def tool(env: Optional[Mapping[str, str]] = None, home=None) -> dict:
+    """limitless_result_tier: the filter's state in words. Read-only; never names a glob."""
+    globs, opt_in = settings(config(env, home))
+    known = host_knows(HOOK_NAME)
+    value = {"filter": "on" if globs and not opt_in else "off", "tool_globs": _globs_in_words(len(globs)),
+             "raw_numbers_opt_in": "on" if opt_in else "off", "host_hook": "known" if known else HOOK_UNKNOWN}
+    return {"value": value, "modality": MODALITY, "age_h": None, "evidence_tier": "direct",
+            "label": {"label": label(globs, opt_in, known), "tier": "T1", "modality": MODALITY}}

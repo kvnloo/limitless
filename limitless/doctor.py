@@ -148,12 +148,17 @@ OFF_WHEN = {
                          "no memory palace link set (config palace_link)"),
     "limitless_outages": (lambda e: (e.get("value") or {}).get("label") == "off",
                           "the input outage notice is off (config input_outage)"),
+    "limitless_result_tier": (lambda e: (e.get("value") or {}).get("tool_globs") == "no globs",
+                              "no health tools listed (config t0_tools)"),
     "limitless_card_view": (lambda e: bool(e.get("note")),
                             "no card dir set (config card_dir): the card is rendered only"),
 }
 # a null value whose reason says an input or feature is not configured: "...: set X in config", "... set"
 _NOT_SET = re.compile(r": set \S|\bset$|\bset \(")
 _DIGITS = re.compile(r"\d+(?:[.,:]\d+)*")
+# config keys a reason names whose digit is part of the name, not a value: kept as they are by words()
+CONFIG_KEYS_WITH_A_DIGIT = ("t0_tools",)
+_KEYS = re.compile("(" + "|".join(re.escape(k) for k in CONFIG_KEYS_WITH_A_DIGIT) + ")")
 TIER_WORDS = {
     "direct": "answers from direct evidence",
     "indirect": "answers from a proxy",
@@ -163,8 +168,9 @@ TIER_WORDS = {
 
 
 def words(text) -> str:
-    """A reason as words only: every number becomes "a number"."""
-    return _DIGITS.sub("a number", str(text)).strip()
+    """A reason as words only: every number becomes "a number"; a key in CONFIG_KEYS_WITH_A_DIGIT stays."""
+    return "".join(p if p in CONFIG_KEYS_WITH_A_DIGIT else _DIGITS.sub("a number", p)
+                   for p in _KEYS.split(str(text))).strip()
 
 
 def _unknown(value) -> bool:

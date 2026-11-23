@@ -22,7 +22,7 @@ CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_experiment", "limitless_explain_back", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
          "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_outages", "limitless_overnight",
-         "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_state",
+         "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_result_tier", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
@@ -146,6 +146,15 @@ def owner_db(path, at=NOW - 30 * 3600):
     return path
 
 
+# hooks plugin.py registers only when the host knows the name (feature detection): a bare FakeCtx has no host
+HOST_DETECTED_HOOKS = {"transform_tool_result"}
+
+
+def fake_ctx_hooks():
+    """The manifest's hooks a bare FakeCtx gets: all but the host-detected ones (test_result_tier_register)."""
+    return sorted(set(manifest_list("provides_hooks")) - HOST_DETECTED_HOOKS)
+
+
 def manifest_list(key):
     """The YAML list under `key:` in plugin.yaml (stdlib only: simple '  - item' lines)."""
     lines = (ROOT / "plugin.yaml").read_text().splitlines()
@@ -177,8 +186,7 @@ class PluginSkeleton(unittest.TestCase):
         ctx = FakeCtx()
         load_plugin().register(ctx)
         self.assertEqual(sorted(ctx.tools), sorted(manifest_list("provides_tools")))
-        # transform_tool_result is feature-detected: a bare fake ctx has no host (test_result_tier_register)
-        self.assertEqual(sorted(ctx.hooks), sorted(set(manifest_list("provides_hooks")) - {"transform_tool_result"}))
+        self.assertEqual(sorted(ctx.hooks), fake_ctx_hooks())
         for name, t in ctx.tools.items():
             self.assertEqual(t["schema"]["name"], name)
             self.assertEqual(t["toolset"], "limitless")

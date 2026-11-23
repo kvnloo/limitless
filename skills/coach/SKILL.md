@@ -56,6 +56,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | Which recurring check-ins exist and what wakes them? | limitless_schedule |
 | Show me today's card, the week or the skill tree | limitless_card_view |
 | Is the focus guard on? | limitless_focus_safe |
+| Are health tools' raw numbers kept out of the prompt? | limitless_result_tier |
 
 Writes are few and named: `limitless_capture` appends what the person said, and `limitless_habit`
 starts a week or locks a prediction only with `confirm: true`. Every other tool only reads.
