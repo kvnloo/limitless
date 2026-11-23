@@ -107,6 +107,10 @@ def _flow_metrics(args, now):
     return tools.flow_metrics(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _propose(args, now):
+    return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -268,6 +272,17 @@ resumed after such a switch, in plain words: work stayed in long blocks, work wa
 unknown with the reason. A proxy (evidence_tier observed-activity): app activity, not attention or output; no \
 score, no target. Counts and the words only; the numbers need the person's raw opt-in. No work apps or no data \
 is unknown, never zero. Read-only; nothing is written or sent."), _flow_metrics, "🧩"),
+    "limitless_propose": (_schema(
+        "limitless_propose",
+        "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \
+or NO_SUGGESTION when nothing clearly fits; doing nothing is the default. First match wins: asleep, quiet \
+(off, quiet tonight, snoozed), a focus block or focused mode give NO_SUGGESTION; then an open post-wake peak \
+with a peak ask waiting (decide the one waiting ask), a trough window with an Anki collection set (a short \
+Anki review), a running habit week with today unanswered (answer today's habit check-in). Unknown labels \
+never trigger a rule; no rule uses a clock time. The value is {action, because, rule_id, evidence (the label \
+names used), note}, digit-free; modality derived, evidence_tier the weakest of the labels used. It only \
+suggests: the agent must ask the person before doing anything. Read-only; nothing is written, sent, \
+scheduled or started."), _propose, "🪶"),
 }
 
 
