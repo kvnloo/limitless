@@ -84,6 +84,7 @@ tool limitless_blocks: missing: focus blocks unknown: no readable ActivityWatch 
 tool limitless_flow_metrics: missing: flow metrics unknown: no readable ActivityWatch DB (aw_db)
 tool limitless_flow_ledger: off: flow ledger unknown: no work apps set (flow_work_apps)
 tool limitless_ideas: stale: answers, but its evidence is stale or of unknown age
+tool limitless_delivery: off: no push log set (config push_log)
 tool limitless_phase: live: answers from a proxy
 tool limitless_explain_back: stale: answers, but its evidence is stale or of unknown age
 tool limitless_propose: stale: answers, but its evidence is stale or of unknown age
