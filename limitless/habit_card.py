@@ -28,11 +28,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Tuple
+from datetime import date
+from typing import Any, Mapping, Optional, Tuple
 
 DONE, NO, SKIP = "Done", "No", "Skip"
 REPLIES = (DONE, NO, SKIP)
 MAX_START_S = 120
+CHECKINS = "checkins"           # the card state's table: {ISO day: Done | No}
 _EVENT = re.compile(r"[a-z]+(?:_[a-z]+)*")
 
 
@@ -62,3 +64,32 @@ class HabitCard:
         if tuple(self.replies) != REPLIES:
             raise ValueError(f"the replies are {REPLIES}, got {self.replies!r}")
         object.__setattr__(self, "replies", REPLIES)
+
+
+def reply(v: Any) -> Optional[str]:
+    """Done | No | Skip for a reply naming one (any case, spaces around ignored); None for anything else."""
+    w = v.strip().lower() if isinstance(v, str) else None
+    for r in REPLIES:
+        if w == r.lower():
+            return r
+    return None
+
+
+def _day(day: Any) -> Any:
+    return day.isoformat() if isinstance(day, date) else day
+
+
+def record(card_state: Optional[Mapping], day: Any, answer: Any) -> dict:
+    """A new card state with the day's reply: Done or No is the day's entry, Skip leaves the day with no entry
+    (unlogged), anything else leaves the table as it was. ``day`` is an ISO date (a ``date`` is written as one).
+    Every key besides ``checkins`` is kept; the input is never changed. The caller stores the result."""
+    out = dict(card_state) if isinstance(card_state, Mapping) else {}
+    table = out.get(CHECKINS)
+    checkins = dict(table) if isinstance(table, Mapping) else {}
+    r = reply(answer)
+    if r in (DONE, NO):
+        checkins[_day(day)] = r
+    elif r == SKIP:
+        checkins.pop(_day(day), None)
+    out[CHECKINS] = checkins
+    return out
