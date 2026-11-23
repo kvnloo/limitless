@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""limitless-noop-export [--write]: wearable sleep and pre-sleep heart rate from a copy of the NOOP app's DB.
+
+Reads config "noop_db" (the operator's copy of the NOOP Android database; relative paths are in the state dir)
+strictly read-only and builds one sleep summary row per night and one pre-sleep heart-rate row per night (see
+limitless/noop_export.py and docs/noop-export.md). By default a dry run: it prints the counts in words and
+writes nothing. With --write the rows are merged by night into config "sleep_file" and "presleep_hr_file"
+(temp file + rename, mode 0600); a rerun with nothing new says "unchanged" and leaves the bytes as they were.
+
+Exit 0 when done, and also when there is nothing to export (no DB configured, missing, or a schema this tool
+does not know): one plain line says why and nothing is written. Exit 1 when a file cannot be written, exit 2
+for bad arguments. It never prints a path, a device, a reading or a traceback, and never sends.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import noop_export  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(noop_export.main(sys.argv[1:]))
