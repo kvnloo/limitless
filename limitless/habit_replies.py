@@ -248,9 +248,16 @@ def hermes_db_path(state_dir, env: Optional[Mapping[str, str]] = None,
     env = os.environ if env is None else env
     if arg:
         return Path(arg).expanduser()
+    return hermes_db_from(state_dir, config(env, home), env)
+
+
+def hermes_db_from(state_dir, cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """hermes_db_path with the config already read: $LIMITLESS_HERMES_DB, else ``cfg["hermes_db"]`` (relative:
+    in the state dir); None when neither is set."""
+    env = os.environ if env is None else env
     if env.get(ENV_KEY):
         return Path(env[ENV_KEY]).expanduser()
-    v = config(env, home).get(CONFIG_KEY)
+    v = cfg.get(CONFIG_KEY) if isinstance(cfg, Mapping) else None
     if not isinstance(v, str) or not v:
         return None
     p = Path(v).expanduser()

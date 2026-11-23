@@ -5,6 +5,7 @@ Synthetic runs.jsonl rows and the synthetic session DB of tests/hermes_db_fixtur
 pushes or starts a process.
 """
 import json
+import os
 import stat
 import sys
 import tempfile
@@ -218,6 +219,132 @@ class Due(Base):
         spec = jobs.APPS_INGEST
         self.assertEqual((spec.trigger_event, spec.expires), ("sync", "sync"))
         self.assertNotIn(spec.name, jobs.SPECS, "not a message job")
+
+
+CLOCK = r"\d{1,2}:\d{2}|\b\d{1,2}\s*(am|pm)\b|\bcron\b|\*/"
+
+
+class ScheduleCard(Base):
+    def card(self):
+        from limitless import schedule_cards
+        return schedule_cards.apps_ingest_card()
+
+    def test_one_card_on_the_sync_event_that_sends_nothing(self):
+        from limitless import schedule_cards
+        c = self.card()
+        self.assertEqual(set(c), {"id", "kind", "name", "description", "trigger", "ends", "window",
+                                  "stale_after_s", "once_key", "budget", "per_window", "sender", "words"})
+        self.assertEqual((c["id"], c["kind"], c["name"]), ("apps_ingest", "schedule", JOB))
+        self.assertEqual((c["trigger"], c["ends"]), ("sync", "sync"))
+        self.assertIn(c["trigger"], jobs.EVENTS)
+        self.assertEqual((c["budget"], c["sender"], c["per_window"]), (0, schedule_cards.LOCAL, 1))
+        self.assertEqual(c["once_key"], "apps_ingest:<sync run time>")
+        self.assertIn("after each sync run", c["description"])
+        self.assertIn("nothing is sent", c["description"])
+        self.assertEqual(c["words"]["runs"], "limitless-jobs --send")
+
+    def test_the_card_is_digit_free_with_no_clock_no_id_and_no_name(self):
+        c = self.card()
+        self.assertNotRegex(c["description"], r"\d")
+        self.assertNotRegex(c["once_key"].replace("<sync run time>", ""), CLOCK)
+        for k, v in c["words"].items():
+            self.assertNotRegex(v, r"\d", k)
+            self.assertNotIn("_", v, k)
+        self.assertNoNames(json.dumps(c))
+
+    def test_cards_add_it_only_when_the_job_is_on(self):
+        from limitless import schedule_cards
+        self.assertEqual([x["id"] for x in schedule_cards.cards()], list(jobs.SPECS))
+        self.assertEqual([x["id"] for x in schedule_cards.cards(noop=True, apps=True)],
+                         list(jobs.SPECS) + ["noop_export", "apps_ingest"])
+
+    def test_the_schedule_tool_shows_it_when_config_turns_it_on(self):
+        from limitless import tools
+        from limitless.state_reader import StateReader
+        self.config()
+        ids = [x["id"] for x in tools.schedule(StateReader(self.st), NOW, self.env, self.dir)["value"]["cards"]]
+        self.assertNotIn("apps_ingest", ids)
+        self.config(apps_ingest="dry_run")
+        got = tools.schedule(StateReader(self.st), NOW, self.env, self.dir)
+        self.assertIn("apps_ingest", [x["id"] for x in got["value"]["cards"]])
+        self.assertIn("label", got, "the plain words stay digit-free")
+
+    def test_a_host_gets_the_card_at_register_when_the_job_is_on(self):
+        sys.path.insert(0, str(ROOT / "tests"))
+        from test_schedule_register import CardCtx, HostRegistration
+        self.config(apps_ingest="write")
+        ctx = CardCtx()
+        reg = HostRegistration("test_the_method_name_is_the_documented_one")
+        reg.register(ctx, {"LIMITLESS_CONFIG": str(self.cfg_path), "LIMITLESS_STATE": str(self.st)})
+        reg.doCleanups()
+        self.assertEqual([c["id"] for c in ctx.cards], list(jobs.SPECS) + ["apps_ingest"])
+
+
+class Doctor(Base):
+    def doc_row(self, now=NOW):
+        from limitless import doctor
+        from limitless.state_reader import StateReader, config
+        return doctor.apps_ingest_row(StateReader(self.st), config(self.env, self.dir), now, env=self.env)
+
+    def check(self, r, status, *words):
+        self.assertEqual((r["name"], r["kind"], r["status"]), ("job apps ingest", "job", status), r)
+        for w in words:
+            self.assertIn(w, r["reason"])
+        self.assertNotRegex(r["reason"], r"\d")
+        self.assertNotIn("/", r["reason"])
+        self.assertNoNames(r["reason"])
+
+    def test_off_by_default(self):
+        self.config()
+        self.check(self.doc_row(), "off", "off (config apps_ingest)")
+
+    def test_on_with_no_hermes_db_is_stale_and_skipped(self):
+        self.config(apps_ingest="write", hermes_db=None)
+        self.runs(sync(NOW - H))
+        self.check(self.doc_row(), "stale", "no Hermes DB set (config hermes_db)")
+
+    def test_on_with_no_sync_yet_is_stale(self):
+        self.config(apps_ingest="write")
+        self.check(self.doc_row(), "stale", "no sync run")
+
+    def test_a_sync_it_has_not_run_after_is_stale(self):
+        self.config(apps_ingest="write")
+        self.runs(sync(NOW - H))
+        self.check(self.doc_row(), "stale", "has not run after it", "limitless-jobs --send")
+
+    def test_live_after_a_write(self):
+        self.config(apps_ingest="write")
+        self.runs(sync(NOW - 3 * H))
+        self.once(NOW - 2 * H)
+        self.check(self.doc_row(), "live", "write mode", "about two hours ago", "wrote the app lists")
+
+    def test_live_in_dry_run_says_it_writes_nothing(self):
+        self.config(apps_ingest="dry_run")
+        self.runs(sync(NOW - H))
+        self.once()
+        self.check(self.doc_row(), "live", "dry run", "would write the app lists", "under an hour ago")
+
+    def test_live_with_nothing_new(self):
+        self.config(apps_ingest="write")
+        self.runs(sync(NOW - H))
+        self.once()
+        self.runs(sync(NOW - H), sync(NOW))
+        self.once(NOW + 60)
+        self.check(self.doc_row(NOW + 60), "live", "no new apps reply")
+
+    def test_the_row_follows_the_apps_lists_row_and_strict_ignores_it(self):
+        from limitless import doctor
+        from unittest import mock
+        self.config(apps_ingest="write")
+        with mock.patch.dict(os.environ, self.env):
+            rows = doctor.report({"state": str(self.st), "apps_ingest": "write"}, NOW)
+        names = [r["name"] for r in rows]
+        self.assertEqual(names.index("job apps ingest"), names.index(doctor.APPS_ROW) + 1)
+        self.assertEqual(names[-1], "job NOOP export")
+        r = rows[names.index("job apps ingest")]
+        self.assertEqual(r["kind"], "job")
+        live = [dict(x, status="live") for x in rows if x["kind"] != "job"]
+        self.assertFalse(doctor.strict_failed(live + [r]))
 
 
 if __name__ == "__main__":
