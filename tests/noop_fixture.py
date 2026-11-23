@@ -56,6 +56,7 @@ def make_db(path, *, sessions=(), hr=(), devices=None, dismissed=(), drop=None, 
     ]
     con = sqlite3.connect(str(path))
     try:
+        con.execute("PRAGMA synchronous=OFF")   # a throwaway test file: no fsync
         for name, cols in TABLES.items():
             if name == drop:
                 continue

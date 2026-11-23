@@ -23,12 +23,15 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
+from .presleep_hr import MAX_BPM, MEASURED, MIN_BPM
 from .sleep import EVENING_FROM_H
 from .state_reader import MAX_ASLEEP_S
 
 SOURCE = "noop"              # the one source name the sleep rows carry: never a device, model or id
 WEARABLE_KINDS = ("liveBLE", "historyBLE", "oura", "huami")   # pairedDevice.sourceKind read straight off a strap
 ASLEEP_STAGES = ("light", "deep", "rem")
+WINDOW_S = 30 * 60           # pre-sleep window: the half hour right before the night's onset, [onset - WINDOW_S, onset)
+MIN_SAMPLES = 10             # fewer plausible heart-rate samples in that window: no row for the night
 NO_FILE = "no NOOP database at the configured path"
 NOT_NOOP = "the configured file is not a readable SQLite database"
 SCHEMA_PREFIX = "not a NOOP database this exporter knows: "
@@ -165,6 +168,24 @@ def sleep_nights(sessions, tz=None) -> tuple:
     return {n: best[n] for n in sorted(best)}, skipped
 
 
+def presleep_bpm(con, device, onset: int) -> tuple:
+    """(mean bpm rounded to a tenth | None, plausible samples) of ``device``'s own ``hrSample`` rows in
+    ``[onset - WINDOW_S, onset)``: the window is anchored on the onset event, never a clock time. A sample outside
+    presleep_hr's MIN_BPM..MAX_BPM is not a heart rate and is not counted; under MIN_SAMPLES is None."""
+    rows = con.execute("SELECT bpm FROM hrSample WHERE deviceId = ? AND ts >= ? AND ts < ?",
+                       (device, onset - WINDOW_S, onset)).fetchall()
+    vals = [float(b) for (b,) in rows
+            if not isinstance(b, bool) and isinstance(b, (int, float)) and math.isfinite(b) and MIN_BPM <= b <= MAX_BPM]
+    if len(vals) < MIN_SAMPLES:
+        return None, len(vals)
+    return round(sum(vals) / len(vals), 1), len(vals)
+
+
+def presleep_row(night: str, bpm: float) -> dict:
+    """The presleep_hr_file row for one night: only the fields StateReader.presleep_hr_rows reads."""
+    return {"night": night, "bpm": bpm, "modality": MEASURED}
+
+
 def sleep_row(s: dict) -> dict:
     """The sleep_file row for one night: only the fields StateReader.sleep_rows reads."""
     return {"night": s["night"], "asleep_s": s["asleep_s"], "source": SOURCE, "start": _iso(s["onset"]),
@@ -183,8 +204,16 @@ def read(db_path, tz=None) -> dict:
             if reason is not None:
                 return _empty(reason)
             nights, skipped = sleep_nights(_sessions(con, parts), tz)
+            skipped["too_few_hr"] = 0
+            pre = []
+            for s in nights.values():
+                bpm, _n = presleep_bpm(con, s["device"], s["onset"])
+                if bpm is None:
+                    skipped["too_few_hr"] += 1
+                else:
+                    pre.append(presleep_row(s["night"], bpm))
             out = _empty(None)
-            out.update(sleep=[sleep_row(s) for s in nights.values()], skipped=skipped)
+            out.update(sleep=[sleep_row(s) for s in nights.values()], presleep=pre, skipped=skipped)
             return out
         finally:
             con.close()

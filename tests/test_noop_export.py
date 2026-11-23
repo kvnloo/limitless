@@ -174,5 +174,66 @@ class Sleep(Base):
         self.assertEqual(len(got["sleep"]), 1)
 
 
+class PreSleepHr(Base):
+    D = date(2030, 1, 10)
+
+    def presleep(self, sessions, hr, **kw):
+        make_db(self.db, sessions=sessions, hr=hr, **kw)
+        got = nx.read(self.db, tz=UTC)
+        self.assertIsNone(got["reason"])
+        return got
+
+    def night(self, on, hours=8):
+        return (RING, on, on + hours * H, 0.9, stages(on, (hours - 1) * H, H))
+
+    def test_the_mean_over_the_window_before_onset_is_the_nights_row(self):
+        on = at(self.D, 23)
+        hr = hr_before(RING, on, 60, n=15) + hr_before(RING, on - 15 * 60, 64, n=15)
+        got = self.presleep([self.night(on)], hr)
+        self.assertEqual(got["presleep"], [{"night": "2030-01-10", "bpm": 62.0, "modality": "measured"}])
+
+    def test_the_window_is_anchored_on_each_nights_onset_never_a_clock_time(self):
+        on1, on2 = at(self.D, 22), at(self.D + timedelta(days=1), 23, 45)
+        hr = (hr_before(RING, on1, 58) + hr_before(RING, on2, 66)
+              + [(RING, on1 + 60 * i, 90) for i in range(30)]                    # after onset: asleep, not read
+              + [(RING, on1 - nx.WINDOW_S - 60 * (i + 1), 90) for i in range(30)])  # before the window
+        got = self.presleep([self.night(on1), self.night(on2)], hr)
+        self.assertEqual([(r["night"], r["bpm"]) for r in got["presleep"]],
+                         [("2030-01-10", 58.0), ("2030-01-11", 66.0)])
+
+    def test_a_hand_set_onset_moves_the_window(self):
+        on = at(self.D, 23)
+        moved = on + 3600
+        hr = hr_before(RING, on, 60) + hr_before(RING, moved, 70)
+        got = self.presleep([self.night(on) + (moved,)], hr)
+        self.assertEqual(got["presleep"][0]["bpm"], 70.0)
+
+    def test_too_few_samples_is_no_row_never_a_guess(self):
+        on = at(self.D, 23)
+        got = self.presleep([self.night(on)], hr_before(RING, on, 60, n=nx.MIN_SAMPLES - 1))
+        self.assertEqual(got["presleep"], [])
+        self.assertEqual(got["skipped"]["too_few_hr"], 1)
+        self.assertEqual(len(got["sleep"]), 1)
+
+    def test_only_the_sleeping_wearables_own_plausible_samples_count(self):
+        on = at(self.D, 23)
+        hr = (hr_before(RING, on, 60, n=nx.MIN_SAMPLES - 1)
+              + hr_before(IMPORT, on, 60, n=30)                           # another source: never read
+              + [(RING, on - 30 * 60 + 7, 0), (RING, on - 30 * 60 + 9, 300)])  # not heart rates
+        got = self.presleep([self.night(on)], hr)
+        self.assertEqual(got["presleep"], [])
+
+    def test_no_wearable_night_is_no_presleep_row(self):
+        on = at(self.D, 23)
+        got = self.presleep([(PHONE, on, on + 8 * H, 0.9, None)], hr_before(PHONE, on, 60))
+        self.assertEqual(got["presleep"], [])
+
+    def test_the_bpm_is_rounded_to_a_tenth(self):
+        on = at(self.D, 23)
+        hr = hr_before(RING, on, 60, n=2) + hr_before(RING, on - 120, 61, n=1) + hr_before(RING, on - 180, 60, n=9)
+        got = self.presleep([self.night(on)], hr)
+        self.assertEqual(got["presleep"][0]["bpm"], round((60 * 11 + 61) / 12, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
