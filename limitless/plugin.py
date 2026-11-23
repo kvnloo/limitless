@@ -124,6 +124,10 @@ def _schedule(args, now):
     return tools.schedule(_reader(), now)
 
 
+def _habit_next(args, now):
+    return tools.habit_next(state_dir(), now, date.fromtimestamp(now))
+
+
 def _loop(args, now):
     return tools.loop(state_dir(), now, date.fromtimestamp(now))
 
@@ -210,6 +214,16 @@ TOOLS = {
                                                       "this habit, locking this prediction or writing this "
                                                       "receipt in this turn; otherwise leave it out."}}),
         _habit, "🌱"),
+    "limitless_habit_next": (_schema(
+        "limitless_habit_next",
+        "The next habit to offer from the short habit catalogue (docs/habit-catalogue.md: foundation first, \
+easiest first, at most eight), for when a week ended with Drop or before the first week: the first habit not \
+kept and not running; a dropped habit comes back only after every other one was tried; null with a plain reason \
+when every habit is kept or running. The value is {id, name, cue (an event, never a clock time), start (a \
+two-minute first step)}; modality derived, age_h null, evidence_tier that of the newest self-reported decision \
+used (none before any week was decided); a digit-free T1 label. It only suggests: offer it once, and start it \
+only after the person says start habit, through limitless_habit start with confirm. One habit a week; no \
+streak, no score. Read-only; nothing is written, sent or started."), _habit_next, "🪜"),
     "limitless_loop": (_schema(
         "limitless_loop",
         "The closed loop of the last few habit weeks, newest first, one row per week written after the person \
