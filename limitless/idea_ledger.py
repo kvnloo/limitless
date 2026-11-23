@@ -238,3 +238,17 @@ def label(w: Optional[dict]) -> str:
 def t1(w: Optional[dict]) -> dict:
     """label() as a T1 label dict."""
     return {"label": label(w), "tier": TIER, "modality": MODALITY}
+
+
+REVIEW = "Ideas recorded this week: {}."
+
+
+def review_line(w: Optional[dict]) -> str:
+    """The week review's one line: "Ideas recorded this week: a few, none triaged.", "...: none." Digit-free."""
+    n = (w or {}).get("recorded") or 0
+    t = (w or {}).get("triaged") or 0
+    if n <= 0:
+        return REVIEW.format("none")
+    if n == 1:
+        return REVIEW.format("one, triaged" if t else "one, not triaged yet")
+    return REVIEW.format(f"{amount(n)}, {'none triaged' if t <= 0 else 'all triaged' if t >= n else 'some triaged'}")

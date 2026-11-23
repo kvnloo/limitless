@@ -45,7 +45,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import habit_catalogue
+from . import habit_catalogue, idea_ledger as _idea_ledger
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_ledger as _flow_ledger, \
     flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
@@ -80,7 +80,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
          anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "",
-         wind_down_line: str = "", rule_line: str = "", presleep_line: str = "") -> str:
+         wind_down_line: str = "", rule_line: str = "", presleep_line: str = "", ideas_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -94,7 +94,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
     proxy, in words), then ``presleep_line`` (week_presleep_hr: the wearable's pre-sleep heart rate against the
     usual, in words, next to the night), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
-    ``anki_line`` (week_anki: this week's Anki reviews in words), then ``rule_line`` (week_rule: what the stop
+    ``anki_line`` (week_anki: this week's Anki reviews in words), then ``ideas_line`` (week_ideas: the idea
+    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``rule_line`` (week_rule: what the stop
     rule picked at the week's start says, "Your rule says: keep it"), each as one more line
     when given, then ``Reply: Keep / Drop``: the rule only suggests, the reply decides. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
@@ -111,7 +112,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
                                       passive, flow, fragment, body_line,
-                                      rides_line, sleep_line, presleep_line, naps_line, anki_line, rule_line,
+                                      rides_line, sleep_line, presleep_line, naps_line, anki_line, ideas_line,
+                                      rule_line,
                                       one_tap.choices_line(spec.answers))
                          if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
@@ -551,6 +553,21 @@ def week_anki(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]]
         return ""
 
 
+def week_ideas(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None) -> str:
+    """The week review's idea-ledger line (idea_ledger.review_line of idea_ledger.week over the seven days up to
+    ``now``), digit-free, through tier_audit.gate (hook ``week_review:ideas``); "" when no ledger is set, the
+    line is blocked or the ledger cannot be read. Never the idea text; it never triages. Read-only."""
+    try:
+        reader = StateReader(Path(state_dir))
+        if reader.idea_ledger_path(env, home) is None:
+            return ""
+        line = _idea_ledger.review_line(_idea_ledger.week(reader.idea_ledger_rows(env, home), now))
+    except Exception:  # noqa: BLE001 - a broken ledger must not stop the review
+        return ""
+    return _gated("week_review:ideas", line, env, home)
+
+
 def week_rule(habit: Optional[dict], synced: Optional[dict] = None, env: Optional[Mapping[str, str]] = None,
               home: Optional[Path] = None) -> str:
     """The week review's stop-rule line (stop_rule.review_line of stop_rule.verdict for habit.json's rule),
@@ -637,10 +654,12 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 anki_line = week_anki(state_dir, p.habit, env, home, tz, today) if review else ""
                 naps_line = week_naps(state_dir, env, home, today, tz) if review else ""
                 rule_line = week_rule(p.habit, p.synced, env, home) if review else ""
+                ideas_line = week_ideas(state_dir, now, env, home) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
                             body_line, plan, rides_line, sleep_line, fragment, anki_line,
                             target_days=weekly_target.target_days(env, home), naps_line=naps_line,
-                            wind_down_line=wind, rule_line=rule_line, presleep_line=presleep_line)
+                            wind_down_line=wind, rule_line=rule_line, presleep_line=presleep_line,
+                            ideas_line=ideas_line)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
