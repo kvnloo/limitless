@@ -10,7 +10,7 @@ from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, 
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
-               sleep as _sleep)
+               sleep as _sleep, weekly_target as _weekly_target)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
@@ -166,6 +166,10 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
     ``passive`` (passive_habit.summary: days_measured, days_met, modality proxy, a T1 label) is what the
     configured passive habit file measured for this week's days so far; it never changes a check-in,
     ``counts`` or ``logged``, and is absent when there is no such row (unknown, not zero).
+    ``target`` (weekly_target.progress: done, logged, target, reached and a digit-free T1 label) is the
+    week so far against config ``habit_target_days`` (default four of seven; wording, not a rule): No,
+    Skipped and unlogged days never reduce it, there is no streak and nothing resets. The label is a proxy
+    when the sync filled a day.
     With no confirmed week, see _no_week.
     """
     h = reader.habit()
@@ -204,6 +208,9 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
     passive = passive_habit.view(reader, start, today, env, home)
     if passive is not None:
         value["passive"] = passive   # beside the check-ins, never merged into them
+    value["target"] = _weekly_target.progress(
+        {d["date"]: d["checkin"] for d in days}, start, today, _weekly_target.target_days(env, home),
+        "proxy" if any(d["from"] == "sync" for d in days) else "self_report")
     if any(d["from"] == "sync" for d in days):
         ages = [a for a in sync_ages + [age_h] if a is not None]
         out = envelope(value, "proxy", min(ages) if ages else None)

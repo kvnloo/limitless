@@ -10,6 +10,8 @@ A bedtime capture last night (bedtime.saved_last_night) adds the digit-free line
 While the post-wake peak applies (peak.read_for: from the wake event, never a clock time) the card says
 "post-wake peak: open" or "post-wake peak: in use" on a line of its own under the window line, or after the
 window line's words when the card is full; nothing when the peak is closed or unknown.
+Once this week's Done days reach the weekly target (tools.habit ``target``) the habit line says
+"target reached this week"; before that it says nothing about a target, and never a count.
 The habit line gains the passive habit days' T1 words (tools.habit ``passive``, a proxy) when there are any,
 e.g. "habit: none set this week; phone data shows the first hour mostly feed-free"; never a count.
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
@@ -28,6 +30,7 @@ from typing import Any, Callable, Mapping, Optional
 from . import bedtime, flow_week, modes, peak as _peak
 from . import labeler as _labeler
 from . import tier_audit, tools
+from . import weekly_target as _weekly_target
 from .envelope import STALE_H, envelope, missing
 from .state_reader import StateReader, parse_ts, state_dir
 from .window import window
@@ -121,6 +124,13 @@ def _passive_word(hv: Optional[dict]) -> Optional[str]:
     return word if isinstance(word, str) and not any(ch.isdigit() for ch in word) else None
 
 
+def _target_word(hv: Optional[dict]) -> Optional[str]:
+    """"target reached this week" once tools.habit ``target`` is reached in an open week, else None."""
+    t = (hv or {}).get("target") or {}
+    word = (t.get("label") or {}).get("label")
+    return word if t.get("reached") is True and word == _weekly_target.REACHED else None
+
+
 def _passive_mtime(reader: StateReader, env: Optional[Mapping[str, str]]) -> Optional[int]:
     p = reader.passive_habit_file(env)
     try:
@@ -174,6 +184,9 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
     if hv is not None and hv.get("habit"):
         items["habit_today"] = envelope(hv["today"], "self_report", h["age_h"])
         lines.append(f"habit this week: {hv['habit']}; today {hv['today']}")
+        target = _target_word(hv)
+        if target:
+            lines[-1] += f"; {target}"
     else:
         items["habit_today"] = h if hv is None else missing(hv.get("reason") or "no habit set this week")
         lines.append("habit: none set this week")
