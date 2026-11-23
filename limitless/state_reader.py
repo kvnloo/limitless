@@ -39,7 +39,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        ride_rows (any HR or power field is T0 and is never read)
   sleep file           optional JSONL of wearable nightly sleep summaries, config "sleep_file" (relative to the
                        state dir; none by default), one row per night and source: {"night": "YYYY-MM-DD" (the
-                       evening the night began), "asleep_s": int, "source"}; read only through sleep_rows
+                       evening the night began), "asleep_s": int, "source"[, "start", "end"]}; read only through
+                       sleep_rows
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
