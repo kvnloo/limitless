@@ -102,3 +102,54 @@ def ledger(rows: Optional[Iterable], work_apps: Iterable, feed_apps: Iterable, i
     return {"day": day.isoformat(), "blocks": out, "long_blocks": len(longs),
             "leaks": None if feed is None else sum(1 for b in longs if b["leak"]),
             "landed": landed(items, lo, hi), "why": ""}
+
+
+# --- words: the T1 label (digit-free, no clock time, no app or file name) --------------------------------
+
+TIER, MODALITY = "T1", "observed"     # observed app activity, not attention or output
+UNKNOWN = "unknown"
+NO_LONG = "no long blocks"
+_WORDS = ("none", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+SEVERAL = "several"                   # above ten: the words stay digit-free and coarse
+
+
+def number_word(n: int) -> str:
+    """none, one ... ten, then several."""
+    return _WORDS[n] if 0 <= n < len(_WORDS) else SEVERAL if n >= len(_WORDS) else _WORDS[0]
+
+
+def _leak_words(n: int, k: Optional[int]) -> str:
+    if k is None:
+        return "feed leaks unknown"
+    if k <= 0:
+        return "no feed leak" if n == 1 else "none with a feed leak"
+    if k >= n:
+        return "with a feed leak" if n == 1 else "both with a feed leak" if n == 2 else "all with a feed leak"
+    return f"{number_word(k)} with a feed leak"
+
+
+def _landed_words(n: Optional[int]) -> str:
+    if n is None:
+        return ""
+    if n <= 0:
+        return "nothing landed"
+    return f"{number_word(n)} {'item' if n == 1 else 'items'} landed"
+
+
+def label(got: Optional[dict]) -> str:
+    """The ledger in words: "two long blocks, one with a feed leak; three items landed", "no long blocks",
+    or "unknown: <why>". The landed part only when the work queue is known. Pure, digit-free."""
+    if not isinstance(got, dict):
+        return UNKNOWN
+    if got.get("blocks") is None:
+        return f"{UNKNOWN}: {got['why']}" if got.get("why") else UNKNOWN
+    n = got.get("long_blocks") or 0
+    words = NO_LONG if n <= 0 else (f"{number_word(n)} long {'block' if n == 1 else 'blocks'}, "
+                                    f"{_leak_words(n, got.get('leaks'))}")
+    tail = _landed_words(got.get("landed"))
+    return f"{words}; {tail}" if tail else words
+
+
+def t1(got: Optional[dict]) -> dict:
+    """label() as a T1 label dict."""
+    return {"label": label(got), "tier": TIER, "modality": MODALITY}
