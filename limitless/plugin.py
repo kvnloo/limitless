@@ -103,6 +103,11 @@ def _sleep(args, now):
     return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _outages(args, now):
+    from . import outage   # outage -> doctor, which reads this module's TOOLS lazily
+    return outage.tool(state_dir(), now, config())
+
+
 def _naps(args, now):
     return tools.naps(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
@@ -370,6 +375,14 @@ wording only) of the night's start; unknown when Sleep mode did not change yeste
 mode is a phone switch, not a sleep sensor. The words only; start and end times need the person's raw opt-in. \
 Observation only: no target, no streak, no advice on when or how long to nap. Read-only; nothing is written, \
 sent or switched."), _naps, "💤"),
+    "limitless_outages": (_schema(
+        "limitless_outages",
+        "Which inputs stopped recording, in plain words: not recording: <names> (since about <age in words>), \
+or every input is recording; off when config input_outage is false. Not recording is limitless_status's rule \
+(over a day old, or down); config outage_ignore names inputs never listed. Modality derived. The wake brief says \
+each outage once, with the hint from config outage_hints; this tool lists every current outage. The plugin never \
+restarts, kills or starts anything: suggest the hint and let the person decide. Read-only; nothing is written, \
+marked or sent."), _outages, "🔌"),
     "limitless_presleep_hr": (_schema(
         "limitless_presleep_hr",
         "The heart rate before sleep on the newest wearable night (config presleep_hr_file: one row per night \
