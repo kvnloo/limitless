@@ -4,6 +4,7 @@
     save(state_dir, "focused")      # atomic, mode 0600; "off" (or "none") returns to none
     line(mode)                      # the one card line for a mode, or None
     apply(window, mode)             # focused: the window with hold_asks set, as a focus block does
+    command("mode focused", state_dir)  # the /limitless slash command: read, set or off; a plain reply
 
 A mode adds one short digit-free line (LINES) at the end of the pre_llm_call card, after the cached card and
 before tier_audit.gate, so the line is audited with the card. ``focused`` also holds every non-urgent ask the
@@ -57,6 +58,33 @@ def apply(window, mode):
     if state is None:
         state = decision_window.WindowState(cls=decision_window.UNKNOWN, source="mode")
     return replace(state, hold_asks=True)
+
+
+USAGE = "usage: /limitless mode [brainstorm|pm|copilot|focused|off]"
+ARGS_HINT = "mode [brainstorm|pm|copilot|focused|off]"
+DESCRIPTION = ("Attention mode: brainstorm, pm, copilot or focused changes presentation only (one card line, "
+               "reply length; focused also holds non-urgent asks); off returns to none. Never sends.")
+AS_USUAL = "the card as usual"
+NOT_SET = "mode not set: the state dir cannot be written"
+
+
+def command(raw_args, state_dir) -> str:
+    """The reply to ``/limitless <raw_args>``: ``mode`` reads the mode, ``mode <name>`` sets it, ``mode off``
+    returns to none; anything else is USAGE and changes nothing. Digit-free, never names a path, never
+    sends; a failed write is NOT_SET."""
+    words = raw_args.lower().split() if isinstance(raw_args, str) else []
+    if not words or words[0] != "mode" or len(words) > 2:
+        return USAGE
+    if len(words) == 1:
+        mode = load(state_dir)
+        return f"mode: {line(mode) or NONE + ' (' + AS_USUAL + ')'}"
+    if words[1] not in MODES + (OFF,):
+        return USAGE
+    try:
+        mode = save(state_dir, words[1])
+    except (OSError, ValueError):
+        return NOT_SET
+    return f"mode set: {line(mode)}" if mode != NONE else f"mode off: {AS_USUAL}"
 
 
 def load(state_dir) -> str:
