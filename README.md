@@ -30,13 +30,14 @@ The **Limitless Protocol** as a [Hermes Agent](https://github.com/NousResearch/h
 - Short nights: on a day with no quiet gap of 4 h, the first quiet gap of 3 h or more is one wake (`"short": true`, lower confidence, at most one per day), and a wake once seen never moves as later polls add rows; runner verdicts from a screen wake say it is a proxy, not a sleep measure.
 - `limitless/aw_reader.py`: the same wake proxy also reads unlocks and app-in-foreground starts from an ActivityWatch-for-Android SQLite copy, opened read-only; set its path with `LIMITLESS_AW_DB` or config key `aw_db` (none by default).
 - `limitless/habit_replies.py` + `bin/limitless-habit-ingest [--db PATH] [--write]`: closes the habit loop. The first Done, No or Skip the person sends on Telegram after the latest check-in (before it expires) goes into `habit.json` for that day, read from the Hermes session DB opened read-only (`--db`, `LIMITLESS_HERMES_DB` or config key `hermes_db`, none by default); anything else stays unlogged, an existing answer is never overwritten, and it is a dry run unless `--write`.
+- `limitless/owner_messages.py`: when the person last wrote to any agent, across every machine's Hermes session DB (`LIMITLESS_OWNER_DBS`, os.pathsep-separated, or config list `owner_dbs`; none by default), read-only and timestamps only; `limitless_state` and the card show it as `messages: wrote recently`, `quiet for a while` or `no data`.
 - `bin/limitless-scorecard [path]`: print the weekly review's "North star (self-reported)" block (criterion names without their parenthetical thresholds); read-only, prints nothing when there is no table.
 - `scripts/replay_log.py`: replay a delivery log through the gate, read-only, counts only.
 
 ## Tools and hook
 The repo root is a Hermes directory plugin (`plugin.yaml` + `__init__.py` with `register(ctx)`); all logic is in `limitless/`, which imports and tests without Hermes. Install by placing the repo at `~/.hermes/plugins/limitless/` and adding `limitless` to `plugins.enabled`.
 
-Every tool returns an evidence envelope: `{value, modality, age_h, evidence_tier}`, where modality is `measured`, `imported`, `proxy` or `self_report`. Missing data is `value: null` with a `reason`, never a guess.
+Every tool returns an evidence envelope: `{value, modality, age_h, evidence_tier}`, where modality is `measured`, `imported`, `proxy`, `self_report` or `messages` (message timestamps). Missing data is `value: null` with a `reason`, never a guess.
 
 | Tool | Returns |
 |---|---|
