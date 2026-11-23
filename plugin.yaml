@@ -10,3 +10,4 @@ provides_tools:
   - limitless_capture
 provides_hooks:
   - pre_llm_call
+  - post_gateway_admission

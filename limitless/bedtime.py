@@ -7,14 +7,33 @@ Capture applies only when the window from state (window_chain: Glide's wind-down
 (config ``bedtime_urgent_words``, default ``["urgent", "now"]``, whole words, any case) and a bare habit
 or week answer (Done, No, Skip, Keep, Drop: their own jobs read those) pass to the agent as usual.
 Config ``bedtime_capture``: ``"on"`` turns it on; anything else (the default) is off.
+
+    make_post_gateway_admission(env, clock) -> the Hermes ``post_gateway_admission`` hook
+
+That hook (hermes_cli/plugins.py VALID_HOOKS; gateway/run_inbound_consumer.py) fires once per admitted
+inbound gateway message, after auth and slash-command dispatch, with ``text``. Returning
+``{"action": "handled", "reply": ...}`` skips the agent turn and delivers ``reply`` on the normal route;
+anything else runs the turn. A capture is written through ``capture.capture`` (one store, source
+``"bedtime"``) before ``handled`` is returned; a refused capture, or any error, returns None so the
+message reaches the agent untouched. The text is never logged: only the capture file holds it.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import logging
+import os
 import re
-from typing import Iterable, Mapping, Optional
+import time
+from pathlib import Path
+from typing import Callable, Iterable, Mapping, Optional
 
-from . import habit_replies
+from . import capture, habit_replies
+from .glide_provider import GlideProvider
+from .state_reader import StateReader, config, state_dir
+from .window_chain import EventProvider, first_known
+
+logger = logging.getLogger(__name__)
+SOURCE = "bedtime"
 
 CAPTURE_CLASSES = ("asleep", "wind_down")
 DEFAULT_URGENT_WORDS = ("urgent", "now")
@@ -58,3 +77,35 @@ def route(message_text, window_class: Optional[str], opt_out: bool,
     if len(text.split()) == 1 and (habit_replies.tap(text) or habit_replies.decision(text)):
         return _pass()
     return {"action": CAPTURE, "reply": REPLY}
+
+
+def window_class(state, now: float, env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None) -> str:
+    """The window open now, as jobs_runner reads it: asleep (Sleep mode), else first_known(Glide, events)."""
+    events = EventProvider.from_reader(StateReader(Path(state)), now)
+    if events.asleep:
+        return "asleep"
+    return first_known(GlideProvider.from_config(env=env, home=home, now=now), events).cls
+
+
+def make_post_gateway_admission(env: Optional[Mapping[str, str]] = None,
+                                clock: Callable[[], float] = time.time):
+    def post_gateway_admission(text=None, **kwargs) -> Optional[dict]:
+        try:
+            e = os.environ if env is None else env
+            cfg = config(e)
+            if not enabled(cfg) or not isinstance(text, str):
+                return None
+            now, state = clock(), state_dir(e)
+            out = route(text, window_class(state, now, env=e), False, urgent_words(cfg))
+            if out["action"] != CAPTURE:
+                return None
+            saved = capture.capture(state, text, now, source=SOURCE)
+            if saved.get("value") is None:
+                return None                       # nothing recorded: the agent gets the message
+            return {"action": "handled", "reply": out["reply"]}
+        except Exception as exc:  # noqa: BLE001 - fail open: never drop the person's message
+            logger.debug("bedtime capture skipped (%s); the message goes to the agent", type(exc).__name__)
+            return None
+
+    return post_gateway_admission
