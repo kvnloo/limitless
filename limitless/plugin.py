@@ -2,7 +2,8 @@
 ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=None, is_async=False,
 description="", emoji="", override=False), ctx.register_hook(hook_name, callback) and, when the host has it,
 ctx.register_command(name, handler, description="", args_hint="") for the ``/limitless mode`` slash command
-(attention modes, modes.py). Hooks: pre_llm_call (the state card) and post_gateway_admission (bedtime capture,
+(attention modes, modes.py) and, when the host has it, ctx.register_schedule_card(card) for each job's schedule card
+(schedule_cards.py; a proposed name, not in the published API yet). Hooks: pre_llm_call (the state card) and post_gateway_admission (bedtime capture,
 bedtime.py).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
