@@ -1,5 +1,5 @@
-"""register(ctx) offers both of the plugin's skills, limitless:coach and limitless:learn, to a host with
-register_skill; without it one content-free line in all; one skill the host refuses never stops the other."""
+"""register(ctx) offers limitless:learn beside the plugin's other skills (limitless:coach, limitless:chief) to a host
+with register_skill; without it one content-free line in all; one skill the host refuses never stops the others."""
 import logging
 import os
 import sys
@@ -52,7 +52,7 @@ class Register(unittest.TestCase):
         self.assertEqual(sorted(ctx.hooks), fake_ctx_hooks())
 
     def test_the_skill_names_are_a_small_tuple_with_a_file_each(self):
-        self.assertEqual(coach_skill.NAMES, ("coach", "learn"))
+        self.assertEqual(coach_skill.NAMES, ("coach", "learn", "chief"))
         for name in coach_skill.NAMES:
             p = coach_skill.path(name)
             self.assertEqual(p.resolve(), (ROOT / "skills" / name / "SKILL.md").resolve())
@@ -62,7 +62,7 @@ class Register(unittest.TestCase):
     def test_a_host_with_register_skill_gets_both_skills(self):
         ctx = SkillCtx()
         lines = self.register(ctx)
-        self.assertEqual([s["name"] for s in ctx.skills], ["coach", "learn"])
+        self.assertEqual([s["name"] for s in ctx.skills], list(coach_skill.NAMES))
         for s in ctx.skills:
             self.assertTrue(s["path"].is_file(), s["name"])
             self.assertEqual(s["path"].parent.name, s["name"])
@@ -78,13 +78,13 @@ class Register(unittest.TestCase):
         self.assert_rest_registered(ctx)
 
     def test_one_raising_call_still_lets_the_other_register(self):
-        for refused, kept in (("coach", "learn"), ("learn", "coach")):
+        for refused, kept in (("coach", ["learn", "chief"]), ("learn", ["coach", "chief"])):
             for exc in (RuntimeError("host refused"), ValueError("bad name"), FileNotFoundError("gone")):
                 with self.subTest(refused=refused, exc=type(exc).__name__):
                     ctx = RefusesOne(refused, exc)
                     lines = self.register(ctx)
-                    self.assertEqual(ctx.calls, ["coach", "learn"])
-                    self.assertEqual([s["name"] for s in ctx.skills], [kept])
+                    self.assertEqual(ctx.calls, list(coach_skill.NAMES))
+                    self.assertEqual([s["name"] for s in ctx.skills], kept)
                     self.assertEqual([(r.levelno, r.getMessage()) for r in lines],
                                      [(logging.WARNING, coach_skill.HOST_FAILED)])
                     self.assert_rest_registered(ctx)
@@ -98,7 +98,7 @@ class Register(unittest.TestCase):
         ctx = SkillCtx()
         lines = self.register(ctx, skills_dir=Path(tmp.name))
         self.assertEqual([s["name"] for s in ctx.skills], ["learn"])
-        self.assertEqual([r.getMessage() for r in lines], [coach_skill.HOST_FAILED])
+        self.assertEqual([r.getMessage() for r in lines], [coach_skill.HOST_FAILED] * (len(coach_skill.NAMES) - 1))
         self.assert_rest_registered(ctx)
 
     def test_plugin_register_still_works_without_register_skill(self):

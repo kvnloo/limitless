@@ -16,7 +16,7 @@ write: `limitless_capture` was already the plugin's one write.
 
 ## Registration
 
-`limitless/coach_skill.py` holds one small tuple, `NAMES = ("coach", "learn")`; each name's text is
+`limitless/coach_skill.py` holds one small tuple, `NAMES = ("coach", "learn", "chief")`; each name's text is
 `skills/<name>/SKILL.md`. `register(ctx)` calls `coach_skill.register(ctx)` last, after the tools, hooks
 and schedule cards:
 
@@ -26,7 +26,7 @@ and schedule cards:
 - A host without it (an older Hermes) gets nothing and one content-free info line in all:
   `limitless: the host has no skill registration; the plugin's skills are not registered`
 - A call that raises (a bad name, a missing file, anything else) gets one content-free warning line and
-  the next skill is still offered, so a refused `coach` never stops `learn` (and the other way round):
+  the next skill is still offered, so a refused `coach` never stops `learn` or `chief` (and the other way round):
   `limitless: the host's skill registration failed; register went on`
 
 The tests: `tests/test_learn_skill.py` keeps the skill short, its frontmatter name `learn` (the dir name)
@@ -60,7 +60,7 @@ install's own `PluginManager`, which has `register_skill`:
 
 ```text
 plugin: {'name': 'limitless', 'enabled': True, 'tools': 30, 'hooks': 4, 'error': None}
-list_plugin_skills('limitless'): ['coach', 'learn']
+list_plugin_skills('limitless'): ['chief', 'coach', 'learn']
 find_plugin_skill('limitless:coach') -> skills/coach/SKILL.md
 find_plugin_skill('limitless:learn') -> skills/learn/SKILL.md
 metadata: {'name': 'limitless:coach', 'description': 'Use when coaching over limitless tools. Act only on a yes.'}

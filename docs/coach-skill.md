@@ -13,7 +13,7 @@ rules section ([prompt-rules.md](prompt-rules.md)) (`limitless/coach_skill.py`):
 
 - A host whose ctx has a callable `register_skill` (Hermes: `register_skill(name, path, description="",
   frontmatter=None)`) gets one call per name in `coach_skill.NAMES` (`coach`, then `learn`, see
-  [learn-skill.md](learn-skill.md)), `register_skill("coach", <plugin dir>/skills/coach/SKILL.md,
+  [learn-skill.md](learn-skill.md), then `chief`, see [chief-skill.md](chief-skill.md)), `register_skill("coach", <plugin dir>/skills/coach/SKILL.md,
   description=<the skill's frontmatter description>)`. The agent then loads it as `limitless:coach` with
   `skill_view`, and `skills_list` shows it while the plugin is enabled.
 - A host without it (an older Hermes) gets nothing and one content-free info line in all:
@@ -54,7 +54,7 @@ The checkout loaded as a directory plugin (`plugins.enabled: [limitless]`) into 
 `PluginManager`, which has `register_skill`:
 
 ```text
-list_plugin_skills('limitless'): ['coach', 'learn']
+list_plugin_skills('limitless'): ['chief', 'coach', 'learn']
 find_plugin_skill('limitless:coach') -> skills/coach/SKILL.md
 metadata: {'name': 'limitless:coach', 'description': 'Use when coaching over limitless tools. Act only on a yes.'}
 ```

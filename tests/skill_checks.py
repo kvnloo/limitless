@@ -78,3 +78,38 @@ def score_as_feature(src):
         if any(re.search(r"\b" + re.escape(w) + r"\b", low) for w in SCORE_WORDS) and not NEGATIONS.search(s):
             hits.append(s)
     return hits
+
+
+# The size cap the plugin's skills share: the tighter of the coach (120 lines) and learn (100 lines) caps.
+SKILL_MAX_LINES = 100
+FENCE = "```"
+
+
+def _split_fences(src):
+    """(lines outside fenced blocks, the fenced blocks' texts); an unclosed fence hides nothing."""
+    outside, blocks, block = [], [], None
+    for ln in src.split("\n"):
+        if ln.strip().startswith(FENCE):
+            if block is None:
+                block = []
+            else:
+                blocks.append("\n".join(block))
+                block = None
+            continue
+        if block is None:
+            outside.append(ln)
+        else:
+            block.append(ln)
+    if block is not None:   # unclosed: its lines count as outside
+        outside.extend(block)
+    return outside, blocks
+
+
+def fenced(src):
+    """The text of every closed fenced block, fences stripped."""
+    return _split_fences(src)[1]
+
+
+def digits_outside_fences(src):
+    """Lines outside a closed fenced block that hold a digit."""
+    return [ln for ln in _split_fences(src)[0] if any(c.isdigit() for c in ln)]

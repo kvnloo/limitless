@@ -102,6 +102,10 @@ event counts as this window's decision. `limitless_window` adds
 "decisions waiting" or "nothing waiting". Nothing here sends: the host delivers, after
 which it sets `delivered_at`.
 
+The instructions an agent follows when it wants something from the person (append one ask,
+one-tap reply, let the window decide, one status board) are the plugin's `limitless:chief`
+skill ([chief-skill.md](chief-skill.md)).
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
