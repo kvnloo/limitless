@@ -19,13 +19,16 @@ Nothing here judges the numbers: no score, no target, no grade. The DB is opened
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import date, datetime, time, timedelta, tzinfo
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 from urllib.parse import quote
 
+from . import feeds_evidence, glide_provider
 from .aw_reader import BUSY_TIMEOUT_S, CURRENT_WINDOW, NS
+from .state_reader import StateReader, config
 
 AFK = "afkstatus"
 MODALITY = "measured"
@@ -213,3 +216,115 @@ def week(aw_db, week_of, tz: Optional[tzinfo], blocks=None, *, work_apps: Iterab
     out["leak_per_block_hour"] = round(leak_min / block_h, 1)
     evidence["leak"] = "feed-app active time inside focus blocks"
     return out
+
+
+# --- words: the Telegram review line (digits allowed) and the card's T1 label (digit-free) ---------------
+
+NO_WORK, NO_BLOCKS, NO_FEEDS = "no work apps set", "no focus blocks", "no feed apps set"
+NOT_RECORDING = "not recording"
+# Wording only: a change within this fraction of last week reads "about the same". Not a target.
+SAME_BAND = 0.1
+
+
+def _known(r) -> bool:
+    return isinstance(r, dict) and isinstance(r.get("days_with_data"), int) and r["days_with_data"] > 0
+
+
+def _why(r: dict, part: str) -> str:
+    text = (r.get("evidence") or {}).get(part, "") if isinstance(r.get("evidence"), dict) else ""
+    for words in (NO_WORK, NO_BLOCKS, NO_FEEDS):
+        if words in text:
+            return words
+    return "no data"
+
+
+def _g(v) -> str:
+    return f"{v:g}"
+
+
+def review_line(this: Optional[dict], last: Optional[dict] = None) -> str:
+    """The week review's one flow line, in plain words with the numbers (Telegram only; never a prompt).
+    Last week's number sits beside this week's when known; nothing says whether either is enough."""
+    if not _known(this):
+        return f"Flow: {NOT_RECORDING} this week (no ActivityWatch data)."
+    prev = last if _known(last) else {}
+    if this["deep_min"] is None:
+        deep = f"deep work unknown ({_why(this, 'deep')})"
+    else:
+        deep = f"deep work {round(this['deep_min'])} min"
+        if prev.get("deep_min") is not None:
+            deep += f" (last week {round(prev['deep_min'])})"
+    if this["leak_per_block_hour"] is None:
+        leak = f"feed leak unknown ({_why(this, 'leak')})"
+    else:
+        leak = (f"feed leak {_g(this['leak_per_block_hour'])} min per block-hour over "
+                f"{_g(this['block_hours'])} block-hours")
+        if prev.get("leak_per_block_hour") is not None:
+            leak += f" (last week {_g(prev['leak_per_block_hour'])})"
+    return f"Flow ({MODALITY}, {this['days_with_data']} of {DAYS} days): {deep}; {leak}."
+
+
+def _direction(now: float, before: float) -> str:
+    if before <= 0:
+        return "about the same" if now <= 0 else "up"
+    ratio = now / before
+    return "up" if ratio > 1 + SAME_BAND else "down" if ratio < 1 - SAME_BAND else "about the same"
+
+
+def t1_label(this: Optional[dict], last: Optional[dict] = None) -> str:
+    """The card's digit-free label: deep work up, down or about the same on last week (minutes per day
+    with data, so a short week is not a drop), plus the feed-leak direction when both weeks have one."""
+    if not _known(this):
+        return NOT_RECORDING
+    if this["deep_min"] is None:
+        return f"deep work unknown, {NO_WORK} ({MODALITY})"
+    if not _known(last) or last.get("deep_min") is None:
+        return f"deep work recorded, nothing last week to compare ({MODALITY})"
+    word = _direction(this["deep_min"] / this["days_with_data"], last["deep_min"] / last["days_with_data"])
+    out = f"deep work {word} on last week"
+    if this.get("leak_per_block_hour") is not None and last.get("leak_per_block_hour") is not None:
+        out += f"; feed leak {_direction(this['leak_per_block_hour'], last['leak_per_block_hour'])} on last week"
+    return f"{out} ({MODALITY})"
+
+
+# --- config: where each input comes from ---------------------------------------------------------------
+
+WORK_ENV, WORK_CONFIG = "LIMITLESS_FLOW_WORK_APPS", "flow_work_apps"
+
+
+def work_apps(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
+    """The person's work apps: $LIMITLESS_FLOW_WORK_APPS (comma list), else config ``flow_work_apps``
+    (a list or a comma string); () when unset. The repo ships no list, so deep work starts unknown."""
+    env = os.environ if env is None else env
+    v = env.get(WORK_ENV)
+    if not (isinstance(v, str) and v.strip()):
+        v = config(env, home).get(WORK_CONFIG)
+    if isinstance(v, str):
+        v = v.split(",")
+    return feeds_evidence._clean(v) if isinstance(v, (list, tuple)) else ()
+
+
+def glide_blocks(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[list]:
+    """The focus block in Glide's attention.json (path as GlideProvider.from_config), as ``[{start, end}]``;
+    [] when the file has none or cannot be read; None when Glide is not configured. Glide keeps only its
+    current block (a stopped block is cleared), so this sees at most one block."""
+    env = os.environ if env is None else env
+    path = env.get(glide_provider.ENV_KEY) or config(env, home).get(glide_provider.CONFIG_KEY)
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    block = data.get("block") if isinstance(data, dict) else None
+    s, e = _pair(block) if isinstance(block, dict) else (None, None)
+    return [{"start": s, "end": e}] if s is not None and e is not None else []
+
+
+def for_week(reader: StateReader, week_of, tz: Optional[tzinfo], env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None) -> dict:
+    """week() with every input from config: the AW DB (StateReader.aw_db_path), the work apps, the feed
+    apps (feeds_evidence.feed_apps) and the Glide block. Read-only."""
+    return week(reader.aw_db_path(env, home), week_of, tz, blocks=glide_blocks(env, home),
+                work_apps=work_apps(env, home), feed_apps=feeds_evidence.feed_apps(env, home))

@@ -234,5 +234,107 @@ class ReadOnly(Base):
         self.assertEqual(sorted(p.name for p in Path(self.tmp.name).iterdir()), ["aw.db"])
 
 
+def result(deep=None, days=5, block_h=None, leak=None, per=None):
+    return {"deep_min": deep, "block_hours": block_h, "feed_leak_min": leak, "leak_per_block_hour": per,
+            "days_with_data": days, "modality": "measured",
+            "evidence": {"deep": "unknown: no work apps set (flow_work_apps)",
+                         "leak": "unknown: no focus blocks on days with data"}}
+
+
+class ReviewLine(unittest.TestCase):
+    """The Telegram week review's one flow line: plain words, digits allowed (T0 holds: it never enters
+    a prompt)."""
+
+    def test_numbers_with_last_week_beside_them(self):
+        line = flow_week.review_line(result(deep=640, block_h=6.5, leak=12, per=1.8),
+                                     result(deep=580, days=7, block_h=4, leak=10, per=2.5))
+        self.assertEqual(line, "Flow (measured, 5 of 7 days): deep work 640 min (last week 580); "
+                               "feed leak 1.8 min per block-hour over 6.5 block-hours (last week 2.5).")
+
+    def test_unknown_parts_say_why(self):
+        line = flow_week.review_line(result(days=3))
+        self.assertEqual(line, "Flow (measured, 3 of 7 days): deep work unknown (no work apps set); "
+                               "feed leak unknown (no focus blocks).")
+
+    def test_no_data_is_not_recording(self):
+        for r in (result(days=0), flow_week.unknown("no ActivityWatch DB at the configured path"), None):
+            self.assertEqual(flow_week.review_line(r), "Flow: not recording this week (no ActivityWatch data).")
+
+    def test_no_score_grade_or_target_words(self):
+        line = flow_week.review_line(result(deep=1, block_h=1, leak=0, per=0), result(deep=2, days=1))
+        for word in ("score", "grade", "target", "goal", "good", "bad", "great", "poor", "fail"):
+            self.assertNotIn(word, line.lower())
+
+
+class CardLabel(unittest.TestCase):
+    """The pre_llm_call card's T1 label: digit-free, a direction on last week and the modality."""
+
+    def test_deep_work_direction_uses_minutes_per_day_with_data(self):
+        cases = [((700, 7), (300, 3), "about the same"), ((800, 4), (700, 7), "up"),
+                 ((100, 2), (700, 7), "down"), ((10, 1), (0, 7), "up")]
+        for (d, n), (ld, ln), word in cases:
+            lab = flow_week.t1_label(result(deep=d, days=n), result(deep=ld, days=ln))
+            self.assertEqual(lab, f"deep work {word} on last week (measured)", (d, n, ld, ln))
+
+    def test_leak_direction_joins_when_both_weeks_have_it(self):
+        lab = flow_week.t1_label(result(deep=100, days=7, per=1.0), result(deep=100, days=7, per=3.0))
+        self.assertEqual(lab, "deep work about the same on last week; feed leak down on last week (measured)")
+
+    def test_unknowns(self):
+        self.assertEqual(flow_week.t1_label(result(days=0)), "not recording")
+        self.assertEqual(flow_week.t1_label(None), "not recording")
+        self.assertEqual(flow_week.t1_label(result(days=4)), "deep work unknown, no work apps set (measured)")
+        self.assertEqual(flow_week.t1_label(result(deep=10, days=4), result(days=0)),
+                         "deep work recorded, nothing last week to compare (measured)")
+
+    def test_labels_are_digit_free(self):
+        for this, last in ((result(deep=5.5, days=3, per=2.25), result(deep=1, days=2, per=9)),
+                           (result(days=1), None), (result(days=0), None)):
+            self.assertFalse(any(c.isdigit() for c in flow_week.t1_label(this, last)))
+
+
+class FromConfig(Base):
+    def setUp(self):
+        super().setUp()
+        self.root = Path(self.tmp.name)
+        self.cfg = self.root / "config.json"
+        self.env = {"LIMITLESS_CONFIG": str(self.cfg)}
+
+    def test_work_apps_from_env_or_config(self):
+        self.assertEqual(flow_week.work_apps(self.env), ())
+        self.cfg.write_text(json.dumps({"flow_work_apps": ["editor", " ", "title:notes"]}))
+        self.assertEqual(flow_week.work_apps(self.env), ("editor", "title:notes"))
+        self.assertEqual(flow_week.work_apps(dict(self.env, LIMITLESS_FLOW_WORK_APPS="a, b")), ("a", "b"))
+
+    def test_glide_block_is_read_when_configured(self):
+        self.assertIsNone(flow_week.glide_blocks(self.env))
+        glide = self.root / "attention.json"
+        glide.write_text(json.dumps({"block": {"start": at(0, 9), "end": at(0, 10), "minutes": 60}}))
+        env = dict(self.env, LIMITLESS_GLIDE_ATTENTION=str(glide))
+        self.assertEqual(flow_week.glide_blocks(env), [{"start": at(0, 9), "end": at(0, 10)}])
+        glide.write_text(json.dumps({"block": None}))
+        self.assertEqual(flow_week.glide_blocks(env), [])
+        glide.write_text("not json")
+        self.assertEqual(flow_week.glide_blocks(env), [])
+
+    def test_for_week_reads_every_input_from_config(self):
+        st = self.root / "state"
+        st.mkdir()
+        make_db(st / "aw.db", spans=[(at(0, 9), at(0, 10), "scroller"), (at(0, 10), at(0, 11), "editor")])
+        glide = self.root / "attention.json"
+        glide.write_text(json.dumps({"block": {"start": at(0, 9), "end": at(0, 11)}}))
+        self.cfg.write_text(json.dumps({"aw_db": "aw.db", "flow_work_apps": ["editor"], "feed_apps": ["scroller"],
+                                        "glide_attention": str(glide)}))
+        from limitless.state_reader import StateReader
+        w = flow_week.for_week(StateReader(st), WEEK_OF, TZ, self.env, self.root)
+        self.assertEqual((w["deep_min"], w["block_hours"], w["feed_leak_min"], w["leak_per_block_hour"]),
+                         (60.0, 2.0, 60.0, 30.0))
+
+    def test_for_week_with_nothing_configured_is_unknown(self):
+        from limitless.state_reader import StateReader
+        w = flow_week.for_week(StateReader(self.root / "state"), WEEK_OF, TZ, self.env, self.root)
+        self.assertIsNone(w["days_with_data"])
+
+
 if __name__ == "__main__":
     unittest.main()
