@@ -22,12 +22,14 @@ import os
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
-from . import jobs
-from .state_reader import config
+from . import aw_reader, jobs
+from .state_reader import StateReader, config
 from .wake_proxy import _ts_s
 
 ENV_KEY = "LIMITLESS_FEED_APPS"
 CONFIG_KEY = "feed_apps"
+SEEN, NOT_SEEN, UNKNOWN = "seen", "not seen", "unknown"
+_LINE = {SEEN: "Phone: a feed app was opened in that hour", NOT_SEEN: "Phone: no feed app seen in that hour"}
 
 
 def _clean(items: Iterable) -> tuple:
@@ -67,3 +69,23 @@ def feeds_in_first_hour(app_starts, wake_at, feed_apps) -> dict:
         return {"seen": None, "count": count}
     return {"seen": count > 0, "count": count}
 
+
+def hint(result: Optional[dict]) -> str:
+    """seen | not seen | unknown, from a feeds_in_first_hour result."""
+    seen = (result or {}).get("seen") if isinstance(result, dict) else None
+    return UNKNOWN if seen is None else SEEN if seen else NOT_SEEN
+
+
+def line(result: Optional[dict]) -> str:
+    """The check-in's one plain line, or "" when unknown. No counts, times or app names."""
+    return _LINE.get(hint(result), "")
+
+
+def phone_hint(reader: StateReader, wake_at, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None) -> dict:
+    """feeds_in_first_hour for ``wake_at`` from the configured AW DB and feed list (read-only)."""
+    feeds = feed_apps(env, home)
+    if not feeds or isinstance(wake_at, bool) or not isinstance(wake_at, (int, float)):
+        return {"seen": None, "count": 0}
+    return feeds_in_first_hour(aw_reader.app_starts(reader.aw_db_path(env, home), since_s=wake_at),
+                               wake_at, feeds)
