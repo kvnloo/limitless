@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -18,6 +19,12 @@ from limitless import jobs, jobs_runner  # noqa: E402
 
 NOW = 2_000_000_000.0
 H = 3600.0
+UTC = timezone.utc
+
+
+def night(at):
+    """The MIQ night key for an event with no wake before it: the event's own UTC date."""
+    return f"miq:{datetime.fromtimestamp(at, UTC).date().isoformat()}"
 
 
 def write_rows(path, rows):
@@ -46,16 +53,16 @@ class Base(unittest.TestCase):
         self.tmp.cleanup()
 
     def key(self, job, now=NOW):
-        return jobs_runner.event_key(self.st, now, job=job, env=self.env, home=self.root)
+        return jobs_runner.event_key(self.st, now, job=job, env=self.env, home=self.root, tz=UTC)
 
     def pushed(self, spec, now=NOW):
         push = OncePush()
-        jobs_runner.run_once(self.st, now, push=push, dry_run=False, env=self.env, home=self.root)
+        jobs_runner.run_once(self.st, now, push=push, dry_run=False, env=self.env, home=self.root, tz=UTC)
         return [c[2] for c in push.calls if c[0] == spec.send_title]
 
     def assert_same(self, spec, expect_at, now=NOW):
         k = self.key(spec.name, now)
-        self.assertEqual(k, f"{spec.name}:{int(expect_at)}")
+        self.assertEqual(k, night(expect_at) if spec.name == jobs.MIQ.name else f"{spec.name}:{int(expect_at)}")
         self.assertEqual(self.pushed(spec, now), [k])
 
 
@@ -93,12 +100,12 @@ class MiqKey(Base):
         write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": at}])
         self.glide_wind_down(NOW - 120)
         self.env["LIMITLESS_GLIDE_ATTENTION"] = str(self.att)
-        self.assertEqual({self.key("miq", NOW + d) for d in (0, 300, 900)}, {f"miq:{int(at)}"})
+        self.assertEqual({self.key("miq", NOW + d) for d in (0, 300, 900)}, {night(at)})
 
     def test_without_the_glide_window_the_event_still_has_its_key_but_nothing_is_pushed(self):
         at = NOW - 90
         write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": at}])
-        self.assertEqual(self.key("miq"), f"miq:{int(at)}")
+        self.assertEqual(self.key("miq"), night(at))
         self.assertEqual(self.pushed(jobs.MIQ), [])
 
     def test_no_wind_down_event_no_key(self):

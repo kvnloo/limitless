@@ -30,6 +30,7 @@ It prints `<job>:<event time>`, the key `limitless-jobs --send` passes for that 
 first of the two messages goes out. With no trigger event (or state it cannot read) it prints
 nothing and exits 3; `KEVIN_PUSH_ONCE` is then empty and the script sends as before, with no key.
 An unknown job exits 2. It only reads the state dir; it never sends or writes.
+For `miq` the key is one per night, `miq:<night date>` (the local date of the evening in the host's `TZ`, kept until the next wake), and `bin/limitless-once-key miq --night` prints it even before any wind-down event (exit 0), so a sender with its own wind-down cue always passes a key: at most one MIQ prompt per night, whoever sends.
 
 Save as `~/.config/systemd/user/limitless-jobs.service`:
 

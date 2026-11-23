@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-"""limitless-once-key <job>: print the event key limitless-jobs --send would pass for <job> right now.
+"""limitless-once-key <job> [--night]: print the event key limitless-jobs --send would pass for <job> right now.
 
 For senders outside this repo (shell scripts) that cannot import the Python helpers:
 
     KEVIN_PUSH_ONCE=$(limitless-once-key miq) kevin-push limitless "MIQ for tonight?" "..."
 
 so that on one event only the first message goes out, whichever sender is first. The key is
-jobs_runner.event_key: `<job>:<trigger event time in epoch seconds>`.
+jobs_runner.event_key: `<job>:<trigger event time in epoch seconds>`; for miq it is one per night,
+`miq:<night date>` (the local date of the evening, kept until the next wake), and only for a
+wind-down event tonight.
+
+    KEVIN_PUSH_ONCE=$(limitless-once-key miq --night) kevin-push limitless "MIQ for tonight?" "..."
+
+`--night` (miq only) prints tonight's key even with no wind-down event yet (exit 0), for a sender
+with its own wind-down cue: a later wind-down event and limitless-jobs --send then share its key.
 Exit 0 and the key on stdout; exit 3 and nothing on stdout when the job has no trigger event (or the
 state cannot be read: then the caller sends as before, with no key); exit 2 and a usage line on stderr
 for an unknown job. It only reads the state dir ($LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG);
@@ -20,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from limitless import jobs, jobs_runner  # noqa: E402
 from limitless.state_reader import state_dir  # noqa: E402
 
-USAGE = f"usage: limitless-once-key <job>  (job: {' | '.join(sorted(jobs.SPECS))})"
+USAGE = (f"usage: limitless-once-key <job> [--night]  (job: {' | '.join(sorted(jobs.SPECS))}; "
+         f"--night: {' | '.join(jobs_runner.NIGHT_JOBS)} only)")
 NO_KEY = 3
 
 
@@ -33,15 +41,26 @@ def key(job, now):
         return None
 
 
+def night_key(job, now):
+    """Tonight's key, with or without the trigger event; state that cannot be read is no wake."""
+    try:
+        st = state_dir()
+    except Exception:  # noqa: BLE001 - a broken config is no state, never a traceback
+        st = None
+    return jobs_runner.night_key(st, now, job=job)
+
+
 def main(argv):
     args = argv[1:]
     if args in (["-h"], ["--help"]):
         print(USAGE)
         return 0
-    if len(args) != 1 or args[0] not in jobs.SPECS:
+    night = "--night" in args
+    args = [a for a in args if a != "--night"]
+    if len(args) != 1 or args[0] not in jobs.SPECS or (night and args[0] not in jobs_runner.NIGHT_JOBS):
         print(USAGE, file=sys.stderr)
         return 2
-    k = key(args[0], time.time())
+    k = night_key(args[0], time.time()) if night else key(args[0], time.time())
     if not k:
         return NO_KEY
     print(k)

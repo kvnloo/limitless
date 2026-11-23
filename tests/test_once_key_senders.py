@@ -50,16 +50,17 @@ class ShellAndRunner(unittest.TestCase):
         self.env = {"HOME": str(self.home), "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
                     "LIMITLESS_STATE": str(self.st), "LIMITLESS_CONFIG": str(self.home / "no-config.json"),
                     "LIMITLESS_SLEEPMODE": str(self.st / "sleepmode.jsonl"), "KEVIN_PUSH_BIN": str(kp),
-                    "LIMITLESS_GLIDE_ATTENTION": str(self.att), "CIRCADIAN_CLASS": "decision"}
+                    "LIMITLESS_GLIDE_ATTENTION": str(self.att), "CIRCADIAN_CLASS": "decision", "TZ": "UTC"}
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def wind_down(self):
         at = int(time.time() - 120)
-        write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": iso(at)}])
+        wake = at - 4 * 3600   # the night date is the wake's (UTC) date; the wake brief is stale by now
+        write_rows(self.st / "events.jsonl", [{"event": "wake", "at": iso(wake)}, {"event": "wind_down", "at": iso(at)}])
         self.att.write_text(json.dumps({"block": None, "resume": {"saved": at - 30}}))
-        return f"miq:{at}"
+        return f"miq:{datetime.fromtimestamp(wake, timezone.utc).date().isoformat()}"
 
     def shell_sender(self, line=SHELL_SENDER):
         return subprocess.run(["sh", "-c", line], cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=60)
