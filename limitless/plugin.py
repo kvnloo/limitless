@@ -93,7 +93,8 @@ TOOLS = {
         "limitless_habit",
         "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped), plus "
         "\"N of M logged days\". A 1-tap answer beats the phone sync's met/missed; a day with neither is "
-        "unlogged, never a No, and stays out of M."), _habit, "🌱"),
+        "unlogged, never a No, and stays out of M. phone_hint (seen, not seen or unknown; a proxy) says whether "
+        "the phone saw a feed app in the first hour after the latest wake: a hint, never the answer."), _habit, "🌱"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",
         "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "

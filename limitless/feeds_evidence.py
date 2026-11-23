@@ -29,6 +29,7 @@ from .wake_proxy import _ts_s
 ENV_KEY = "LIMITLESS_FEED_APPS"
 CONFIG_KEY = "feed_apps"
 SEEN, NOT_SEEN, UNKNOWN = "seen", "not seen", "unknown"
+EVIDENCE_TIER = "proxy"     # an app opened is not a feed read: the hint is a proxy, never an answer
 _LINE = {SEEN: "Phone: a feed app was opened in that hour", NOT_SEEN: "Phone: no feed app seen in that hour"}
 
 
