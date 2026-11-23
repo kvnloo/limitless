@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""limitless-doctor [--json] [--strict]: which inputs are live and which tools would answer unknown, and why.
+
+One line per row (name: status: reason; status live, stale, missing or off), words only: no digit and no tool
+value is ever printed. Read-only: it never writes a file (no bytecode either), sends, pushes or starts a job.
+Exit 0 always (a report, not a gate); --strict exits 1 when the state dir, an input or the last sync run is
+not live. See docs/doctor.md.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import doctor  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(doctor.main(sys.argv[1:]))
