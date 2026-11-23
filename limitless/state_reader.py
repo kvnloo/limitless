@@ -27,11 +27,15 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   owner beacons        optional {"at": iso, "v": 1} files from bin/limitless-owner-beacon on other machines:
                        $LIMITLESS_OWNER_BEACONS, else config "owner_beacons"; same path rules
                        (owner_beacon_paths); read only through owner_messages
+  body file            optional JSONL from a body-composition app, config "body_file" (relative to the state
+                       dir; none by default), one row per measurement visit: {"day", "bf_pct", "method",
+                       "calibrated": bool}; read only through body_rows (tier T0: raw numbers stay in code)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from datetime import date, datetime, timezone
@@ -44,6 +48,7 @@ OWNER_DBS_CONFIG = "owner_dbs"
 OWNER_BEACONS_ENV = "LIMITLESS_OWNER_BEACONS"
 OWNER_BEACONS_CONFIG = "owner_beacons"
 PASSIVE_HABIT_CONFIG = "passive_habit_file"
+BODY_CONFIG = "body_file"
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -262,6 +267,44 @@ class StateReader:
             return []
         by_day = {r["day"]: r for r in rows if _valid_day(r.get("day")) and isinstance(r.get("met"), bool)}
         return [by_day[d] for d in sorted(by_day)]
+
+    def body_file(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+        """The body-composition file: config ``body_file``; a relative path is in the state dir. None when it
+        is not set (there is no default file name)."""
+        v = config(env, home).get(BODY_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def body_rows(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                  today: Optional[date] = None) -> list:
+        """The body file's valid rows ``{"day", "bf_pct": float, "method": str, "calibrated": bool}``, oldest
+        first (rows of one day keep their file order). A row without a real day, a finite ``bf_pct`` in
+        (0, 100), a non-empty ``method`` and a bool ``calibrated``, or with a day after ``today`` (default:
+        the local date), is skipped. [] when no file is configured, it is missing or unreadable; never raises."""
+        try:
+            today = date.today() if today is None else today
+            if not isinstance(today, date):
+                return []
+            p = self.body_file(env, home)
+            if p is None:
+                return []
+            rows = _rows(p.read_text(errors="replace"))
+        except Exception:  # noqa: BLE001 - unreadable body data is no rows, never a traceback
+            return []
+        out = []
+        for r in rows:
+            day, bf, method, cal = r.get("day"), r.get("bf_pct"), r.get("method"), r.get("calibrated")
+            if not _valid_day(day) or date.fromisoformat(day) > today:
+                continue
+            if isinstance(bf, bool) or not isinstance(bf, (int, float)) or not math.isfinite(bf) \
+                    or not 0 < bf < 100:
+                continue
+            if not isinstance(method, str) or not method.strip() or not isinstance(cal, bool):
+                continue
+            out.append({"day": day, "bf_pct": float(bf), "method": method, "calibrated": cal})
+        return sorted(out, key=lambda r: r["day"])
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")
