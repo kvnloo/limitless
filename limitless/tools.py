@@ -10,7 +10,8 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, e
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
-               overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak, phase as _phase,
+               overnight as _overnight, owner_messages as _owner, palace as _palace, passive_habit, peak as _peak,
+               phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
                scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
@@ -1005,6 +1006,8 @@ def propose_state(reader: StateReader, now: float, today: date, bands: Optional[
     put("peak_ask", peak_ask_label(rows, _guard(lambda: wake_at(reader.sleepmode()), None)), "direct")
     put("anki", "set" if _guard(lambda: _anki.collection_path(env, home), None) is not None else "not set",
         "direct")
+    put("palace", "set" if _guard(lambda: _palace.link(config(env, home)), None) is not None else "not set",
+        "direct")
     h = _guard(lambda: _habit_week(reader, now, today, env, home), {})
     hv = h.get("value") if isinstance(h, dict) else None
     if isinstance(hv, dict) and hv.get("habit"):
@@ -1068,6 +1071,33 @@ def explain_back(reader: StateReader, now: float, raw: bool = False, env: Option
     out["label"] = {"label": _explain_back.label(offered, len(got)), "tier": _explain_back.TIER,
                     "modality": _explain_back.MODALITY}
     return out
+
+
+def palace(result) -> dict:
+    """limitless_palace: whether the one memory palace offer fits now (palace.for_turn's result, which the plugin
+    builds from the window the state card sees), read-only.
+
+    ``value: {label}`` with the label "off" (and ``why``: "no memory palace link set"), "fits now" (and ``line``,
+    the offer with the person's link) or "not now: <reason in words>". Modality derived, age_h None,
+    evidence_tier direct when off (the config alone decides it), else indirect (the window is inferred). Words
+    only: no time, no count of walks, no score; a result with a digit anywhere is not now. Nothing is written,
+    marked or sent: only the state card's hook marks the wake day.
+    """
+    r = result if isinstance(result, Mapping) else {}
+    word, words, line = r.get("word"), r.get("words"), r.get("line")
+    ok = isinstance(words, str) and words and not any(c.isdigit() for c in words)
+    if ok and line is not None:
+        ok = word == _palace.FITS and isinstance(line, str) and not any(c.isdigit() for c in line)
+    if not ok:
+        word, words, line = _palace.NOT_NOW, f"{_palace.NOT_NOW}: {_palace.BROKEN}", None
+    value = {"label": words}
+    if word == _palace.OFF:
+        value["why"] = _palace.NO_LINK
+    elif word == _palace.FITS and line:
+        value["line"] = line
+    tier = "direct" if word == _palace.OFF else "indirect"
+    return {"value": value, "modality": _palace.MODALITY, "age_h": None, "evidence_tier": tier,
+            "label": {"label": words, "tier": "T1", "modality": _palace.MODALITY}}
 
 
 def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,

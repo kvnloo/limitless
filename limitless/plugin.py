@@ -143,6 +143,13 @@ def _explain_back(args, now):
     return tools.explain_back(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _palace(args, now):
+    reader = _reader()
+    win = tools.window(reader, now, _bands())
+    anki = card.anki_offer(reader, now, win, os.environ)   # one learning offer per trough
+    return tools.palace(card.palace_offer(reader, now, win, os.environ, anki))
+
+
 def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
@@ -438,13 +445,23 @@ for the latest wake and how many answers the last seven days hold, in plain word
 Self-reported. The words only; the answers' text needs the person's raw opt-in. It is a suggestion: never grade \
 an answer, never ask a follow-up of your own, no score, no streak; a skipped offer is not logged. Read-only; \
 nothing is written or sent."), _explain_back, "🗣️"),
+    "limitless_palace": (_schema(
+        "limitless_palace",
+        "Whether the one optional memory palace offer fits now, in plain words: off (config palace_link is not \
+set: no memory palace link set), fits now (a trough window, awake, no focus block or focused mode, pushes not \
+muted, no Anki offer on the card in this trough and no palace offer yet since the wake; then line is the state \
+card's offer, a short walk in the person's own memory-palace app with their link) or not now with the reason in \
+words. Modality derived. The plugin only offers the link: it never runs the walk, counts walks or keeps a score \
+or streak, and has no push or job of its own. Offer it only when it says fits now, at most once, and ask first. \
+Read-only; nothing is written, marked or sent."), _palace, "🏛️"),
     "limitless_propose": (_schema(
         "limitless_propose",
         "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \
 or NO_SUGGESTION when nothing clearly fits; doing nothing is the default. First match wins: asleep, quiet \
 (off, quiet tonight, snoozed), a focus block or focused mode give NO_SUGGESTION; then an open post-wake peak \
 with a peak ask waiting (decide the one waiting ask), a trough window with an Anki collection set (a short \
-Anki review), a running habit week with today unanswered (answer today's habit check-in). Unknown labels \
+Anki review), a trough window with no Anki collection and a memory palace link set (a short memory palace walk), \
+a running habit week with today unanswered (answer today's habit check-in). Unknown labels \
 never trigger a rule; no rule uses a clock time. The value is {action, because, rule_id, evidence (the label \
 names used), note}, digit-free; modality derived, evidence_tier the weakest of the labels used. It only \
 suggests: the agent must ask the person before doing anything. Read-only; nothing is written, sent, \

@@ -18,7 +18,7 @@ SKILL = ROOT / "skills" / "learn" / "SKILL.md"
 MAX_LINES = 100
 # the tools a learning turn runs over; each must be in the question -> tool table
 LEARNING_TOOLS = {"limitless_window", "limitless_capture", "limitless_explain_back", "limitless_anki",
-                  "limitless_ideas"}
+                  "limitless_ideas", "limitless_palace"}
 
 
 def text():
@@ -66,6 +66,16 @@ class Tools(unittest.TestCase):
             self.assertIn("trough", s, s)
         low = flat(frontmatter(text())[1])
         self.assertIn("only when `limitless_window` says trough", low)
+
+    def test_memory_palace_walk_is_offered_only_in_a_trough(self):
+        body = frontmatter(text())[1]
+        said = [s.lower() for s in sentences(body) if "limitless_palace" in s]
+        self.assertTrue(said)
+        for s in said:
+            self.assertIn("trough", s, s)
+        low = flat(body)
+        self.assertIn("only when `limitless_palace` says fits now", low)
+        self.assertIn("one learning offer per trough", low)
 
 
 class Never(unittest.TestCase):

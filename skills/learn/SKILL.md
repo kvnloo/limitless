@@ -30,7 +30,10 @@ and the next turn does not bring it up again.
 - Spaced review: offer a short Anki review only when `limitless_window` says trough, and not when the
   person is asleep, in a focus block (`limitless_blocks`) or has pushes muted (`limitless_quiet`). In a
   peak, an unknown window or any other state, say nothing about Anki. In a trough, `limitless_anki`
-  says how this week's reviews went in words; quote the words, never as a target.
+  says how this week's reviews went in words; quote the words, never as a target. In a trough, offer a
+  short memory palace walk in the person's own app only when `limitless_palace` says fits now, with its
+  line and the person's link, and never beside an Anki review in the same trough (one learning offer per
+  trough).
 
 ## Which tool answers which question
 
@@ -44,6 +47,7 @@ and the next turn does not bring it up again.
 | Did I get the explain-back offer today? How many answers this week? | limitless_explain_back |
 | What did I note this week? (the week review) | limitless_ideas |
 | Did I review Anki this week? | limitless_anki |
+| Does a short memory palace walk fit now? (trough only) | limitless_palace |
 | What is the one small thing that fits now? | limitless_propose |
 
 `limitless_capture` is the only write a learning turn makes, and only with the person's words. Every
