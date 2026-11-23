@@ -85,7 +85,7 @@ class Tool(Base):
         self.assertTrue(FIELDS <= set(out))
         word = "sleep: wearable on most nights; phone proxy says longer"
         self.assertEqual(out["value"], {"wearable_nights": 6, "proxy_only_nights": 1, "unknown_nights": 0,
-                                        "label": word})
+                                        "label": word, "regularity": "phone estimate: sleep times steady"})
         self.assertEqual(out["label"], {"label": word, "tier": "T1", "modality": "measured"})
         self.assertEqual(out["modality"], "measured")
         self.assertEqual((out["age_h"], out["evidence_tier"]), (2.0, "direct"))   # the 07:00 unlock
@@ -106,7 +106,9 @@ class Tool(Base):
         self.assertEqual(out["modality"], "proxy")
         self.assertEqual((out["age_h"], out["evidence_tier"]), (3 * 24 + 9.0, "stale"))
         self.assertEqual(out["value"], {"wearable_nights": 1, "proxy_only_nights": 0, "unknown_nights": 6,
-                                        "label": "sleep: wearable on some nights; phone proxy has no night to compare"})
+                                        "label": "sleep: wearable on some nights; phone proxy has no night to compare",
+                                        "regularity": "unknown: no nights with sleep times from the wearable or the "
+                                                      "phone estimate"})
 
     def test_nights_with_neither_are_unknown_never_zero(self):
         self.configure()
