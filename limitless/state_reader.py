@@ -39,7 +39,8 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        ride_rows (any HR or power field is T0 and is never read)
   sleep file           optional JSONL of wearable nightly sleep summaries, config "sleep_file" (relative to the
                        state dir; none by default), one row per night and source: {"night": "YYYY-MM-DD" (the
-                       evening the night began), "asleep_s": int, "source"}; read only through sleep_rows
+                       evening the night began), "asleep_s": int, "source"[, "start", "end"]}; read only through
+                       sleep_rows
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -439,11 +440,13 @@ class StateReader:
 
     def sleep_rows(self, today: Optional[date] = None, env: Optional[Mapping[str, str]] = None,
                    home: Optional[Path] = None) -> list:
-        """The sleep file's valid rows ``{"night", "asleep_s", "source"}``, oldest night first.
+        """The sleep file's valid rows ``{"night", "asleep_s", "source"[, "span"]}``, oldest night first.
 
         A valid row has ``night`` a YYYY-MM-DD date no later than ``today`` (default: the local date), ``asleep_s``
         an int in 1..MAX_ASLEEP_S and a non-empty ``source``; a second row with the same night and source is
-        dropped (the first in file order is kept). Other fields are never read. [] when no file is configured,
+        dropped (the first in file order is kept). Optional ``start`` and ``end`` (ISO-8601 or epoch seconds, when
+        the sleep began and ended) become ``"span": (start_s, end_s)`` when both parse and the span is over zero
+        and at most MAX_ASLEEP_S; a bad pair is left out and the row stays. Other fields are never read. [] when no file is configured,
         it is missing or unreadable; never raises."""
         try:
             today = date.today() if today is None else today
@@ -465,7 +468,11 @@ class StateReader:
             if not isinstance(source, str) or not source.strip() or (night, source) in seen:
                 continue
             seen.add((night, source))
-            out.append({"night": night, "asleep_s": secs, "source": source})
+            row = {"night": night, "asleep_s": secs, "source": source}
+            a, b = parse_ts(r.get("start")), parse_ts(r.get("end"))
+            if a is not None and b is not None and math.isfinite(a) and math.isfinite(b) and 0 < b - a <= MAX_ASLEEP_S:
+                row["span"] = (a, b)
+            out.append(row)
         return sorted(out, key=lambda x: x["night"])
 
     def screen_events(self) -> list:

@@ -209,7 +209,9 @@ sleep_file) and a phone proxy (the longest screen-off gap that starts in the eve
 with its modality and age. Plain words: wearable on most, some or no nights, and whether the phone proxy says \
 about the same, shorter or longer. Counts and the label only; per-night minutes need the person's raw opt-in. \
 measured only when the wearable covers the newest night, else proxy; a night with neither is unknown, never \
-zero. A quiet phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
+zero. regularity says how regular sleep times have been over two weeks, the source named: sleep times steady, \
+vary a lot, drifting later or drifting earlier, or unknown with too few nights; never a clock time. A quiet \
+phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
     "limitless_quiet": (_schema(
         "limitless_quiet",
         "Whether pushes to the person's phone are muted now: mode on, off (until they reply on), quiet \

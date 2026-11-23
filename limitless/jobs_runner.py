@@ -46,8 +46,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
-    jobs, overnight as _overnight, \
-    passive_habit, one_tap, quiet as _quiet, rides as _rides, send_gate, sleep as _sleep, wake_proxy
+    jobs, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
+    rides as _rides, send_gate, sleep as _sleep, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -399,8 +399,9 @@ def week_rides(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
 def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
                today: Optional[date] = None, tz: Optional[tzinfo] = None) -> str:
     """The week review's sleep line (sleep.review_line of the last seven nights before ``today``: the wearable
-    beside the phone proxy), digit-free; "" when there is no wearable row and no phone gap at all, or no
-    ``today`` is given (unknown, not zero). Read-only."""
+    beside the phone proxy, then the regularity clause of the last fourteen nights when it is known),
+    digit-free; "" when there is no wearable row and no phone gap at all, or no ``today`` is given (unknown,
+    not zero). Read-only."""
     if not isinstance(today, date):
         return ""
     reader = StateReader(Path(state_dir))
@@ -409,7 +410,9 @@ def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
         gaps = _sleep.screen_gaps(person_rows(reader, env, home))
         if not wear and not gaps:
             return ""
-        return _sleep.review_line(_sleep.label(_sleep.nights(wear, gaps, today, tz=tz)))
+        reg = _regularity.regularity(_sleep.timed_nights(wear, gaps, today, tz=tz),
+                                     _regularity.min_nights(config(env, home)), tz)
+        return _sleep.review_line(_sleep.label(_sleep.nights(wear, gaps, today, tz=tz)), reg)
     except Exception:  # noqa: BLE001 - broken sleep data must not stop the review
         return ""
 

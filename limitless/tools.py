@@ -8,10 +8,11 @@ from typing import Mapping, Optional
 from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics,
                habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                overnight as _overnight, owner_messages as _owner, passive_habit, prediction as _prediction,
-               quiet as _quiet, rides as _rides, scorecard as _scorecard, sleep as _sleep)
+               quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
+               sleep as _sleep)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
-                           RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, parse_ts)
+                           RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
 from .window import window as _window
@@ -427,6 +428,9 @@ def _minutes(s) -> Optional[int]:
     return None if s is None else int(round(s / 60))
 
 
+RAW_REGULARITY = ("nights", "mid_spread_min", "wake_spread_min", "drift_min")
+
+
 def sleep(reader: StateReader, now: float, today: date, raw: bool = False, env: Optional[Mapping[str, str]] = None,
           home: Optional[Path] = None, tz=None) -> dict:
     """limitless_sleep: the wearable summary and the phone proxy side by side for the last seven nights.
@@ -438,6 +442,12 @@ def sleep(reader: StateReader, now: float, today: date, raw: bool = False, env: 
     (a gap's end, or the local midnight after a wearable night). The wearable comes from config sleep_file; the
     proxy from the screen-event rows the screen wakes use (jobs_runner.person_rows). No wearable row and no
     phone gap at all is value None with a reason that never echoes the path. No target, no advice. Read-only.
+
+    ``regularity`` is regularity.label's T1 words over the last fourteen nights (sleep.timed_nights; config
+    regularity_min_nights): how steady sleep times have been, the source named, never a clock time. It rides in
+    this tool rather than a tool of its own because it reads the same two sources with the same envelope, so one
+    call answers how sleep has been. The raw opt-in adds ``regularity_min``: per source, the nights read and the
+    midpoint spread, wake spread and drift in minutes (None when unknown); no mean time is ever shown.
     """
     wear = reader.sleep_rows(today, env, home)
     gaps = _sleep.screen_gaps(jobs_runner.person_rows(reader, env, home))
@@ -452,10 +462,13 @@ def sleep(reader: StateReader, now: float, today: date, raw: bool = False, env: 
                               [g for g in gaps if g[1] <= now], tz)
     age_h = None if newest is None else max(0.0, now - newest) / 3600
     lab = _sleep.label(ns, modality)
-    value = dict(_sleep.counts(ns), label=lab["label"])
+    reg = _regularity.regularity(_sleep.timed_nights(wear, gaps, today, tz=tz),
+                                 _regularity.min_nights(config(env, home)), tz)
+    value = dict(_sleep.counts(ns), label=lab["label"], regularity=_regularity.label(reg)["label"])
     if raw:
         value["nights"] = [{"night": n["night"], "wearable_min": _minutes(n["wearable"]),
                             "proxy_min": _minutes(n["proxy"])} for n in ns]
+        value["regularity_min"] = {src: {k: reg[src][k] for k in RAW_REGULARITY} for src in _regularity.SOURCES}
     out = envelope(value, modality, age_h)
     out["label"] = lab
     return out
