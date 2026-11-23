@@ -2,6 +2,7 @@
 import logging
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -38,7 +39,11 @@ def _ours(cm):
 
 class HostRegistration(unittest.TestCase):
     def register(self, ctx, env=None):
-        with mock.patch.dict(os.environ, env or {}, clear=True), \
+        # pin the host config to an absent file: a real ~/.config/limitless/config.json (external_jobs) must not leak in
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env = {"LIMITLESS_CONFIG": str(Path(tmp.name) / "absent.json"), **(env or {})}
+        with mock.patch.dict(os.environ, env, clear=True), \
                 self.assertLogs(level="DEBUG") as cm:
             logging.getLogger("limitless-schedule-test").debug("anchor")   # assertLogs needs one record
             load_plugin().register(ctx)
