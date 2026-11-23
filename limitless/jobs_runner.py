@@ -47,7 +47,8 @@ from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
-    rides as _rides, send_gate, sleep as _sleep, tier_audit, wake_proxy, weekly_target
+    rides as _rides, send_gate, sleep as _sleep, tier_audit, wake_proxy, weekly_target, wind_down
+from . import glide_provider
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -75,7 +76,8 @@ _BODY[jobs.BREAK_NUDGE.name] = BREAK_BODY
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
-         anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "") -> str:
+         anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "",
+         wind_down_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -91,14 +93,16 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     ``anki_line`` (week_anki: this week's Anki reviews in words), each as one more line
     when given, then ``Reply: Keep / Drop``. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
-    what runs tonight, count words only) when given, then ``Reply: Yes / No / Later``.
+    what runs tonight, count words only) when given, then ``wind_down_line`` (miq_wind_down: one gentle
+    suggestion, digit-free) when given, then ``Reply: Yes / No / Later``.
     Once this week's Done days reach the weekly target (weekly_target, ``target_days``: config
     ``habit_target_days``, wording only) the check-in says so on one line after its question; nothing is
     said before that, and No, Skip or no answer never shows.
     """
     target = weekly_target.for_habit(habit, synced, target_days or weekly_target.DEFAULT_TARGET_DAYS)
     if spec.name == jobs.MIQ.name:
-        return "\n".join(x for x in (_BODY[spec.name], overnight, one_tap.choices_line(MIQ_ANSWERS)) if x)
+        return "\n".join(x for x in (_BODY[spec.name], overnight, wind_down_line,
+                                      one_tap.choices_line(MIQ_ANSWERS)) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
                                       passive, flow, fragment, body_line,
@@ -441,6 +445,20 @@ def _gated(hook: str, text: str, env: Optional[Mapping[str, str]], home: Optiona
     return tier_audit.gate(hook, text, env_.get(RAW_ENV) == "1", env, home) or ""
 
 
+def miq_wind_down(evs: list, trigger_at: Optional[float], env: Optional[Mapping[str, str]] = None,
+                  home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
+    """The MIQ body's wind-down line (wind_down.line: config ``wind_down_line``, and nothing when Glide's
+    attention file says Glide already nudged on this night), through tier_audit.gate (hook ``miq:wind_down``).
+    "" when off, already nudged, blocked or unreadable. It rides in the one MIQ push: never a push of its own.
+    Read-only."""
+    try:
+        night = night_date(evs, trigger_at, tz) if trigger_at is not None else None
+        text = wind_down.line(config(env, home), glide_provider.attention(env, home), night)
+        return _gated("miq:wind_down", text, env, home)
+    except Exception:  # noqa: BLE001 - a broken line must never stop the bedtime question
+        return ""
+
+
 def _nap_events(state_dir, env, home):
     reader = StateReader(Path(state_dir))
     cfg = config(env, home)
@@ -541,7 +559,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 review = spec.name == jobs.WEEK_REVIEW.name
                 passive = week_passive(state_dir, p.habit, env, home) if review else ""
                 body_line = week_body(state_dir, env, home, today) if review else ""
-                plan = _overnight.plan_for(state_dir, now, env, home) if spec.name == jobs.MIQ.name else ""
+                miq = spec.name == jobs.MIQ.name
+                plan = _overnight.plan_for(state_dir, now, env, home) if miq else ""
+                wind = miq_wind_down(p.evs, v.trigger_at, env, home, tz) if miq else ""
                 rides_line = week_rides(state_dir, env, home, today) if review else ""
                 sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
                 fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
@@ -549,7 +569,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 naps_line = week_naps(state_dir, env, home, today, tz) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
                             body_line, plan, rides_line, sleep_line, fragment, anki_line,
-                            target_days=weekly_target.target_days(env, home), naps_line=naps_line)
+                            target_days=weekly_target.target_days(env, home), naps_line=naps_line,
+                            wind_down_line=wind)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)

@@ -21,6 +21,7 @@ H = 3600.0
 MIQ_Q = "Your wind-down has started. Do you know the one thing that matters most tomorrow?"
 CHOICES = "Reply: Yes / No / Later"   # one_tap: the MIQ is one tap, its choices line last
 PLAN = "Overnight: a few tasks running, one queued"
+WIND = "Screens down and lights low when you're ready."   # wind_down.DEFAULT, before the choices
 
 
 def put(q: Path, sub: str, name: str, mtime: float):
@@ -82,12 +83,12 @@ class WindDownRun(unittest.TestCase):
             put(q, "running", n, NOW - H)
         put(q, "queue", "synthetic-gamma", NOW - H)
         body = self.miq_body()
-        self.assertEqual(body.splitlines(), [MIQ_Q, PLAN, CHOICES])
+        self.assertEqual(body.splitlines(), [MIQ_Q, PLAN, WIND, CHOICES])
         self.assertNotIn("synthetic", body)
 
     def test_no_work_queue_configured_keeps_the_message(self):
         self.cfg.write_text("{}")
-        self.assertEqual(self.miq_body(), f"{MIQ_Q}\n{CHOICES}")
+        self.assertEqual(self.miq_body(), f"{MIQ_Q}\n{WIND}\n{CHOICES}")
 
 
 class Finalize(unittest.TestCase):
