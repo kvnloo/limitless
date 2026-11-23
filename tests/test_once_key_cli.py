@@ -20,6 +20,7 @@ from limitless import jobs, jobs_runner  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "limitless-once-key"
 H = 3600.0
+UTC = timezone.utc
 
 
 def write_rows(path, rows):
@@ -44,7 +45,7 @@ class Base(unittest.TestCase):
         self.attention = self.home / "attention.json"
         self.env = {"HOME": str(self.home), "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
                     "LIMITLESS_STATE": str(self.st), "LIMITLESS_CONFIG": str(self.home / "no-config.json"),
-                    "LIMITLESS_GLIDE_ATTENTION": str(self.attention)}
+                    "LIMITLESS_GLIDE_ATTENTION": str(self.attention), "TZ": "UTC"}
         self.now = time.time()
 
     def tearDown(self):
@@ -59,16 +60,23 @@ class Base(unittest.TestCase):
         (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": iso(self.now - 30), "ok": True}))
         write_rows(self.st / "unlocks.jsonl", [{"at": iso(self.now - 60)}])
 
+    def wind_down_rows(self, at):
+        """A wake two hours before the wind-down, so the night date is the wake's (UTC) date."""
+        write_rows(self.st / "events.jsonl", [{"event": "wake", "at": iso(at - 2 * H)},
+                                              {"event": "wind_down", "at": iso(at)}])
+        return f"miq:{datetime.fromtimestamp(at - 2 * H, UTC).date().isoformat()}"
+
     def wind_down(self, at):
-        write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": iso(at)}])
+        key = self.wind_down_rows(at)
         self.attention.write_text(json.dumps({"block": None, "resume": {"saved": int(at)}}))
+        return key
 
     def nap(self, off):
         write_rows(self.st / "sleepmode.jsonl", [{"at": iso(off - 0.5 * H), "on": True}, {"at": iso(off), "on": False}])
         (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": iso(self.now - 30), "ok": True}))
 
     def in_process_key(self, job):
-        return jobs_runner.event_key(self.st, time.time(), job=job, env=self.env, home=self.home)
+        return jobs_runner.event_key(self.st, time.time(), job=job, env=self.env, home=self.home, tz=UTC)
 
 
 class PrintsTheKey(Base):
@@ -78,11 +86,10 @@ class PrintsTheKey(Base):
         r = self.cli("wake_brief")
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, f"wake_brief:{off}\n", ""))
 
-    def test_miq_key_is_the_wind_down_event_time(self):
-        at = int(self.now - 120)
-        self.wind_down(at)
+    def test_miq_key_is_the_wind_down_night(self):
+        key = self.wind_down(int(self.now - 120))
         r = self.cli("miq")
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, f"miq:{at}\n", ""))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, f"{key}\n", ""))
         self.assertEqual(r.stdout.strip(), self.in_process_key("miq"))
 
     def test_nap_key_is_the_nap_end_time(self):
@@ -103,10 +110,9 @@ class PrintsTheKey(Base):
 
     def test_a_job_held_by_its_window_still_has_its_events_key(self):
         # No Glide wind-down window: run_once holds MIQ, but the event is the same, so is its key.
-        at = int(self.now - 120)
-        write_rows(self.st / "events.jsonl", [{"event": "wind_down", "at": iso(at)}])
+        key = self.wind_down_rows(int(self.now - 120))
         r = self.cli("miq")
-        self.assertEqual((r.returncode, r.stdout), (0, f"miq:{at}\n"))
+        self.assertEqual((r.returncode, r.stdout), (0, f"{key}\n"))
 
 
 class NoKey(Base):

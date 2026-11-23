@@ -11,7 +11,8 @@ whose trigger is a screen-event wake (or its habit cue) says the wake is a proxy
 
 Only a ``deliver`` verdict calls ``push(title, body)``, with ``once=once_key(spec, trigger_at)`` when push
 takes a ``once`` parameter (``event_key`` gives the same key to any other sender): the event key ``<job>:<trigger event time>`` that every sender for one event
-passes to ``kevin-push --once``, so only the first message per event goes out. A push that reports
+passes to ``kevin-push --once``, so only the first message per event goes out. The MIQ key is one per
+night instead, ``miq:<night date>`` (``night_date``), so one night has one MIQ prompt whoever sends. A push that reports
 ``send_gate.ONCE_DROP`` (another sender already sent for this event) drops the job. ``push`` returns what kevin-push reported
 (``"telegram"`` or ``True`` for a real delivery). Only a real delivery appends ``jobs.sent_entry()``
 to the sent log; a failed, log-only or held push is not a send, and the job holds until the next
@@ -23,14 +24,17 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
+from datetime import datetime, tzinfo
 from typing import Callable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, jobs, send_gate, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, parse_ts
+from .window import MAX_AWAKE_H
 from .window_chain import EventProvider, first_known
 
 SENT_LOG = "jobs-sent.jsonl"
+NIGHT_JOBS = (jobs.MIQ.name,)    # one message per night, keyed by the night's date, not by its event
 DELIVERED = "telegram"
 _BODY = {
     jobs.WAKE_BRIEF.name: "You are up. Your brief comes next.",
@@ -131,29 +135,68 @@ def _read_pass(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
                  sent=reader.jobs_sent(), habit=reader.habit(), specs=_specs(reader))
 
 
-def _key(spec: jobs.JobSpec, v: jobs.Verdict) -> Optional[str]:
-    """The event key for one verdict: once_key of its trigger, or None when nothing triggered it."""
-    return once_key(spec, v.trigger_at) if v.trigger_at is not None else None
+def night_date(evs: list, at: float, tz: Optional[tzinfo] = None) -> str:
+    """The local date of the night ``at`` belongs to: the date of the latest wake before it.
+
+    An event after midnight and before the person's next wake keeps the previous date. A wake more
+    than MAX_AWAKE_H before ``at`` is missing data, not a long day: with no wake, the date of ``at``.
+    ``tz`` is the zone for the local date (default: this machine's local zone, as habit_replies).
+    A key, never a trigger: nothing here decides when anything is sent.
+    """
+    wakes = [w for w in jobs.wake_times(evs, at) if at - w <= MAX_AWAKE_H * 3600]
+    return datetime.fromtimestamp(wakes[-1] if wakes else at, tz).date().isoformat()
+
+
+def _key(spec: jobs.JobSpec, v: jobs.Verdict, evs: list, tz: Optional[tzinfo] = None) -> Optional[str]:
+    """The event key for one verdict: once_key of its trigger (for a night job, the trigger's night
+    key), or None when nothing triggered it."""
+    if v.trigger_at is None:
+        return None
+    if spec.name in NIGHT_JOBS:
+        return f"{spec.name}:{night_date(evs, v.trigger_at, tz)}"
+    return once_key(spec, v.trigger_at)
 
 
 def event_key(state_dir, now: float, job: str = jobs.WAKE_BRIEF.name, env: Optional[Mapping[str, str]] = None,
-              home: Optional[Path] = None) -> Optional[str]:
+              home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[str]:
     """The ``kevin-push --once`` key run_once uses for ``job`` right now, or None when it has no trigger.
 
     Same events, same trigger as run_once (both read through _read_pass and should_fire), so another
     sender for the same event (bin/limitless-brief) gets the same key. The key is the latest trigger's
     whatever the verdict: after run_once has sent (a drop), a later sender still gets that event's key and
-    kevin-push drops it. Reads only; never sends or writes.
+    kevin-push drops it. For a night job (MIQ) it is the night key, and only for a trigger of tonight:
+    last night's wind-down is no key now. Reads only; never sends or writes.
     """
     p = _read_pass(state_dir, now, env=env, home=home)
     spec = next((s for s in p.specs if s.name == job), None)
     if spec is None:
         raise ValueError(f"job must be one of {sorted(jobs.SPECS)}, got {job!r}")
-    return _key(spec, jobs.should_fire(spec, p.evs, p.window, p.sent, now))
+    k = _key(spec, jobs.should_fire(spec, p.evs, p.window, p.sent, now), p.evs, tz)
+    if k is not None and spec.name in NIGHT_JOBS and k != f"{spec.name}:{night_date(p.evs, now, tz)}":
+        return None
+    return k
+
+
+def night_key(state_dir, now: float, job: str = jobs.MIQ.name, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
+    """Tonight's key for a night job, ``<job>:<night date of now>``, with or without its trigger event.
+
+    For a sender with its own cue (bin/limitless-once-key miq --night): it equals event_key whenever
+    tonight has the trigger event, so the two senders share one key. State that cannot be read is no
+    wake: the date of ``now``. Reads only; never sends or writes.
+    """
+    if job not in NIGHT_JOBS:
+        raise ValueError(f"job must be one of {sorted(NIGHT_JOBS)}, got {job!r}")
+    try:
+        evs = events(StateReader(Path(state_dir)), env=env, home=home)
+    except Exception:  # noqa: BLE001 - unreadable state is no wake, never a traceback
+        evs = []
+    return f"{job}:{night_date(evs, now, tz)}"
 
 
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
-             env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
+             env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+             tz: Optional[tzinfo] = None) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``."""
     p = _read_pass(state_dir, now, env=env, home=home)
     sent = p.sent
@@ -165,7 +208,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
         if action == jobs.DELIVER and not dry_run and push is not None:
-            ok, how = _push(push, spec.send_title, body(spec, p.habit), _key(spec, v))
+            ok, how = _push(push, spec.send_title, body(spec, p.habit), _key(spec, v, p.evs, tz))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:

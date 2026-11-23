@@ -174,6 +174,11 @@ def _triggers(spec: JobSpec, evs: list) -> list:
     return hits
 
 
+def wake_times(events: list, now: float) -> list:
+    """Times of the wake events at or before ``now`` (a long Sleep-mode on then off, or a ``wake``), oldest first."""
+    return _triggers(WAKE_BRIEF, _past(events, now))
+
+
 def _label(spec: JobSpec) -> str:
     return "nap" if spec.trigger_after == "short_on" else _WORDS[spec.trigger_event]
 
