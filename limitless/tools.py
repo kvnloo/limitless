@@ -8,7 +8,7 @@ from typing import Mapping, Optional
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration as _body_calibration,
                delivery_audit as _delivery,
                explain_back as _explain_back,
-               feeds_evidence,
+               feed_reflex as _feed_reflex, feeds_evidence,
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
@@ -1000,6 +1000,34 @@ def naps(reader: StateReader, now: float, today: date, raw: bool = False, env: O
         value.update(naps=got["naps"], close=got["close"])
     out = envelope(value, _naps.MODALITY, None if newest is None else max(0.0, now - newest) / 3600)
     out["label"] = got["label"]
+    return out
+
+
+def feed_reflex(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_feed_reflex: over the last feed_reflex.LOOKBACK_DAYS days, how often a feed app was the first
+    thing opened after unlocking the phone (feed_reflex.read_for), read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: a feed was often, sometimes or rarely the first thing
+    opened after unlocking) with the T1 label beside it; modality proxy (an app opened first is not a feed
+    read), aged by the newest phone row or unlock. The counts (``unlocks``, ``feed_first``, ``days``) and
+    ``gap_s`` are T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No feed apps, no DB, no unlock
+    or too few unlocks is value None with the reason and the label "unknown: <why>", never zero. It never
+    blocks, closes or delays an app; no score, no streak, no target. Nothing is written or sent.
+    """
+    got = _feed_reflex.read_for(reader, now - _feed_reflex.LOOKBACK_DAYS * 86400.0, now, env, home, tz)
+    word = got["label"]
+    label = {"tier": "T1", "modality": _feed_reflex.MODALITY, "label": word}
+    if word not in _feed_reflex.WORDS:
+        out = envelope(None, _feed_reflex.MODALITY, None, reason=f"feed reflex {word}")
+        out["label"] = label
+        return out
+    value = {"label": word}
+    if raw:
+        value.update(unlocks=got["unlocks"], feed_first=got["feed_first"], gap_s=got["gap_s"],
+                     days=[dict(d) for d in got["days"]])
+    out = envelope(value, _feed_reflex.MODALITY, max(0.0, now - got["newest"]) / 3600)
+    out["label"] = label
     return out
 
 
