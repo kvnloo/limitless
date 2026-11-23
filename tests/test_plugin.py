@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_overnight",
+TOOLS = ["limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_overnight",
          "limitless_quiet", "limitless_rides", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
@@ -54,6 +54,16 @@ def sleep_config(st: Path) -> Path:
     (st / "sleep.jsonl").write_text(json.dumps({"night": night, "asleep_s": 25200, "source": "synthetic-ring"}) + "\n")
     cfg = st / "sleep-config.json"
     cfg.write_text(json.dumps({"sleep_file": "sleep.jsonl"}))
+    return cfg
+
+
+def blocks_config(st: Path) -> Path:
+    """A config naming a synthetic ActivityWatch DB in ``st`` with one long block of a made-up work app."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_flow_week import make_db
+    make_db(st / "aw-blocks.db", spans=[(NOW - 6000, NOW - 60, "editor")])
+    cfg = st / "blocks-config.json"
+    cfg.write_text(json.dumps({"aw_db": "aw-blocks.db", "flow_work_apps": ["editor"]}))
     return cfg
 
 
@@ -191,6 +201,8 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(rides_config(st))}
             if name == "limitless_sleep":   # one synthetic wearable night before NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(sleep_config(st))}
+            if name == "limitless_blocks":   # one synthetic long block up to NOW
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(blocks_config(st))}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))

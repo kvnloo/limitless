@@ -29,6 +29,12 @@ Quiet: a push or brief that reports ``(quiet: ...)`` (kevin-push while quiet.jso
 not retried by the next run, and kevin-push has claimed its event key, so nothing is queued for later. A
 ``push`` that takes a ``why`` parameter gets the verdict's reason (trigger event and decision window), which
 kevin-push turns into the message's one "Why now" line.
+
+Break nudge: the ActivityWatch DB's focus blocks (blocks.read_for: config ``flow_work_apps``,
+``break_after_min``, ``block_gap_min``) add one ``long_block`` event per block that ran that long. Its key is
+``break:<block start>`` (break_key), so one block gets one nudge whoever polls; jobs.break_verdict drops it
+once the block ended a while ago. Unknown blocks (no DB, no work apps) say so in the row; they are never "no
+block".
 """
 from __future__ import annotations
 
@@ -39,8 +45,8 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, passive_habit, \
-    one_tap, quiet as _quiet, rides as _rides, send_gate, sleep as _sleep, wake_proxy
+from . import aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, \
+    passive_habit, one_tap, quiet as _quiet, rides as _rides, send_gate, sleep as _sleep, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -60,6 +66,9 @@ _BODY = {
 }
 # L14: an ask is one tap or one spoken word. The MIQ asks Yes / No / Later instead of a typed answer.
 MIQ_ANSWERS = one_tap.YES_NO_LATER
+# One soft line: no duration, no number, no advice beyond a short break. The Why-now line follows it.
+BREAK_BODY = "Long focus block; a short break now keeps the next one good"
+_BODY[jobs.BREAK_NUDGE.name] = BREAK_BODY
 
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
@@ -183,6 +192,7 @@ class _Pass(NamedTuple):
     habit: Optional[dict]
     specs: list
     synced: dict
+    blocks: Optional[dict] = None      # blocks.read_for: today's focus blocks, or None with why (unknown)
 
 
 def _read_pass(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
@@ -190,7 +200,10 @@ def _read_pass(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
     reader = StateReader(Path(state_dir))
     ev_provider = EventProvider.from_reader(reader, now)
     state = first_known(GlideProvider.from_config(env=env, home=home, now=now), ev_provider)
-    return _Pass(evs=events(reader, env=env, home=home),
+    blk = _blocks.read_for(reader, now, env, home)
+    evs = sorted(events(reader, env=env, home=home) + _blocks.long_block_events(blk["blocks"], blk["break_after_s"]),
+                 key=lambda e: e["at"])
+    return _Pass(evs=evs, blocks=blk,
                  window={"cls": "asleep"} if ev_provider.asleep else state,
                  sent=reader.jobs_sent(), habit=reader.habit(), specs=_specs(reader), synced=reader.habit_days())
 
@@ -238,7 +251,14 @@ def _key(spec: jobs.JobSpec, v: jobs.Verdict, evs: list, tz: Optional[tzinfo] = 
         return week_key(habit)
     if spec.name in NIGHT_JOBS:
         return f"{spec.name}:{night_date(evs, v.trigger_at, tz)}"
+    if spec.name == jobs.BREAK_NUDGE.name:
+        return break_key(jobs.block_start(evs, v.trigger_at))
     return once_key(spec, v.trigger_at)
+
+
+def break_key(block_start: float) -> str:
+    """The break nudge's event key: one per focus block, ``break:<block start>`` (whole seconds)."""
+    return f"break:{int(block_start)}"
 
 
 def event_key(state_dir, now: float, job: str = jobs.WAKE_BRIEF.name, env: Optional[Mapping[str, str]] = None,
@@ -375,6 +395,15 @@ def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
         return ""
 
 
+def _break(v: jobs.Verdict, p: _Pass, now: float) -> jobs.Verdict:
+    """The break nudge's verdict: narrowed by its block (jobs.break_verdict); with no trigger and unknown
+    blocks, the reason says why they are unknown (no DB, no work apps), never that there was no block."""
+    blk = p.blocks or {}
+    if v.action == jobs.NOT_TRIGGERED and blk.get("blocks") is None and blk.get("why"):
+        return v._replace(reason=f"focus blocks unknown: {blk['why']}")
+    return jobs.break_verdict(v, p.evs, now, blk.get("gap_s", _blocks.GAP_S))
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -399,6 +428,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             v = gate._replace(trigger_at=v.trigger_at)      # a cue came, but no started week: drop, never send
         if spec.name == jobs.WEEK_REVIEW.name and v.action != jobs.NOT_TRIGGERED:
             v = week_review_verdict(v, p.habit, sent, tz)   # only a cue from day seven on, once per week
+        if spec.name == jobs.BREAK_NUDGE.name:
+            v = _break(v, p, now)
         action, reason = v.action, v.reason
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"

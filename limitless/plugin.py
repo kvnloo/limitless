@@ -89,6 +89,10 @@ def _quiet(args, now):
     return tools.quiet(state_dir(), now)
 
 
+def _blocks(args, now):
+    return tools.blocks(_reader(), now)
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -208,6 +212,13 @@ zero. A quiet phone is not a sleep measure. No target, no advice. Read-only; not
 tonight (until they wake up) or snoozed (until they write again), whether a push would be dropped and the \
 plain reason, with a label. The person sets it with one whole-message reply (quiet, quiet tonight, snooze, \
 on); there are no clock times or durations. Read-only; nothing is written or sent."), _quiet, "🔕"),
+    "limitless_blocks": (_schema(
+        "limitless_blocks",
+        "Deep-work focus blocks from app activity (the ActivityWatch DB; work apps in config flow_work_apps): \
+whether the person is in a long block now (past break_after_min), between blocks, or unknown, with how many \
+blocks and long blocks the last day had. A proxy: app activity, not attention. No work apps or no data is \
+unknown, never zero. No score, no target; the only suggestion anywhere is a short break after a long block, \
+sent by the break nudge job, never by this tool. Read-only; nothing is written or sent."), _blocks, "⏳"),
 }
 
 
