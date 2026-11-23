@@ -18,6 +18,9 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   screen-events.jsonl  {"ts": epoch_ms, "type", "pkg"} Android screen events (wake_proxy.events_from_screen)
   ActivityWatch DB     optional SQLite copy at $LIMITLESS_AW_DB, else config "aw_db" (relative to the
                        state dir); read only through aw_reader.person_rows (aw_db_path)
+  passive habit file   optional JSONL from an older loop, config "passive_habit_file" (relative to the state
+                       dir; none by default), the habit1.jsonl row shape; read only through
+                       passive_habit_days: measured evidence (a proxy), never a check-in
   owner session DBs    optional Hermes session stores, one per machine the person chats from:
                        $LIMITLESS_OWNER_DBS (os.pathsep-separated), else config "owner_dbs" (a list;
                        relative paths in the state dir); read only through owner_messages (owner_db_paths)
@@ -30,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional
@@ -39,6 +43,18 @@ OWNER_DBS_ENV = "LIMITLESS_OWNER_DBS"
 OWNER_DBS_CONFIG = "owner_dbs"
 OWNER_BEACONS_ENV = "LIMITLESS_OWNER_BEACONS"
 OWNER_BEACONS_CONFIG = "owner_beacons"
+PASSIVE_HABIT_CONFIG = "passive_habit_file"
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _valid_day(v) -> bool:
+    if not isinstance(v, str) or not _DAY.fullmatch(v):
+        return False
+    try:
+        date.fromisoformat(v)
+    except ValueError:
+        return False
+    return True
 
 
 def config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
@@ -222,6 +238,30 @@ class StateReader:
                 p = Path(v).expanduser()
                 out.append(p if p.is_absolute() else self.path / p)
         return out or None
+
+    def passive_habit_file(self, env: Optional[Mapping[str, str]] = None,
+                           home: Optional[Path] = None) -> Optional[Path]:
+        """The older loop's per-day habit file: config ``passive_habit_file``; a relative path is in the
+        state dir. None when it is not set (there is no default file name)."""
+        v = config(env, home).get(PASSIVE_HABIT_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def passive_habit_days(self, env: Optional[Mapping[str, str]] = None,
+                           home: Optional[Path] = None) -> list:
+        """The passive file's rows with a real ``YYYY-MM-DD`` day and a bool ``met``, one per day (the last
+        row for a day wins), oldest first. [] when no file is configured, it is missing or no row is valid."""
+        p = self.passive_habit_file(env, home)
+        if p is None:
+            return []
+        try:
+            rows = _rows(p.read_text(errors="replace"))
+        except OSError:
+            return []
+        by_day = {r["day"]: r for r in rows if _valid_day(r.get("day")) and isinstance(r.get("met"), bool)}
+        return [by_day[d] for d in sorted(by_day)]
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")
