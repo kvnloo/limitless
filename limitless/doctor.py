@@ -9,7 +9,8 @@ envelope for an empty call, the Open Wearables export's row (config open_wearabl
 open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
 its mark noop-export.json) and, before both, the context packet's row (config context_packet_path: off, live
 when written within STALE_H, else stale; read from the packet's own generated_at), with the voice MIQ's row
-(config voice_miq, its mark voice-miq.json) just before it.
+(config voice_miq, its mark voice-miq.json) just before it. Right after the tool rows comes the NOOP MCP row
+(config noop_mcp and t0_tools; the server is never started).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -24,7 +25,7 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import card, tier_audit, tools
+from . import card, noop_mcp, tier_audit, tools
 from .envelope import STALE_H
 from .state_reader import StateReader, config, parse_ts
 
@@ -143,6 +144,23 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     if outcome == jobs_runner.NOOP_NOTHING:
         return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}: {said}")
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
+
+
+NOOP_MCP_ROW = "NOOP MCP"
+NOOP_MCP_WORDS = {   # noop_mcp.state -> (status, reason); never the command, an env value or the server name
+    noop_mcp.OFF: (OFF, "no noop_mcp set"),
+    noop_mcp.MALFORMED: (MISSING, "noop_mcp is set but is not a command list"),
+    noop_mcp.REFUSED: (MISSING, "refused: t0_tools does not cover its tools"),
+    noop_mcp.BY_HAND: (MISSING, "set but the host cannot register MCP servers; add it to mcp_servers by hand"),
+}
+
+
+def noop_mcp_row(cfg: Mapping) -> dict:
+    """The NOOP agent MCP server (config ``noop_mcp``, noop_mcp.state): off when unset; refused while t0_tools
+    does not cover its tools; else set, for the person to add to the host's mcp_servers (Hermes has no plugin API
+    to register one). Reads config only: the server is never started and the host's config is never read."""
+    status, reason = NOOP_MCP_WORDS[noop_mcp.state(cfg)]
+    return _row(NOOP_MCP_ROW, "mcp", status, reason)
 
 
 VOICE_MIQ_ROW = "job voice MIQ"
@@ -332,8 +350,9 @@ def tool_row(name: str, now: float) -> dict:
 
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
-    (context_packet_row), the Open Wearables export (open_wearables_row), then the NOOP export job
-    (noop_export_row). The voice MIQ's row (voice_miq_row) comes just before the context packet's.
+    (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
+    (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, the voice
+    MIQ's row (voice_miq_row) just before the context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -341,6 +360,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
+    rows += [noop_mcp_row(cfg)]
     rows += [voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
