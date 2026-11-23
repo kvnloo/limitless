@@ -16,7 +16,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import bedtime, capture, card, catchup, labeler, modes, scorecard, tier_audit, tools
+from . import bedtime, capture, card, catchup, labeler, modes, scorecard, stop_rule, tier_audit, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -50,7 +50,8 @@ def _window(args, now):
 def _habit(args, now):
     today, confirm = date.fromtimestamp(now), args.get("confirm") is True
     if args.get("start") is not None:
-        return tools.habit_start(state_dir(), args.get("start"), today, now, confirm=confirm)
+        return tools.habit_start(state_dir(), args.get("start"), today, now, confirm=confirm,
+                                 stop_rule=args.get("stop_rule"))
     if args.get("predict") is not None:
         return tools.habit_predict(state_dir(), args.get("predict"), args.get("metric", "logged"),
                                    args.get("direction"), today, now, confirm=confirm)
@@ -167,6 +168,8 @@ TOOLS = {
         "With `start` it starts this week's one habit instead: "
         "pass `confirm: true` only after the person said yes to that habit in this turn; without it nothing "
         "is written and the result says what would happen. A running week is never replaced. "
+        "`stop_rule` (only with `start`) is the keep-or-drop rule the person picked for the week from the "
+        "list; it only suggests at the week review, the person's Keep or Drop decides. "
         "`prediction` shows a prediction locked for the week and its receipt when present. With `predict` it "
         "locks one prediction for the week before its check-ins (`metric` logged with `direction` "
         "\"at_least k of m\", or sleep_h / readiness with up or down); with `receipt` it judges the locked "
@@ -175,6 +178,10 @@ TOOLS = {
         "rewritten.",
         {"start": {"type": "string", "description": "The habit to start this week, in the person's words. "
                                                     "Only after the person asked to start a habit."},
+         "stop_rule": {"type": "string", "enum": list(stop_rule.RULES),
+                       "description": "With start: the stop rule the person picked, "
+                                      + "; ".join(f"{k}: {v}" for k, v in stop_rule.RULES.items())
+                                      + ". Leave it out when they picked none."},
          "predict": {"type": "string", "description": "The person's prediction for this habit week, in "
                                                       "their words. Only when they asked to lock one."},
          "metric": {"type": "string", "enum": ["logged", "sleep_h", "readiness"],

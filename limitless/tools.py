@@ -246,14 +246,15 @@ def _passive_age_h(reader: StateReader, now: float, env: Optional[Mapping[str, s
         return None
 
 
-def habit_start(state_dir, habit, today: date, now: float, confirm: bool = False) -> dict:
+def habit_start(state_dir, habit, today: date, now: float, confirm: bool = False, stop_rule=None) -> dict:
     """Start this week's one habit (habit_start.start_week), writing only when ``confirm`` is True.
 
     An envelope whose value is the start row ``{action, reason, habit, week_of, kept}``, self-reported and
     of age zero, with a digit-free T1 label: would start this habit week, started this habit week or
-    refused: <why>. Without confirm it writes nothing and says what it would do.
+    refused: <why>. Without confirm it writes nothing and says what it would do. ``stop_rule`` is the
+    week's stop rule id (stop_rule.RULES), stored with the week; None for no rule.
     """
-    r = _habit_start.start_week(state_dir, habit, today, confirm is True, now=now)
+    r = _habit_start.start_week(state_dir, habit, today, confirm is True, now=now, stop_rule=stop_rule)
     out = envelope(r, "self_report", 0.0)
     out["label"] = {"label": _habit_start.label(r), "tier": "T1", "modality": "self_report"}
     return out

@@ -5,7 +5,8 @@
 
 ``jobs.habit_week_gate`` keeps the habit check-in quiet until a week is started; this is the one place
 that starts one, after the person said yes. It writes ``{"habit", "week_of": today, "start", "at": <ISO
-now>, "checkins": {}}``: ``start`` is the habit's 2-minute first step (``first_step``, else null) and
+now>, "checkins": {}}``, plus ``stop_rule`` when one is picked (a stop_rule.RULES id, set only here, when
+the week starts): ``start`` is the habit's 2-minute first step (``first_step``, else null) and
 ``at`` the time it was written, the keys ``state_reader`` and ``tools.habit`` already read. The write is
 habit_replies' atomic one (a 0600 temp file in the state dir, then a rename).
 
@@ -26,7 +27,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from . import jobs
+from . import jobs, stop_rule as _stop_rule
 from .habit_replies import HABIT_FILE, _write_atomic
 
 WOULD_START, STARTED, REFUSED = "would start", "started", "refused"
@@ -34,10 +35,11 @@ _EMPTY = "the habit text is empty"
 _RUNNING = "a habit week is already running: one habit a week"
 _LATER = "a habit week is already set to start later: one habit a week"
 _KEPT_TAKEN = "an older habit file for that week is already kept: left as it is"
+_BAD_RULE = "the stop rule is not one from the list: nothing written"
 
 
-def _result(action: str, reason: str, habit=None, week_of=None, kept=None) -> dict:
-    return {"action": action, "reason": reason, "habit": habit, "week_of": week_of, "kept": kept}
+def _result(action: str, reason: str, habit=None, week_of=None, kept=None, rule=None) -> dict:
+    return {"action": action, "reason": reason, "habit": habit, "week_of": week_of, "kept": kept, "stop_rule": rule}
 
 
 def _existing(path: Path):
@@ -70,15 +72,19 @@ def _keep(path: Path, raw: bytes) -> None:
 
 
 def start_week(state_dir, habit, today: date, write: bool, now: Optional[float] = None,
-               first_step: Optional[str] = None) -> dict:
+               first_step: Optional[str] = None, stop_rule: Optional[str] = None) -> dict:
     """``{action, reason, habit, week_of, kept}``: action is would start, started or refused.
 
     ``kept`` names the file the old habit.json is (or would be) kept as, else None. ``now`` is the
-    write time for ``at`` (default: the clock).
+    write time for ``at`` (default: the clock). ``stop_rule`` (None: no rule) must be a stop_rule.RULES id;
+    anything else is refused, writing nothing.
     """
     name = habit.strip() if isinstance(habit, str) else ""
     if not name:
         return _result(REFUSED, _EMPTY)
+    rule = _stop_rule.rule(stop_rule)
+    if stop_rule is not None and rule is None:
+        return _result(REFUSED, _BAD_RULE, name)
     state = Path(state_dir)
     path = state / HABIT_FILE
     raw, old = _existing(path)
@@ -95,13 +101,16 @@ def start_week(state_dir, habit, today: date, write: bool, now: Optional[float] 
             return _result(REFUSED, _KEPT_TAKEN, name)
     week_of = today.isoformat()
     if not write:
-        return _result(WOULD_START, "dry run: nothing written", name, week_of, kept)
+        return _result(WOULD_START, "dry run: nothing written", name, week_of, kept, rule)
     if raw is not None:
         _keep(state / kept, raw)
     at = datetime.fromtimestamp(time.time() if now is None else now, timezone.utc).isoformat(timespec="seconds")
     step = first_step.strip() if isinstance(first_step, str) and first_step.strip() else None
-    _write_atomic(path, {"habit": name, "week_of": week_of, "start": step, "at": at, "checkins": {}})
-    return _result(STARTED, "habit week started: one habit a week", name, week_of, kept)
+    row = {"habit": name, "week_of": week_of, "start": step, "at": at, "checkins": {}}
+    if rule is not None:
+        row[_stop_rule.CONFIG_KEY] = rule
+    _write_atomic(path, row)
+    return _result(STARTED, "habit week started: one habit a week", name, week_of, kept, rule)
 
 
 def line(r: dict) -> str:
