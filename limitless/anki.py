@@ -25,6 +25,11 @@ the days so far; a day with a review is a local day (in ``tz``) with at least on
 These are wording, not targets: nothing here says how many reviews are enough, keeps a streak or marks a
 day missed. A day with no review is unlogged.
 
+Trough offer (``offer(window_state, week)``): the one digit-free line "trough: a short Anki review fits now",
+only when a trough job would deliver now (decision_window.decide for a ``trough`` job: a trough window is open,
+not asleep, no focus block holding asks) and a collection is set. Never in a peak, asleep, an unknown window or
+a focus block; never by clock time. It changes what the agent sees, nothing more: nothing here sends.
+
 Where: $LIMITLESS_ANKI, else config ``anki_collection``; none by default (then "no Anki collection set").
 Stdlib only, Python 3.9+.
 """
@@ -38,6 +43,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 from urllib.parse import quote
 
+from . import decision_window, jobs
 from .state_reader import config
 
 ENV_KEY, CONFIG_KEY, COPY_CONFIG = "LIMITLESS_ANKI", "anki_collection", "anki_copy"
@@ -192,3 +198,21 @@ def for_week(first: date, today: date, tz: Optional[tzinfo] = None, env: Optiona
              home: Optional[Path] = None) -> dict:
     """week() over the configured collection (collection_path, is_copy). Read-only."""
     return week(collection_path(env, home), first, today, tz, immutable=is_copy(env, home))
+
+
+# --- the trough offer ---------------------------------------------------------------------------------------
+
+OFFER = "trough: a short Anki review fits now"
+
+
+def offer(window_state, week) -> str:
+    """OFFER when a trough job would deliver in ``window_state`` (a decision_window.WindowState, a window.py
+    envelope or a ``{"cls"}`` dict) and ``week`` says a collection is set (``week["set"] is True``); else "".
+    Pure: reads no clock, no file."""
+    if not isinstance(week, dict) or week.get("set") is not True:
+        return ""
+    if not isinstance(window_state, (decision_window.WindowState, dict)):
+        return ""
+    state, asleep = jobs._window(window_state)
+    d = decision_window.decide("trough", state, budget_left=1, asleep=asleep)
+    return OFFER if d.action == decision_window.DELIVER else ""
