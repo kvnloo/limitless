@@ -72,6 +72,7 @@ tool limitless_sleep: missing: no sleep data: no wearable file (set "sleep_file"
 tool limitless_loop: missing: no week decided yet: no loop row
 tool limitless_experiment: live: answers, with nothing measured behind it yet
 tool limitless_naps: live: answers from a proxy
+tool limitless_outages: live: answers from direct evidence
 tool limitless_presleep_hr: off: no pre-sleep heart-rate file: set "presleep_hr_file" in config.json
 tool limitless_breathing: off: no breathing link set (config wind_down_breathing_link)
 tool limitless_quiet: stale: answers, but its evidence is stale or of unknown age
