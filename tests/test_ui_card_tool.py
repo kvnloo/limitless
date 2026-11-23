@@ -179,7 +179,7 @@ class WeekCard(Base):
 class Plugin(unittest.TestCase):
     def test_tool_is_registered_with_kind(self):
         schema, fn, _ = plugin.TOOLS["limitless_card_view"]
-        self.assertEqual(schema["parameters"]["properties"]["kind"]["enum"], ["state", "week"])
+        self.assertEqual(schema["parameters"]["properties"]["kind"]["enum"], ["state", "week", "skill_tree"])
         self.assertIn("never", schema["description"])
 
     def test_handler_returns_the_envelope(self):

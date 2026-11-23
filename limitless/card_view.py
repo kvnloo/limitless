@@ -1,18 +1,22 @@
-"""limitless_card_view: today's state card or the week review as one ephemeral HTML card (ui_card.py).
+"""limitless_card_view: today's state card, the week review or the skill tree as one ephemeral HTML card
+(ui_card.py).
 
-    view(state_dir, now, today, "state" | "week")   # an evidence envelope; writes at most one card file
+    view(state_dir, now, today, "state" | "week" | "skill_tree")   # an envelope; writes at most one card file
 
 The rows are lines the plugin already makes, never new words: ``state`` is card.build's state card (the
 same lines the pre_llm_call hook injects, with the hook's Anki offer and post-wake peak, then the attention
 mode's line; the model-facing header line is left out); ``week`` is the week review's message
 (jobs_runner.week_review_body, the text the week review push sends) without its ``Reply: Keep / Drop`` ask,
-since a card takes no tap. The raw opt-in is never applied, and lines are built unmasked so that
+since a card takes no tap; ``skill_tree`` is skill_tree.lines over the tree limitless_skill_tree returns (one
+row per layer: Foundation, Learning, Flow, Enhancement, each habit with its state word; a later layer's row
+says it is waiting, so its chip is held). The raw opt-in is never applied, and lines are built unmasked so that
 ui_card.render's tier_audit.gate drops (and counts) any line that holds a digit instead of showing a mask.
 
 The envelope: value ``{path, rows, dropped}`` (path null when no card dir is set; ``note`` then says why),
 modality ``derived`` (built from other values, not measured), ``age_h`` null, evidence_tier that of the
-inputs (the state card's weakest part; the habit week's self-report), and the T1 label "a state card with
-three rows" / "a week card with two rows" (count in words, digit-free). No push, no job, no score.
+inputs (the state card's weakest part; the habit week's self-report; the newest Keep or Drop for the skill
+tree), and the T1 label "a state card with three rows" / "a week card with two rows" / "a skill tree card
+with four rows" (count in words, digit-free). No push, no job, no score, no level, no streak.
 """
 from __future__ import annotations
 
@@ -21,14 +25,15 @@ from datetime import date
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import card, jobs, jobs_runner, labeler as _labeler, modes, one_tap, ui_card
+from . import card, jobs, jobs_runner, labeler as _labeler, modes, one_tap, skill_tree, tools, ui_card
 from .envelope import _tier, missing
 from .state_reader import StateReader, parse_ts
 from .window import window
 
 MODALITY = "derived"
 _WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
-LABEL = {"state": "a state card with {n}", "week": "a week card with {n}"}
+LABEL = {"state": "a state card with {n}", "week": "a week card with {n}",
+         "skill_tree": "a skill tree card with {n}"}
 
 
 def count_words(n: int) -> str:
@@ -67,21 +72,30 @@ def week_lines(reader: StateReader, now: float, today: date, env: Mapping[str, s
     return lines, _tier("self_report", None if at is None else max(0.0, now - at) / 3600)
 
 
+def skill_tree_lines(state_dir, now: float, today: date):
+    """(lines, evidence_tier) of the skill tree: one line per layer (skill_tree.lines) over the same tree and
+    tier limitless_skill_tree returns. Read-only."""
+    t, tier = tools.skill_tree_parts(state_dir, now, today)
+    return skill_tree.lines(t), tier
+
+
 def view(state_dir, now: float, today: date, kind: str = "state", env: Optional[Mapping[str, str]] = None,
          home: Optional[Path] = None, bands=None, labeler: Optional[Callable] = None, tz=None) -> dict:
-    """The limitless_card_view envelope for ``kind`` (state or week). Writes one card file only when a card
+    """The limitless_card_view envelope for ``kind`` (state, week or skill_tree). Writes one card file only when a card
     dir is set (ui_card.card_dir); never sends, schedules or starts anything."""
     env = os.environ if env is None else env
     if kind not in ui_card.KINDS:
-        return missing("kind must be state or week")
+        return missing("kind must be state, week or skill_tree")
     reader = StateReader(Path(state_dir))
     if not reader.exists():
         return missing("the state dir does not exist")
     lab = labeler or _labeler.from_config(env)
     if kind == "state":
         lines, tier = state_lines(reader, now, today, env, bands, lab)
-    else:
+    elif kind == "week":
         lines, tier = week_lines(reader, now, today, env, home, tz)
+    else:
+        lines, tier = skill_tree_lines(reader.path, now, today)
     r = ui_card.render(ui_card.TITLES[kind], lines, kind, env=env, now=now)
     out_dir = ui_card.card_dir(env, home)
     path = ui_card.write(out_dir, r["html"]) if out_dir is not None else None

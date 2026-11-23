@@ -148,6 +148,10 @@ def _habit_next(args, now):
     return tools.habit_next(state_dir(), now, date.fromtimestamp(now))
 
 
+def _skill_tree(args, now):
+    return tools.skill_tree(state_dir(), now, date.fromtimestamp(now))
+
+
 def _loop(args, now):
     return tools.loop(state_dir(), now, date.fromtimestamp(now))
 
@@ -439,18 +443,31 @@ label are plain words; the raw fields are only in value. Read-only: nothing is w
 registered."), _schedule, "🗓️"),
     "limitless_card_view": (_schema(
         "limitless_card_view",
-        "Today's state card (kind state, the default) or the week review (kind week) as one small, glanceable \
-HTML card for the person to look at instead of a block of text: the same plain-word lines the state card and \
-the week review already carry, one row each with a known, unknown or held chip read from the line's words, at \
+        "Today's state card (kind state, the default), the week review (kind week) or the skill tree (kind \
+skill_tree: one row per layer, Foundation, Learning, Flow, Enhancement, each habit with its state word, as \
+limitless_skill_tree has them) as one small, glanceable HTML card for the person to look at instead of a block \
+of text: the same plain-word lines the state card, the week review and the skill tree already carry, one row each with a known, unknown or held chip read from the line's words, at \
 most eight rows. Built by code: never write or add rows yourself. A line holding a digit is dropped and \
 counted, never shown, even under the raw opt-in; the week card leaves out the Keep / Drop ask. The value is \
 {path, rows, dropped}: path is the card file under config card_dir (or LIMITLESS_CARD_DIR), named by its \
 content hash, or null with a note when no card dir is set (rendered only, nothing written). Modality derived, \
 age_h null; a digit-free T1 label such as a state card with three rows. No clock time, no score, no script; \
 nothing is sent or scheduled.",
-        {"kind": {"type": "string", "enum": ["state", "week"],
-                  "description": "state (today's state card, the default) or week (the week review)."}}),
+        {"kind": {"type": "string", "enum": ["state", "week", "skill_tree"],
+                  "description": "state (today's state card, the default), week (the week review) or skill_tree "
+                                 "(the skill tree's layers)."}}),
         _card_view, "🃏"),
+    "limitless_skill_tree": (_schema(
+        "limitless_skill_tree",
+        "Where the person is in the Training Facility's skill tree, in plain words: four stacked layers in \
+order, Foundation (sleep, energy, nutrition, recovery), Learning, Flow and Enhancement, each with its habits from \
+the short habit catalogue and one state word per habit: kept or dropped (the person's latest Keep or Drop at a \
+week review), trying (this week's habit) or not tried. A week with no Keep or Drop is unlogged, never a drop; \
+anything unknown is not tried. A layer is open when it is Foundation or every earlier layer has a kept habit, \
+else later. The value is {layers: [{name, open, habits: [{name, state}]}]}; modality derived, age_h null, \
+evidence_tier that of the newest self-reported decision (none before any); a digit-free T1 label such as \
+Foundation open, one habit kept. Never a score, level, percent, XP or streak. It only suggests: it never \
+starts a habit. Read-only; nothing is written or sent."), _skill_tree, "🌳"),
     "limitless_focus_safe": (_schema(
         "limitless_focus_safe",
         "Whether the focus guard is on: when config focus_safe is warn, a shell command that drives the \
