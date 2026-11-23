@@ -8,6 +8,10 @@ bug: the text is dropped, not sent, and the line says ``blocked: true``.
 
     record(event) -> bool   appends {at, hook, tier, lines, digits, opt_in, sha256, blocked}
 
+    shape_event(folded, cut) -> dict   the one row kevin-push writes when message_shape folded or cut a
+                                       push: hook ``message_shape``, the two counts, no text and no hash;
+                                       not an injection (check leaves it out)
+
 Where: $LIMITLESS_AUDIT, else config "audit_path"; off (nothing written) when neither is set. The file is
 created 0600 and only ever appended to. ``sha256`` is of the injected text; the text itself is never
 written. record never raises: a failed write returns False and the turn goes on.
@@ -27,6 +31,8 @@ ENV_KEY = "LIMITLESS_AUDIT"
 CONFIG_KEY = "audit_path"
 T0, T1 = "T0", "T1"
 FIELDS = ("at", "hook", "tier", "lines", "digits", "opt_in", "sha256", "blocked")
+SHAPE_HOOK = "message_shape"
+SHAPE_FIELDS = ("folded", "cut")
 
 
 def audit_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
@@ -50,9 +56,21 @@ def event(hook: str, text: str, opt_in: bool, now: Optional[float] = None) -> di
             "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "blocked": bool(digits) and not opt_in}
 
 
+def shape_event(folded: int, cut: int, now: Optional[float] = None) -> dict:
+    """The content-free row for one push message_shape changed: how many lines were folded and cut, nothing
+    else (no text, no hash, no digit of the message)."""
+    def n(v):
+        return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
+    return {"at": _iso(datetime.now(timezone.utc).timestamp() if now is None else now), "hook": SHAPE_HOOK,
+            "tier": T1, "lines": 0, "digits": 0, "opt_in": False, "sha256": "", "blocked": False,
+            "folded": n(folded), "cut": n(cut)}
+
+
 def _clean(ev: Mapping) -> dict:
     """Only the documented fields, with their documented types (a stray ``text`` key is dropped)."""
     row = {k: ev[k] for k in FIELDS if k in ev}
+    if ev.get("hook") == SHAPE_HOOK:
+        row.update({k: int(ev.get(k) or 0) for k in SHAPE_FIELDS})
     if row.get("tier") not in (T0, T1) or not isinstance(row.get("sha256"), str):
         raise ValueError("not an audit event")
     for k in ("at", "hook"):
@@ -155,7 +173,7 @@ def check(path, since=None) -> dict:
             row = json.loads(ln)
         except ValueError:
             continue
-        if not isinstance(row, dict) or row.get("tier") not in (T0, T1):
+        if not isinstance(row, dict) or row.get("tier") not in (T0, T1) or row.get("hook") == SHAPE_HOOK:
             continue
         at = parse_ts(row.get("at")) if isinstance(row.get("at"), str) else None
         if at is None or (floor is not None and at < floor):
