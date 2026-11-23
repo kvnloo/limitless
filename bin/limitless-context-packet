@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""limitless-context-packet [--write] [--json]: today's state card as one data-free context packet.
+
+Builds the packet (schema limitless.context/1) from the state card's T1 parts only (limitless/context_packet.py,
+docs/context-packet.md) and prints it in words, or as JSON with --json. A dry run by default: nothing is written.
+With --write the packet goes to config "context_packet_path" (a relative path is in the state dir), atomically
+with mode 0600; with no path set it says so and writes nothing. The raw opt-in is ignored.
+Exit 0 when done, 1 when the write failed, 2 for bad arguments. It never prints a path and never sends.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import context_packet  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(context_packet.main(sys.argv[1:]))
