@@ -23,6 +23,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from . import jobs
 from .state_reader import config
 
 CONFIG_KEY = "habit_target_days"
@@ -30,6 +31,7 @@ WEEK_DAYS = 7
 DEFAULT_TARGET_DAYS = 4
 NOT_STARTED, ON_THE_WAY, REACHED, CLOSED = "not started", "on the way", "target reached this week", "week closed"
 LABELS = (NOT_STARTED, ON_THE_WAY, REACHED, CLOSED)
+CHECKIN_REACHED = "Target reached this week."   # the habit check-in's one extra line, once reached
 _DONE, _NO = "done", "no"
 
 
@@ -86,3 +88,28 @@ def progress(checkins: Any, week_start: Any, today: date, target_days: Any = DEF
     else:
         word = ON_THE_WAY if done else NOT_STARTED
     return {"done": done, "logged": done + no, "target": target, "reached": reached, "label": label(word, modality)}
+
+
+def week_days(habit: Optional[dict], synced: Optional[dict] = None) -> dict:
+    """``{ISO day: Done | No | Skipped | unlogged}`` for the started week's seven days (jobs.habit_day: a tap
+    wins over the sync's verdict); {} when no week is started."""
+    start = jobs._week_start(habit)
+    if start is None:
+        return {}
+    days = [(start + timedelta(days=i)).isoformat() for i in range(WEEK_DAYS)]
+    return {d: jobs.habit_day(habit, d, synced) for d in days}
+
+
+def for_habit(habit: Optional[dict], synced: Optional[dict] = None, target_days: Any = DEFAULT_TARGET_DAYS,
+              today: Optional[date] = None) -> Optional[dict]:
+    """progress() for habit.json's started week; ``today`` defaults to its day seven (the whole week, as the
+    check-in and the week review read it). None when no week is started."""
+    start = jobs._week_start(habit)
+    if start is None:
+        return None
+    return progress(week_days(habit, synced), start, today or jobs.review_day(habit), target_days)
+
+
+def checkin_line(p: Optional[dict]) -> str:
+    """The habit check-in's extra line: CHECKIN_REACHED once the target is reached, else "" (nothing)."""
+    return CHECKIN_REACHED if p and p.get("reached") else ""
