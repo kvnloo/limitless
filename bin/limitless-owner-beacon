@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""limitless-owner-beacon write --out PATH [--dbs a:b]: write this machine's "last seen" beacon.
+
+For a machine whose Hermes session store the plugin host cannot open. It reads the owner session DBs here
+(--dbs, os.pathsep-separated; else $LIMITLESS_OWNER_DBS or config "owner_dbs") with the same read-only
+query as limitless/owner_messages.py and writes only the newest user-message time:
+
+    {"at": "<ISO 8601, UTC>", "v": 1}
+
+No content, no counts, no source or session names. The file is written atomically (a temp file in the
+same directory, then rename) with mode 0600. Copying it to the plugin host is up to the operator (see
+docs/owner-beacon.md); there it is listed in $LIMITLESS_OWNER_BEACONS or config "owner_beacons".
+
+Exit 0 when the beacon was written, and also when there is nothing to write (no DB configured, no DB
+readable, no message from the person): then nothing is written, an old beacon is left as it is, and one
+line says why. Exit 1 and one line on stderr when the file cannot be written; exit 2 and a usage line for
+bad arguments. It never sends and never prints a traceback.
+"""
+import json
+import os
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import owner_messages  # noqa: E402
+from limitless.state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, state_dir  # noqa: E402
+
+USAGE = "usage: limitless-owner-beacon write --out PATH [--dbs PATH" + os.pathsep + "PATH...]"
+NAME = "limitless-owner-beacon"
+
+
+def parse(args):
+    """{"out", "dbs"} or None for bad arguments."""
+    if not args or args[0] != "write":
+        return None
+    got, rest = {}, list(args[1:])
+    while rest:
+        flag = rest.pop(0)
+        if flag not in ("--out", "--dbs") or flag[2:] in got or not rest or not rest[0]:
+            return None
+        got[flag[2:]] = rest.pop(0)
+    return got if "out" in got else None
+
+
+def db_paths(flag):
+    """The DBs to read: --dbs when given, else the configured owner_dbs (None when there are none)."""
+    if flag is not None:
+        return [Path(p).expanduser() for p in flag.split(os.pathsep) if p.strip()] or None
+    return StateReader(state_dir()).owner_db_paths()
+
+
+def write_atomic(out: Path, body: str) -> None:
+    """Write ``body`` to ``out`` through a 0600 temp file in the same directory and a rename."""
+    fd, tmp = tempfile.mkstemp(dir=str(out.parent), prefix="." + out.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(body)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, str(out))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write(out: Path, dbs, now: float) -> int:
+    if dbs is None:
+        print(f"{NAME}: nothing written: no owner session DBs (--dbs, {OWNER_DBS_ENV} or "
+              f"\"{OWNER_DBS_CONFIG}\" in config.json)")
+        return 0
+    got = owner_messages.newest_user_message(dbs, now)
+    if got["at"] is None:
+        why = ("no message from the person in the owner session DBs" if got["sources_read"]
+               else "the owner session DBs could not be read")
+        print(f"{NAME}: nothing written: {why}")
+        return 0
+    try:
+        write_atomic(out, json.dumps({"at": got["at"], "v": owner_messages.BEACON_V}) + "\n")
+    except OSError as e:
+        print(f"{NAME}: could not write the beacon: {e.strerror or type(e).__name__}", file=sys.stderr)
+        return 1
+    print(f"{NAME}: beacon written")
+    return 0
+
+
+def main(argv) -> int:
+    args = argv[1:]
+    if args in (["-h"], ["--help"]):
+        print(USAGE)
+        return 0
+    opts = parse(args)
+    if opts is None:
+        print(USAGE, file=sys.stderr)
+        return 2
+    try:
+        return write(Path(opts["out"]).expanduser(), db_paths(opts.get("dbs")), time.time())
+    except Exception as e:  # noqa: BLE001 - a broken config or store is one line, never a traceback
+        print(f"{NAME}: could not write the beacon: {type(e).__name__}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
