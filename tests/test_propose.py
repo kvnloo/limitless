@@ -69,6 +69,24 @@ class Suggestions(unittest.TestCase):
         for st in ({"window": "peak", "anki": "set"}, {"window": "trough", "anki": "not set"}, {"anki": "set"}):
             self.assertEqual(p.propose(st)["action"], NO, st)
 
+    def test_trough_and_a_palace_link_set_with_no_anki(self):
+        r = p.propose({"window": "trough", "anki": "not set", "palace": "set"})
+        self.assertEqual((r["action"], r["rule_id"], r["evidence"]),
+                         ("a short memory palace walk", "palace-trough", ["window", "anki", "palace"]))
+        for st in ({"window": "peak", "anki": "not set", "palace": "set"},
+                   {"window": "trough", "anki": "not set", "palace": "not set"},
+                   {"window": "trough", "anki": None, "palace": "set"},        # Anki unknown: never triggers
+                   {"window": "trough", "anki": "not set", "palace": None},
+                   {"window": None, "anki": "not set", "palace": "set"},
+                   {"anki": "not set", "palace": "set"}):
+            self.assertEqual(p.propose(st)["action"], NO, st)
+
+    def test_the_anki_rule_comes_first_one_learning_offer_per_trough(self):
+        r = p.propose({"window": "trough", "anki": "set", "palace": "set"})
+        self.assertEqual(r["rule_id"], "anki-trough")
+        ids = [x["id"] for x in p.RULES]
+        self.assertEqual(ids.index("palace-trough"), ids.index("anki-trough") + 1)
+
     def test_habit_week_running_and_today_unanswered(self):
         r = p.propose({"habit_week": "running", "habit_today": "unlogged"})
         self.assertEqual((r["action"], r["rule_id"], r["evidence"]),
@@ -84,6 +102,8 @@ class Suggestions(unittest.TestCase):
         self.assertEqual(p.propose(every)["rule_id"], "peak-ask")
         self.assertEqual(p.propose(dict(every, peak_ask="none"))["rule_id"], "anki-trough")
         self.assertEqual(p.propose(dict(every, peak_ask="none", anki="not set"))["rule_id"], "habit-checkin")
+        self.assertEqual(p.propose(dict(every, peak_ask="none", anki="not set", palace="set"))["rule_id"],
+                         "palace-trough")
         for hold, v in (("asleep", True), ("quiet", "off"), ("focus_block", "in a block"), ("mode", "focused")):
             self.assertEqual(p.propose(dict(every, **{hold: v}))["action"], NO, hold)
 

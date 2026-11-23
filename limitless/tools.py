@@ -10,7 +10,8 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, e
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
-               overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak, phase as _phase,
+               overnight as _overnight, owner_messages as _owner, palace as _palace, passive_habit, peak as _peak,
+               phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
                scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
@@ -1004,6 +1005,8 @@ def propose_state(reader: StateReader, now: float, today: date, bands: Optional[
     rows = None if qp is None else _guard(lambda: _asks.read(qp), None)
     put("peak_ask", peak_ask_label(rows, _guard(lambda: wake_at(reader.sleepmode()), None)), "direct")
     put("anki", "set" if _guard(lambda: _anki.collection_path(env, home), None) is not None else "not set",
+        "direct")
+    put("palace", "set" if _guard(lambda: _palace.link(config(env, home)), None) is not None else "not set",
         "direct")
     h = _guard(lambda: _habit_week(reader, now, today, env, home), {})
     hv = h.get("value") if isinstance(h, dict) else None

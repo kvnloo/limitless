@@ -39,6 +39,7 @@ STATE_KEYS = {
     "peak_ask": ("waiting", "spent", "none"),
     "window": ("peak", "trough", "anytime", "wind_down"),
     "anki": ("set", "not set"),
+    "palace": ("set", "not set"),
     "habit_week": ("running", "not running"),
     "habit_today": ("Done", "No", "Skipped", "unlogged"),
 }
@@ -46,6 +47,7 @@ STATE_KEYS = {
 # How each ``because`` names a label (the words it cites, never a number).
 LABEL_WORDS = {"asleep": "asleep", "quiet": "quiet", "focus_block": "focus block", "mode": "mode",
                "post_wake_peak": "post-wake peak", "peak_ask": "peak ask", "window": "window", "anki": "Anki",
+               "palace": "memory palace link",
                "habit_week": "habit week", "habit_today": "today"}
 
 # The rule table, in order. ``when``: label name -> the values that satisfy it (all must hold).
@@ -63,6 +65,10 @@ RULES = (
      "because": "post-wake peak is open and a peak ask is waiting: one decision fits this stretch"},
     {"id": "anki-trough", "when": {"window": ("trough",), "anki": ("set",)}, "action": "a short Anki review",
      "because": "a trough window is open and an Anki collection is set: a light review fits a lighter moment"},
+    {"id": "palace-trough", "when": {"window": ("trough",), "anki": ("not set",), "palace": ("set",)},
+     "action": "a short memory palace walk",
+     "because": "a trough window is open, no Anki collection is set and a memory palace link is set: a short walk "
+                "fits a lighter moment"},
     {"id": "habit-checkin", "when": {"habit_week": ("running",), "habit_today": ("unlogged",)},
      "action": "answer today's habit check-in",
      "because": "a habit week is running and today has no answer yet: one tap answers it"},

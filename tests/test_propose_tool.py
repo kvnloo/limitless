@@ -75,8 +75,8 @@ class Tool(unittest.TestCase):
 
     def test_fixture_labels(self):
         st = self.state()
-        self.assertEqual((st["asleep"], st["window"], st["quiet"], st["mode"], st["anki"]),
-                         (False, "peak", "on", "none", "not set"))
+        self.assertEqual((st["asleep"], st["window"], st["quiet"], st["mode"], st["anki"], st["palace"]),
+                         (False, "peak", "on", "none", "not set", "not set"))
         self.assertEqual((st["habit_week"], st["habit_today"]), ("running", "Done"))
         self.assertIsNone(st["peak_ask"])        # no asks queue configured: unknown, not none
         self.assertIsNone(st["focus_block"])     # no activity DB: unknown
@@ -129,6 +129,19 @@ class Tool(unittest.TestCase):
         st = self.state()
         self.assertEqual((st["window"], st["anki"]), ("trough", "set"))
         self.assertEqual(self.call()["value"]["rule_id"], "anki-trough")
+
+    def test_trough_with_a_palace_link_and_no_anki(self):
+        self.woke(7)
+        self.config(palace_link="palace://example")
+        st = self.state()
+        self.assertEqual((st["window"], st["anki"], st["palace"]), ("trough", "not set", "set"))
+        res = self.call()
+        self.assertEqual((res["value"]["rule_id"], res["value"]["action"]), ("palace-trough", "a short memory palace walk"))
+        self.assertEqual(res["label"]["label"], "a short memory palace walk")
+        self.config(palace_link="palace://example", anki_collection=str(Path(self.tmp.name) / "collection.anki2"))
+        self.assertEqual(self.call()["value"]["rule_id"], "anki-trough")   # one learning offer per trough
+        self.config(palace_link="palace://room-seven-has-a-digit-7")
+        self.assertEqual(self.state()["palace"], "not set")   # a link that cannot ride in a line is off
 
     def test_asleep(self):
         rows = [{"at": iso(NOW - 3600), "on": True}]
