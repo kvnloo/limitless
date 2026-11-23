@@ -16,7 +16,8 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration
                phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
-               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule,
+               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, sleep_debt as _sleep_debt,
+               stop_rule as _stop_rule,
                strength as _strength, tier_audit as _tier_audit,
                weekly_target as _weekly_target, wind_down)
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
@@ -737,6 +738,47 @@ def sleep(reader: StateReader, now: float, today: date, raw: bool = False, env: 
         value["regularity_min"] = {src: {k: reg[src][k] for k in RAW_REGULARITY} for src in _regularity.SOURCES}
     out = envelope(value, modality, age_h)
     out["label"] = lab
+    return out
+
+
+RAW_DEBT_MIN = (("baseline_median_min", "baseline_median_s"), ("recent_mean_min", "recent_mean_s"),
+                ("short_min", "short_s"))
+RAW_DEBT = ("short_share", "recent_nights", "unknown_nights", "baseline_nights", "proxy_nights")
+
+
+def sleep_debt(reader: StateReader, now: float, today: date, raw: bool = False,
+               env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_sleep_debt: the last few nights against the person's own usual night, in words (sleep_debt.debt).
+
+    Reads exactly what limitless_sleep reads (StateReader.sleep_rows and sleep.screen_gaps over
+    jobs_runner.person_rows) through one sleep.nights call over the RECENT_NIGHTS + BASELINE_NIGHTS nights before
+    ``today``: the newest RECENT_NIGHTS are the recent nights, the rest the baseline. An envelope whose value is
+    ``{label}`` (little / some / a lot of sleep debt, with " (phone estimate)" when a proxy night was used) with
+    the T1 label beside it; modality from sleep_debt (proxy when any night used is a proxy night); age_h as
+    limitless_sleep's. Minutes, the shortfall share and the night counts are T0 and appear only with ``raw``
+    (LIMITLESS_RAW_IN_PROMPT). Too few nights is value None with the reason "unknown: too few nights"; no data at
+    all is limitless_sleep's missing reason. No target, no advice, no score. Read-only.
+    """
+    wear = reader.sleep_rows(today, env, home)
+    gaps = _sleep.screen_gaps(jobs_runner.person_rows(reader, env, home))
+    if not wear and not gaps:
+        if reader.sleep_file(env, home) is None:
+            return missing(f"no sleep data: no wearable file (set \"{SLEEP_CONFIG}\" in config.json) and no phone "
+                           "screen events")
+        return missing("no sleep data: no night in the configured wearable sleep file and no phone screen events")
+    ns = _sleep.nights(wear, gaps, today, days=_sleep_debt.RECENT_NIGHTS + _sleep_debt.BASELINE_NIGHTS, tz=tz)
+    got = _sleep_debt.debt(ns[-_sleep_debt.RECENT_NIGHTS:], ns[:-_sleep_debt.RECENT_NIGHTS])
+    newest = _sleep.newest_at([r for r in wear if r["night"] < today.isoformat()],
+                              [g for g in gaps if g[1] <= now], tz)
+    age_h = None if newest is None else max(0.0, now - newest) / 3600
+    if got["word"] is None:
+        return envelope(None, got["modality"], age_h, reason=got["label"]["label"])
+    value = {"label": got["label"]["label"]}
+    if raw:
+        value.update({k: _minutes(got[s]) for k, s in RAW_DEBT_MIN})
+        value.update({k: got[k] for k in RAW_DEBT})
+    out = envelope(value, got["modality"], age_h)
+    out["label"] = got["label"]
     return out
 
 
