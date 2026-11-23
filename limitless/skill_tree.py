@@ -2,6 +2,8 @@
 
     skill_tree.tree(habit_catalogue.CATALOGUE, decisions, current=habit_json)
         -> [{name, open, habits: [{name, state}]}] for Foundation, Learning, Flow, Enhancement, in that order
+    skill_tree.lines(t)   -> one digit-free line per layer (the skill tree card's rows)
+    skill_tree.label(t)   -> "Foundation open, one habit kept" (the count in words)
 
 Few good habits, stacked: Foundation (sleep, energy, nutrition, recovery), then Learning, then Flow, then
 Enhancement. The habits are the catalogue's (habit_catalogue.CATALOGUE, by its ``layer``); the catalogue has
@@ -78,3 +80,35 @@ def tree(catalogue, decisions, current=None) -> list:
         out.append({"name": name, "open": i == 0 or all_kept, "habits": habits})
         all_kept = all_kept and any(h["state"] == KEPT for h in habits)
     return out
+
+
+_COUNT = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+EMPTY = "no habits on the list yet"
+WAITING = "waiting for a kept habit in every earlier layer"
+
+
+def _count(n: int, noun: str) -> str:
+    """"no habit", "one habit", "three habits"; "many habits" past ten. Never a digit."""
+    word = _COUNT[n] if 0 <= n < len(_COUNT) else "many"
+    return f"{word} {noun if n == 1 or n == 0 else noun + 's'}"
+
+
+def lines(t) -> list:
+    """One line per layer: "Foundation open: <habit> kept; <habit> not tried", "Flow later, waiting for a kept
+    habit in every earlier layer: ...", "Enhancement later: no habits on the list yet". Digit-free words."""
+    out = []
+    for layer in t or ():
+        head = f"{layer['name']} {'open' if layer['open'] else 'later'}"
+        if not layer["open"] and layer["habits"]:
+            head += f", {WAITING}"
+        body = "; ".join(f"{h['name']} {h['state']}" for h in layer["habits"]) or EMPTY
+        out.append(f"{head}: {body}")
+    return out
+
+
+def label(t) -> str:
+    """"<the last open layer> open, <how many habits are kept, in words> kept"."""
+    t = list(t or ())
+    last = [layer["name"] for layer in t if layer["open"]]
+    kept = sum(h["state"] == KEPT for layer in t for h in layer["habits"])
+    return f"{last[-1] if last else LAYERS[0]} open, {_count(kept, 'habit')} kept"

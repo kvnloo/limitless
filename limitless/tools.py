@@ -13,7 +13,7 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, e
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak, phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
-               scorecard as _scorecard, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
+               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
                weekly_target as _weekly_target)
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
@@ -481,6 +481,34 @@ def habit_next(state_dir, now: float, today: date) -> dict:
     out["habit_week"] = "running" if running else "not running"
     out["note"] = HABIT_NEXT_NOTE
     return out
+
+
+SKILL_TREE_MODALITY = "derived"
+SKILL_TREE_NOTE = ("read-only and a suggestion only: it never starts a habit; a week with no Keep or Drop is "
+                   "unlogged, never a drop")
+
+
+def skill_tree_parts(state_dir, now: float, today: date):
+    """(tree, evidence_tier) for the skill tree: habit_catalogue.CATALOGUE through skill_tree.tree, with the
+    weekly loop rows (stop_rule.loop_rows) as the decisions and habit.json's habit as this week's (only while
+    jobs.habit_week_gate is None). The tier is the newest self-reported decision's; none before any."""
+    h = StateReader(Path(state_dir)).habit()
+    running = isinstance(h, dict) and jobs.habit_week_gate(h, today) is None
+    rows = _stop_rule.loop_rows(state_dir)
+    t = _skill_tree.tree(_habit_catalogue.CATALOGUE, rows, current=h if running else None)
+    ages = [a for a in (_age_h(r.get("decided_at"), now) for r in rows) if a is not None]
+    tier = "none" if not rows else _envelope_tier("self_report", min(ages) if ages else None)
+    return t, tier
+
+
+def skill_tree(state_dir, now: float, today: date) -> dict:
+    """limitless_skill_tree: the four layers (Foundation, Learning, Flow, Enhancement), whether each is open,
+    and one state word per habit (kept, dropped, trying, not tried), as a derived envelope with ``age_h``
+    None and the digit-free T1 label "Foundation open, one habit kept". No score, level or streak. Read-only:
+    nothing is written, sent or started."""
+    t, tier = skill_tree_parts(state_dir, now, today)
+    return {"value": {"layers": t}, "modality": SKILL_TREE_MODALITY, "age_h": None, "evidence_tier": tier,
+            "label": _t1(_skill_tree.label(t), SKILL_TREE_MODALITY), "note": SKILL_TREE_NOTE}
 
 
 def scorecard(path: Optional[Path], now: float) -> dict:

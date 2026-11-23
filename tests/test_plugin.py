@@ -22,7 +22,7 @@ CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_experiment", "limitless_explain_back", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
          "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_overnight",
-         "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_sleep", "limitless_state",
+         "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
