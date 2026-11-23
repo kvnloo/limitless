@@ -133,5 +133,56 @@ class Newest(unittest.TestCase):
             self.assertAlmostEqual(om.newest_user_message([db], NOW)["age_h"], 4.0, msg=db.name)
 
 
+def plan(db):
+    """EXPLAIN QUERY PLAN details for the query the reader picks for this store."""
+    con = sqlite3.connect(str(db))
+    try:
+        sql = om.query_for(con)
+        return sql, [r[-1] for r in con.execute("EXPLAIN QUERY PLAN " + sql, (NOW,)).fetchall()]
+    finally:
+        con.close()
+
+
+class LargeDbGuard(unittest.TestCase):
+    """A multi-GB store must not be read row by row: the plan walks an index whenever the store has one."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        rows = [("s-cli", "user" if i % 7 == 0 else "assistant", CONTENT, NOW - i) for i in range(2000)]
+        self.rows = rows
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_hermes_schema_walks_idx_messages_session_per_session(self):
+        sql, steps = plan(make_db(self.dir / "h.db", self.rows))
+        self.assertIn("ORDER BY m.timestamp DESC LIMIT 1", sql)
+        self.assertTrue(any("idx_messages_session" in s for s in steps), steps)
+        self.assertFalse(any(s.startswith("SCAN m") or s == "SCAN messages" for s in steps), steps)
+        self.assertFalse(any("TEMP B-TREE" in s for s in steps), steps)
+        con = sqlite3.connect(str(self.dir / "h.db"))  # why: the naive query would scan and sort it all
+        naive = [r[-1] for r in con.execute("EXPLAIN QUERY PLAN " + om.FLAT_SQL, (NOW,)).fetchall()]
+        con.close()
+        self.assertIn("SCAN messages", naive)
+
+    def test_a_timestamp_index_is_walked_backwards_once(self):
+        sql, steps = plan(make_db(self.dir / "t.db", self.rows, index="CREATE INDEX idx_ts ON messages(timestamp);"))
+        self.assertIn("ORDER BY timestamp DESC LIMIT 1", sql)
+        self.assertTrue(any("idx_ts" in s for s in steps), steps)
+        self.assertFalse(any("TEMP B-TREE" in s for s in steps), steps)
+
+    def test_a_partial_index_is_not_trusted(self):
+        sql, _ = plan(make_db(self.dir / "p.db", self.rows,
+                              index="CREATE INDEX idx_p ON messages(timestamp) WHERE role = 'assistant';"))
+        self.assertEqual(sql, om.FLAT_SQL)
+
+    def test_no_index_is_the_one_documented_full_scan(self):
+        sql, steps = plan(make_db(self.dir / "n.db", self.rows, index=None))
+        self.assertEqual(sql, om.FLAT_SQL)
+        self.assertTrue(any(s.startswith("SCAN") for s in steps), steps)
+        self.assertIn("full scan", om.__doc__.replace("\n", " "))
+
+
 if __name__ == "__main__":
     unittest.main()
