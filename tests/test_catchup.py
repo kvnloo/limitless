@@ -236,17 +236,16 @@ class Hook(Base):
 class Tool(Base):
     def test_envelope(self):
         out = catchup.tool(self.reader, NOW, env=self.env, home=self.root)
-        self.assertTrue({"value", "modality", "age_h", "evidence_tier", "label"} <= set(out), out)
+        self.assertTrue({"value", "modality", "age_h", "evidence_tier"} <= set(out), out)
         self.assertEqual(out["modality"], "messages")
         self.assertEqual(out["age_h"], 30.0)
-        self.assertEqual(out["label"]["tier"], "T1")
-        self.assertEqual(out["label"]["label"], "away")
+        self.assertEqual(out["value"]["label"], {"label": "away", "tier": "T1", "modality": "messages"})
         self.assertEqual(out["value"]["lines"], self.build()["lines"])
 
     def test_not_away(self):
         self.env["LIMITLESS_OWNER_DBS"] = str(make_db(self.root / "recent.db", [("s-tg", "user", "x", NOW - 3 * H)]))
         out = catchup.tool(self.reader, NOW, env=self.env, home=self.root)
-        self.assertEqual(out["label"]["label"], "not away")
+        self.assertEqual(out["value"]["label"]["label"], "not away")
         self.assertTrue(out["value"]["lines"])
 
     def test_missing_without_owner_dbs(self):

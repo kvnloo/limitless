@@ -158,7 +158,8 @@ def build(reader: StateReader, now: float, last_seen: float, *, env: Optional[Ma
 def tool(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
          home: Optional[Path] = None) -> dict:
     """limitless_catchup: the catch-up since the person last wrote, whatever the gap, as an envelope
-    (modality messages, age_h = hours since last seen) with a T1 label: away | not away."""
+    (modality messages, age_h = hours since last seen; the handler adds the usual T1 age label) whose value
+    is ``{lines, label}``, label a T1 label: away (gap over after_h) | not away."""
     if not reader.exists():
         return missing("the state dir does not exist")
     seen = last_seen(reader, now, env, home)
@@ -170,9 +171,8 @@ def tool(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = Non
     c = build(reader, now, seen, env=env, home=home)
     if tier_audit.gate("tool:limitless_catchup", c["text"], False, env=env, now=now) is None:
         return missing("the catch-up had a digit: blocked")
-    out = envelope({"lines": c["lines"]}, "messages", gap_h)
-    out["label"] = {"label": AWAY if gap_h > after_h(env, home) else NOT_AWAY, "tier": "T1", "modality": "messages"}
-    return out
+    away = {"label": AWAY if gap_h > after_h(env, home) else NOT_AWAY, "tier": "T1", "modality": "messages"}
+    return envelope({"lines": c["lines"], "label": away}, "messages", gap_h)
 
 
 def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[], float] = time.time,
