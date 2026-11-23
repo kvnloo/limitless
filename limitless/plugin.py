@@ -159,7 +159,8 @@ TOOLS = {
         "A short catch-up since the person last wrote to an agent: at most 5 plain lines, TLDR first with at \
 most one next step, then inputs not recording, the habit week, messages sent and captures saved while away \
 (none, one, a few, many; unknown when the source is missing) and asks waiting. The label says away (gap \
-over catchup_after_h, default a day) or not away. Read-only; nothing is sent."), _catchup, "🧳"),    "limitless_body": (_schema(
+over catchup_after_h, default a day) or not away. Read-only; nothing is sent."), _catchup, "🧳"),
+    "limitless_body": (_schema(
         "limitless_body",
         "The body fat trend from the body-composition file (config body_file): the median of the last two \
 weeks against the two weeks before, in plain words: trending down, flat or up (calibrated or uncalibrated \
