@@ -38,6 +38,11 @@ STATE_KEYS = {
     "habit_today": ("Done", "No", "Skipped", "unlogged"),
 }
 
+# How each ``because`` names a label (the words it cites, never a number).
+LABEL_WORDS = {"asleep": "asleep", "quiet": "quiet", "focus_block": "focus block", "mode": "mode",
+               "post_wake_peak": "post-wake peak", "peak_ask": "peak ask", "window": "window", "anki": "Anki",
+               "habit_week": "habit week", "habit_today": "today"}
+
 # The rule table, in order. ``when``: label name -> the values that satisfy it (all must hold).
 RULES = (
     {"id": "asleep", "when": {"asleep": (True,)}, "action": NO_SUGGESTION,
@@ -57,6 +62,8 @@ RULES = (
      "action": "answer today's habit check-in",
      "because": "a habit week is running and today has no answer yet: one tap answers it"},
 )
+
+ACTIONS = tuple(dict.fromkeys([NO_SUGGESTION] + [r["action"] for r in RULES]))   # every answer propose gives
 
 
 def _holds(value: Any, allowed) -> bool:

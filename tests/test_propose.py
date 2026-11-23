@@ -1,6 +1,8 @@
 """propose(state): one small next action from a readable rule table, NO_SUGGESTION by default.
 Synthetic labels only."""
+import itertools
 import os
+import re
 import sys
 import unittest
 
@@ -84,6 +86,72 @@ class Suggestions(unittest.TestCase):
         self.assertEqual(p.propose(dict(every, peak_ask="none", anki="not set"))["rule_id"], "habit-checkin")
         for hold, v in (("asleep", True), ("quiet", "off"), ("focus_block", "in a block"), ("mode", "focused")):
             self.assertEqual(p.propose(dict(every, **{hold: v}))["action"], NO, hold)
+
+
+BANNED = re.compile(r"(?i)\b(must|should|streak|missed|failed)\b")
+CLOCK = re.compile(r"(?i)\d|\b(o'clock|noon|midnight|a\.m\.|p\.m\.|hours?|minutes?)\b")
+
+
+def grid():
+    """Every combination of each label's known values plus unknown (None)."""
+    keys = sorted(p.STATE_KEYS)
+    for combo in itertools.product(*[p.STATE_KEYS[k] + (None,) for k in keys]):
+        yield dict(zip(keys, combo))
+
+
+class Total(unittest.TestCase):
+    def test_every_rule_reads_known_labels_and_values(self):
+        for rule in p.RULES:
+            self.assertEqual(set(rule), {"id", "when", "action", "because"}, rule["id"])
+            self.assertIn(rule["action"], p.ACTIONS, rule["id"])
+            for k, allowed in rule["when"].items():
+                self.assertIn(k, p.STATE_KEYS, rule["id"])
+                self.assertTrue(set(allowed) <= set(p.STATE_KEYS[k]), rule["id"])
+        ids = [r["id"] for r in p.RULES] + [p.DEFAULT_ID]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_the_table_is_total_over_a_synthetic_grid(self):
+        seen, n = set(), 0
+        ids = {r["id"] for r in p.RULES} | {p.DEFAULT_ID}
+        for state in grid():
+            r = p.propose(state)
+            n += 1
+            self.assertIn(r["action"], p.ACTIONS, state)
+            self.assertIn(r["rule_id"], ids, state)
+            self.assertTrue(set(r["evidence"]) <= set(state), state)
+            seen.add(r["rule_id"])
+        self.assertGreater(n, 1000)
+        self.assertEqual(seen, ids)   # every rule is reachable
+
+    def test_all_unknown_is_no_suggestion(self):
+        self.assertEqual(p.propose({k: None for k in p.STATE_KEYS})["action"], p.NO_SUGGESTION)
+        self.assertEqual(p.propose({k: "unknown" for k in p.STATE_KEYS})["action"], p.NO_SUGGESTION)
+
+
+class Words(unittest.TestCase):
+    def texts(self):
+        yield p.DEFAULT_BECAUSE
+        yield p.DEFAULT_ID
+        for rule in p.RULES:
+            yield rule["id"]
+            yield rule["action"]
+            yield rule["because"]
+
+    def test_no_digit_clock_time_or_judging_word_in_any_text(self):
+        for t in self.texts():
+            self.assertIsNone(CLOCK.search(t), t)
+            self.assertIsNone(BANNED.search(t), t)
+
+    def test_no_digit_clock_time_or_judging_word_in_any_output(self):
+        for state in itertools.islice(grid(), 0, None, 7):
+            out = repr(p.propose(state))
+            self.assertIsNone(CLOCK.search(out), state)
+            self.assertIsNone(BANNED.search(out), state)
+
+    def test_because_cites_the_labels(self):
+        for rule in p.RULES:
+            for k in rule["when"]:
+                self.assertIn(p.LABEL_WORDS[k], rule["because"], (rule["id"], k))
 
 
 if __name__ == "__main__":
