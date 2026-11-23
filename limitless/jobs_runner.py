@@ -105,8 +105,9 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     proxy, in words), then ``presleep_line`` (week_presleep_hr: the wearable's pre-sleep heart rate against the
     usual, in words, next to the night), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
     ``anki_line`` (week_anki: this week's Anki reviews in words), then ``ideas_line`` (week_ideas: the idea
-    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``delivery_line`` (week_delivery: the
-    push log's week in words, "Pushes: within the push limit every day this week; ..."), then ``experiment_line`` (week_experiment:
+    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``delivery_line`` (week_delivery:
+    the push log's week in words, "Pushes: within the push limit every day this week; ..."), then
+    ``experiment_line`` (week_experiment:
     "Experiment: outcome pending (judged later)" while a lagged outcome waits), then ``rule_line`` (week_rule: what the stop
     rule picked at the week's start says, "Your rule says: keep it"), each as one more line
     when given, then ``Reply: Keep / Drop``: the rule only suggests, the reply decides. The first line's number

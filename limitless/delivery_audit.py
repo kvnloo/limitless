@@ -60,7 +60,12 @@ ACTION_KNOWN = "every push with a known body had a reply line"
 
 
 def _at(v) -> Optional[float]:
+    """Epoch seconds of a row's ``at``; None when it is not a number a date can be read from."""
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    try:
+        datetime.fromtimestamp(v)
+    except (OverflowError, OSError, ValueError):
         return None
     return float(v)
 

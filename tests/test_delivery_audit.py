@@ -105,9 +105,10 @@ class Parsing(unittest.TestCase):
         self.assertEqual(skipped, 7)
 
     def test_audit_skips_and_counts_bad_rows_it_is_given(self):
-        out = run([row(0), "nope", {"at": None, "how": "telegram"}, {"at": row(0)["at"], "how": 3}], skipped=2)
+        out = run([row(0), "nope", {"at": None, "how": "telegram"}, {"at": row(0)["at"], "how": 3},
+                   {"at": 1e30, "how": "telegram"}, {"at": float("nan"), "how": "telegram"}], skipped=2)
         self.assertEqual(out["delivered"], 1)
-        self.assertEqual(out["skipped"], 5)
+        self.assertEqual(out["skipped"], 7)
 
     def test_read_log_returns_none_for_a_missing_file(self):
         with tempfile.TemporaryDirectory() as d:
