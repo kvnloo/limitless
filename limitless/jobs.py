@@ -1,6 +1,7 @@
 """Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in,
-the week review, the break nudge; and the NOOP export (NOOP_EXPORT), which sends nothing and wakes on a sync that
-copied the NOOP database (noop_export_verdict).
+the week review, the break nudge; the NOOP export (NOOP_EXPORT), which sends nothing and wakes on a sync that
+copied the NOOP database (noop_export_verdict); and the apps ingest (APPS_INGEST), which sends nothing and wakes
+on any new sync row (apps_ingest_verdict).
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no
@@ -25,8 +26,10 @@ from .window import MAX_AWAKE_H
 # HABIT_CUE_AFTER_S after a wake (merged_events) or comes from whatever automation marks it. long_block is a
 # focus block in the activity data that ran as long as the person's usual long block (blocks.long_block_events).
 # noop_copy is a sync run whose runs.jsonl row says it copied the NOOP database (noop_copied); only the NOOP export
-# job (NOOP_EXPORT) wakes on it.
-EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block", "noop_copy")
+# job (NOOP_EXPORT) wakes on it. sync is any sync run's runs.jsonl row that did not fail (sync_ran); only the apps
+# ingest job (APPS_INGEST) wakes on it.
+EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block", "noop_copy",
+          "sync")
 TRIGGER_AFTER = ("", "short_on")
 NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
 SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake_proxy) carries less
@@ -37,7 +40,7 @@ ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED, RUN)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
 _WORDS = {"wake": "wake", "sleep_mode_on": "Sleep-mode on", "sleep_mode_off": "Sleep-mode off",
           "wind_down": "wind-down", "habit_cue": "habit cue", "focus_end": "focus-end", "nap": "nap",
-          "long_block": "long focus block", "noop_copy": "NOOP copy"}
+          "long_block": "long focus block", "noop_copy": "NOOP copy", "sync": "sync"}
 
 
 @dataclass(frozen=True)
@@ -141,6 +144,56 @@ def noop_export_verdict(mode: str, last_run: Any, mark_at: Optional[float], now:
     if mark_at is not None and t <= mark_at:
         return Verdict(DROP, "already ran after this sync of the NOOP database", t)
     return Verdict(RUN, "a sync copied the NOOP database", t)
+
+
+# The apps ingest sends nothing: it reads the person's "work apps: ..." / "feed apps: ..." reply from the Hermes
+# session DB and, in write mode, writes apps.json (apps_reply.ingest). Like the NOOP export it is not in SPECS and
+# no window holds it. It wakes on any new sync row, never on a clock time.
+APPS_INGEST = JobSpec("apps_ingest", "sync", "anytime", "Apps ingest", 1, "sync")
+APPS_CONFIG = "apps_ingest"
+APPS_OFF, APPS_DRY_RUN, APPS_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
+APPS_MODES = (APPS_OFF, APPS_DRY_RUN, APPS_WRITE)
+APPS_IS_OFF = f"off (config {APPS_CONFIG})"
+APPS_NO_DB = "skipped: no Hermes DB set (config hermes_db)"
+APPS_LINE = "app lists set from your reply"   # the one T1 line after a write; a later wake brief may use it
+
+
+def apps_mode(cfg: Any) -> str:
+    """Config ``apps_ingest``: off (the default, and for any value that is not one of APPS_MODES), dry_run or
+    write."""
+    v = cfg.get(APPS_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in APPS_MODES else APPS_OFF
+
+
+def sync_ran(row: Any) -> bool:
+    """True for a runs.jsonl row of a sync run: a time in ``at`` and ``ok`` not false. What it copied does not
+    matter."""
+    return isinstance(row, dict) and row.get("ok") is not False and parse_ts(row.get("at")) is not None
+
+
+def apps_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], now: float,
+                        db_set: bool = True) -> Verdict:
+    """Run, drop or not triggered for the apps ingest. Pure: reads its inputs, runs and writes nothing.
+
+    Due (RUN) only when ``mode`` is dry_run or write, a Hermes DB is set (``db_set``; else skipped, APPS_NO_DB), the
+    newest runs.jsonl row (``last_run``) is a sync that did not fail (sync_ran), it is not after ``now``, and it is
+    newer than ``mark_at`` (the row the last ingest acted on, from apps-ingest.json). The same row again is a drop.
+    """
+    if mode not in (APPS_DRY_RUN, APPS_WRITE):
+        return Verdict(NOT_TRIGGERED, APPS_IS_OFF)
+    if not db_set:
+        return Verdict(NOT_TRIGGERED, APPS_NO_DB)
+    t = parse_ts(last_run.get("at")) if isinstance(last_run, dict) else None
+    if t is None:
+        return Verdict(NOT_TRIGGERED, "no sync run yet")
+    if not sync_ran(last_run):
+        return Verdict(NOT_TRIGGERED, "the last sync run failed")
+    if t > now:
+        return Verdict(NOT_TRIGGERED, "the last sync run is timestamped in the future")
+    if mark_at is not None and t <= mark_at:
+        return Verdict(DROP, "already ran after this sync", t)
+    return Verdict(RUN, "a sync ran", t)
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
@@ -452,7 +505,7 @@ _SPEAKS = {"wake": "when you wake up", "sleep_mode_on": "when Sleep mode goes on
            "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
            "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends",
            "long_block": "when a focus block runs long",
-           "noop_copy": "after a sync that copied the NOOP database"}
+           "noop_copy": "after a sync that copied the NOOP database", "sync": "after each sync run"}
 _IN_WINDOW = {"peak": "in a peak window, at most one decision per window",
               "trough": "in a low-energy window, for a review or an easy read",
               "wind_down": "once your wind-down has started", "anytime": "any time you are awake"}
@@ -460,7 +513,7 @@ _ENDS = {"wake": "when you next wake up", "sleep_mode_on": "when Sleep mode goes
          "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
          "habit_cue": "at your habit's next cue", "focus_end": "when a focus block ends",
          "long_block": "when a focus block next runs long",
-         "noop_copy": "at the next sync that copies the NOOP database"}
+         "noop_copy": "at the next sync that copies the NOOP database", "sync": "at the next sync run"}
 _NUM = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 
