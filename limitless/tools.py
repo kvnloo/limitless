@@ -14,7 +14,8 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, e
                phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
-               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
+               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, stop_rule as _stop_rule,
+               strength as _strength, tier_audit as _tier_audit,
                weekly_target as _weekly_target, wind_down)
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
@@ -363,7 +364,9 @@ def experiment(state_dir, now: float, today: date, raw: bool = False) -> dict:
     Modality derived; ``age_h`` is the age of the newest prediction or receipt row; evidence_tier as a
     self-report of that age (none before anything is locked). The T1 label is the current words' first part,
     digit-free. The prediction and falsifier text are the person's own words (T0): only with ``raw``
-    (LIMITLESS_RAW_IN_PROMPT). No score, no streak; nothing is written, sent or locked.
+    (LIMITLESS_RAW_IN_PROMPT). ``strength`` (beside the envelope, once anything is locked) is the newest
+    prediction's habit on the evidence ladder (strength.py), in words. No score, no streak; nothing is written,
+    sent or locked.
     """
     if not Path(state_dir).is_dir():
         return missing("the state dir does not exist")
@@ -396,8 +399,20 @@ def experiment(state_dir, now: float, today: date, raw: bool = False) -> dict:
                         for r in rows if r.get("kind") in ("prediction", "receipt")) if a is not None]
     age = round(min(ages), 1) if ages else None
     tier = "none" if not firsts else _envelope_tier("self_report", age)
-    return {"value": value, "modality": EXPERIMENT_MODALITY, "age_h": age, "evidence_tier": tier,
-            "label": _t1(word, EXPERIMENT_MODALITY), "note": EXPERIMENT_NOTE}
+    out = {"value": value, "modality": EXPERIMENT_MODALITY, "age_h": age, "evidence_tier": tier,
+           "label": _t1(word, EXPERIMENT_MODALITY), "note": EXPERIMENT_NOTE}
+    if firsts:                               # the newest prediction's habit, on the evidence ladder
+        out["strength"] = _habit_strength(state_dir, firsts[-1]["week_of"])
+    return out
+
+
+def _habit_strength(state_dir, week_of: str, habit=None) -> dict:
+    """strength.habit_strength for the habit of ``week_of`` (its kept habit file, else ``habit``, the loop
+    row's name); with no name, that week alone. Words only, beside the envelope, never in it."""
+    start = _prediction._day(week_of)
+    h = _prediction.week_habit(state_dir, start) if start is not None else None
+    name = h.get("habit") if isinstance(h, dict) and isinstance(h.get("habit"), str) and h["habit"].strip() else habit
+    return _strength.habit_strength(state_dir, name if isinstance(name, str) else None, week_of)
 
 
 LOOP_WEEKS = 4                    # "the last few" weekly loop rows the tool shows
@@ -446,13 +461,15 @@ def _loop_week(r: dict, now: float, today: date) -> dict:
 def loop(state_dir, now: float, today: date) -> dict:
     """The last LOOP_WEEKS weekly loop rows (stop_rule.loop_rows), newest first, in T1 words: the week, the
     habit, whether a prediction was locked, what the stop rule said, the outcome (the receipt's verdict, with
-    the receipt's own modality) and the decision (self_report: the person's Keep or Drop). Read-only."""
+    the receipt's own modality) and the decision (self_report: the person's Keep or Drop). ``strength`` (beside
+the envelope) is the newest week's habit on the evidence ladder (strength.py), in words. Read-only."""
     rows = _stop_rule.loop_rows(state_dir)[-LOOP_WEEKS:][::-1]
     if not rows:
         return missing("no week decided yet: no loop row")
     weeks = [_loop_week(r, now, today) for r in rows]
     out = envelope({"weeks": weeks}, "self_report", _age_h(rows[0].get("decided_at"), now))
     out["label"] = _t1(f"latest week: {weeks[0]['decision']['value']}", "self_report")
+    out["strength"] = _habit_strength(state_dir, str(rows[0].get("week_of")), rows[0].get("habit"))
     return out
 
 
