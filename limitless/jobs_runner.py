@@ -18,22 +18,32 @@ night instead, ``miq:<night date>`` (``night_date``), so one night has one MIQ p
 to the sent log; a failed, log-only or held push is not a send, and the job holds until the next
 run tries again. ``dry_run=True`` (the default) never calls ``push`` and never writes. Nothing here reads the
 clock: ``now`` comes from the caller. Stdlib only, Python 3.9+.
+
+Job owners: a job named in ``external_jobs`` (config key ``external_jobs``, env ``LIMITLESS_EXTERNAL_JOBS``)
+has its own sender with the real content, so run_once still gives its verdict but never pushes it and
+never logs it as sent. When the caller passes ``brief``, the wake brief is sent by calling it (the CLI runs
+``limitless-brief send``, which builds the whole brief and passes the same event key) instead of pushing
+the one-line placeholder; a failed ``brief`` sends nothing and the job holds.
 """
 from __future__ import annotations
 
 import inspect
 import json
+import os
 from datetime import date, datetime, tzinfo
 from pathlib import Path
-from typing import Callable, Mapping, NamedTuple, Optional
+from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, jobs, send_gate, wake_proxy
 from .glide_provider import GlideProvider
-from .state_reader import StateReader, parse_ts
+from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
 from .window_chain import EventProvider, first_known
 
 SENT_LOG = "jobs-sent.jsonl"
+EXTERNAL_ENV = "LIMITLESS_EXTERNAL_JOBS"
+EXTERNAL_CONFIG = "external_jobs"
+OWN_SENDER = "sent by its own sender, not by limitless-jobs"
 NIGHT_JOBS = (jobs.MIQ.name,)    # one message per night, keyed by the night's date, not by its event
 DELIVERED = "telegram"
 _BODY = {
@@ -64,6 +74,18 @@ def once_key(spec: jobs.JobSpec, trigger_at: float) -> str:
     no card ids, and every poll of one event (and any other sender for it) gets the same key.
     """
     return f"{spec.name}:{int(trigger_at)}"
+
+
+def external_jobs(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
+    """Job names another sender owns: $LIMITLESS_EXTERNAL_JOBS (comma list), else config ``external_jobs``
+    (a list of strings). Empty (the default) when neither is set: limitless-jobs sends every job."""
+    env = os.environ if env is None else env
+    if env.get(EXTERNAL_ENV):
+        items = env[EXTERNAL_ENV].split(",")
+    else:
+        v = config(env, home).get(EXTERNAL_CONFIG)
+        items = v if isinstance(v, list) else []
+    return [s.strip() for s in items if isinstance(s, str) and s.strip()]
 
 
 def _takes_once(push) -> bool:
@@ -194,14 +216,27 @@ def night_key(state_dir, now: float, job: str = jobs.MIQ.name, env: Optional[Map
     return f"{job}:{night_date(evs, now, tz)}"
 
 
+def _send_brief(brief):
+    """(delivered, how) for the wake brief's own sender; an exception is a failed send, never a send."""
+    try:
+        result = brief()
+    except Exception as e:  # noqa: BLE001 - a broken brief sender must not stop the other jobs
+        return False, f"limitless-brief failed ({type(e).__name__})"
+    return delivered(result), (result if isinstance(result, str) and result else "no delivery reported")
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
-             tz: Optional[tzinfo] = None, today: Optional[date] = None) -> list:
+             tz: Optional[tzinfo] = None, today: Optional[date] = None,
+             external: Optional[Iterable[str]] = None, brief: Optional[Callable[[], object]] = None) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``.
 
     A triggered habit check-in drops outside a started habit week (jobs.habit_week_gate); ``today``
     is the date of ``now`` in ``tz`` (default: local zone) unless the caller passes one.
+    ``external`` (default: external_jobs(env, home)) names jobs another sender owns: verdict only, no
+    push, no sent log. ``brief``, when given, sends the wake brief in place of ``push`` (no placeholder).
     """
+    external = set(external_jobs(env, home) if external is None else external)
     p = _read_pass(state_dir, now, env=env, home=home)
     today = datetime.fromtimestamp(now, tz).date() if today is None else today
     sent = p.sent
@@ -215,8 +250,14 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
         action, reason = v.action, v.reason
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
-        if action == jobs.DELIVER and not dry_run and push is not None:
-            ok, how = _push(push, spec.send_title, body(spec, p.habit), _key(spec, v, p.evs, tz))
+        own = spec.name == jobs.WAKE_BRIEF.name and brief is not None
+        if spec.name in external:
+            reason = f"{reason}; {OWN_SENDER}"
+        elif action == jobs.DELIVER and not dry_run and (push is not None or own):
+            if own:
+                ok, how = _send_brief(brief)       # the whole brief, same event key; never the placeholder
+            else:
+                ok, how = _push(push, spec.send_title, body(spec, p.habit), _key(spec, v, p.evs, tz))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:

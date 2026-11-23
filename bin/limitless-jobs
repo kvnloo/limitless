@@ -8,8 +8,17 @@ kevin-push reports a real Telegram delivery. kevin-push is $KEVIN_PUSH_BIN, else
 The state dir is $LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG (~/.config/limitless/config.json).
 Run it as often as you like (e.g. a systemd timer every few minutes): it polls for events and sends
 at most once per trigger, never on a clock time.
+
+Job owners: a job named in $LIMITLESS_EXTERNAL_JOBS (comma list) or config "external_jobs" has its own
+sender; its line shows the verdict with "sent by its own sender", and nothing is pushed or logged for it.
+Otherwise the wake brief is sent by `limitless-brief send` (the whole brief, same --once key), never the
+one-line placeholder: $LIMITLESS_BRIEF_BIN, else `limitless-brief` on PATH, else this repo's
+bin/limitless-brief. If it is missing or fails, the failure goes to stderr, nothing is sent and the job
+holds until the next run.
 """
+import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -37,13 +46,44 @@ def kevin_push(title, body, once=None):
     return f"{how or 'no report'} (exit {r.returncode})"
 
 
+def brief_bin():
+    """limitless-brief: $LIMITLESS_BRIEF_BIN, else on PATH, else the one next to this script."""
+    return (os.environ.get("LIMITLESS_BRIEF_BIN") or shutil.which("limitless-brief")
+            or str(Path(__file__).resolve().parent / "limitless-brief"))
+
+
+def limitless_brief():
+    """`limitless-brief send`: "telegram" only when it reports a real delivery; else why not (logged)."""
+    exe = brief_bin()
+    env = dict(os.environ)
+    env.pop("KEVIN_PUSH_ONCE", None)          # limitless-brief passes this wake's key itself
+    try:
+        r = subprocess.run([exe, "send"], env=env, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as e:
+        how = f"limitless-brief did not run ({type(e).__name__})"
+    else:
+        try:
+            out = json.loads(r.stdout)
+        except ValueError:
+            out = None
+        note = out.get("notify") if isinstance(out, dict) else None
+        shown = str(note.get("shown", "")) if isinstance(note, dict) else ""
+        if r.returncode == 0 and isinstance(out, dict) and out.get("notify_rc") == 0 \
+                and shown.startswith(jobs_runner.DELIVERED):
+            return jobs_runner.DELIVERED
+        how = f"limitless-brief: {shown or 'no report'} (exit {r.returncode})"
+    print(f"limitless-jobs: wake brief not sent: {how}", file=sys.stderr)
+    return how
+
+
 def main(argv):
     args = argv[1:]
     if any(a not in ("--send",) for a in args):
         print("usage: limitless-jobs [--send]", file=sys.stderr)
         return 2
     send = "--send" in args
-    rows = jobs_runner.run_once(state_dir(), time.time(), push=kevin_push if send else None, dry_run=not send)
+    rows = jobs_runner.run_once(state_dir(), time.time(), push=kevin_push if send else None, dry_run=not send,
+                                brief=limitless_brief if send else None)
     for r in rows:
         print(f"{r['job']}: {r['action']}: {r['reason']}")
     return 0

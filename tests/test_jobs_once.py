@@ -109,7 +109,10 @@ class RunnerPassesKey(unittest.TestCase):
 
 
 class TwoSenders(unittest.TestCase):
-    """bin/limitless-jobs and an older sender, both through the real bin/kevin-push and a fake hermes."""
+    """bin/limitless-jobs and an older sender, both through the real bin/kevin-push and a fake hermes.
+
+    The job is "Back from nap", which limitless-jobs pushes itself; the wake brief goes through
+    limitless-brief instead (tests/test_brief_once_cli.py)."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -117,8 +120,9 @@ class TwoSenders(unittest.TestCase):
         self.st = self.home / "state"
         self.st.mkdir()
         now = time.time()
-        self.off = int(now - 0.2 * H)
-        write_rows(self.st / "sleepmode.jsonl", [{"at": iso(now - 8.5 * H), "on": True}, {"at": iso(self.off), "on": False}])
+        self.off = int(now - 0.1 * H)
+        write_rows(self.st / "sleepmode.jsonl", [{"at": iso(now - 12 * H), "on": True}, {"at": iso(now - 3 * H), "on": False},
+                                                 {"at": iso(now - 1 * H), "on": True}, {"at": iso(self.off), "on": False}])
         (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": iso(now - 30), "ok": True}))
         write_rows(self.st / "unlocks.jsonl", [{"at": iso(now - 60)}])
         bindir = self.home / "bin"
@@ -129,7 +133,7 @@ class TwoSenders(unittest.TestCase):
         self.env = {"HOME": str(self.home), "PATH": f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
                     "LIMITLESS_STATE": str(self.st), "LIMITLESS_CONFIG": str(self.home / "no-config.json"),
                     "LIMITLESS_SLEEPMODE": str(self.st / "sleepmode.jsonl"), "KEVIN_PUSH_BIN": str(KEVIN_PUSH)}
-        self.key = f"wake_brief:{self.off}"
+        self.key = f"nap:{self.off}"
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -139,7 +143,7 @@ class TwoSenders(unittest.TestCase):
                               capture_output=True, text=True, timeout=30)
 
     def older_sender(self, body, key):
-        return subprocess.run([sys.executable, "-I", str(KEVIN_PUSH), "limitless", "Wake-up brief", body,
+        return subprocess.run([sys.executable, "-I", str(KEVIN_PUSH), "limitless", "Back from nap", body,
                                "--once", key], env=self.env, capture_output=True, text=True, timeout=30)
 
     def deliveries(self):
@@ -147,22 +151,22 @@ class TwoSenders(unittest.TestCase):
         return p.read_text().count("called") if p.exists() else 0
 
     def test_older_sender_first_then_runner_other_text_same_key(self):
-        self.assertEqual(self.older_sender("Good morning, brief inside.", self.key).stdout.strip(),
+        self.assertEqual(self.older_sender("Welcome back, synthetic re-entry note.", self.key).stdout.strip(),
                          "kevin-push: telegram")
         r = self.jobs_cli()
         self.assertEqual(self.deliveries(), 1, r.stdout)
-        self.assertIn("Wake-up brief: drop", r.stdout)
+        self.assertIn("Back from nap: drop", r.stdout)
         self.assertIn(send_gate.ONCE_DROP, r.stdout)
 
     def test_runner_first_then_older_sender_other_text_same_key(self):
         r = self.jobs_cli()
-        self.assertIn("Wake-up brief: deliver", r.stdout)
-        o = self.older_sender("Good morning, brief inside.", self.key)
+        self.assertIn("Back from nap: deliver", r.stdout)
+        o = self.older_sender("Welcome back, synthetic re-entry note.", self.key)
         self.assertEqual(o.stdout.strip(), f"kevin-push: log ({send_gate.ONCE_DROP})")
         self.assertEqual(self.deliveries(), 1)
 
     def test_same_text_other_key_is_still_a_12h_duplicate(self):
-        self.older_sender(jobs_runner.body(jobs.WAKE_BRIEF), "older-script:wake")
+        self.older_sender(jobs_runner.body(jobs.NAP), "older-script:nap")
         r = self.jobs_cli()
         self.assertEqual(self.deliveries(), 1, r.stdout)
         self.assertIn("log (duplicate)", r.stdout)

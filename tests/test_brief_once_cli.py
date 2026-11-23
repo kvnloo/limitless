@@ -119,7 +119,8 @@ class BriefSenders(unittest.TestCase):
         self.assertIn("Wake-up brief: deliver", r.stdout)
         self.assertEqual(self.shown(self.brief()), f"log ({send_gate.ONCE_DROP})")
         self.assertEqual(self.deliveries(), 1)
-        self.assertEqual(self.passed_once(), [repr(key)])
+        # limitless-jobs sent it by running limitless-brief send, so both runs passed this wake's key.
+        self.assertEqual(self.passed_once(), [repr(key), repr(key)])
 
     def test_a_later_wake_is_a_new_key_and_is_delivered(self):
         first = self.wake(int(time.time() - 11 * H))

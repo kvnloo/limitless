@@ -1,4 +1,7 @@
-"""bin/limitless-jobs end to end with a fake kevin-push in a temp HOME. Synthetic data only."""
+"""bin/limitless-jobs end to end with a fake kevin-push in a temp HOME. Synthetic data only.
+
+The state is a nap (a short Sleep-mode on, then off): limitless-jobs pushes "Back from nap" itself; the
+wake brief has its own sender (tests/test_job_owners_cli.py)."""
 import json
 import os
 import subprocess
@@ -41,8 +44,8 @@ class LimitlessJobsCli(unittest.TestCase):
         self.st.mkdir()
         now = time.time()
         # ISO strings, as the phone sync writes them (bin/kevin-push reads the poll's "at" as a string).
-        write_rows(self.st / "sleepmode.jsonl", [{"at": iso(now - 8.5 * H), "on": True},
-                                                 {"at": iso(now - 0.2 * H), "on": False}])
+        write_rows(self.st / "sleepmode.jsonl", [{"at": iso(now - 12 * H), "on": True}, {"at": iso(now - 3 * H), "on": False},
+                                                 {"at": iso(now - 1 * H), "on": True}, {"at": iso(now - 0.1 * H), "on": False}])
         (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": iso(now - 30), "ok": True}))
         write_rows(self.st / "unlocks.jsonl", [{"at": iso(now - 60)}])
         bindir = self.home / "bin"
@@ -74,7 +77,7 @@ class LimitlessJobsCli(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         lines = r.stdout.splitlines()
         self.assertEqual(len(lines), 4, r.stdout)
-        self.assertTrue(any(ln.startswith("Wake-up brief: deliver") for ln in lines), r.stdout)
+        self.assertTrue(any(ln.startswith("Back from nap: deliver") for ln in lines), r.stdout)
         self.assertEqual(self.push_calls(), [])
         self.assertEqual(self.sent(), [])
 
@@ -83,21 +86,21 @@ class LimitlessJobsCli(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         calls = self.push_calls()
         self.assertEqual(len(calls), 1, r.stdout)
-        self.assertEqual(calls[0]["argv"][:2], ["limitless", "Wake-up brief"])
+        self.assertEqual(calls[0]["argv"][:2], ["limitless", "Back from nap"])
         self.assertEqual(calls[0]["strict"], "1")
         self.assertEqual(calls[0]["cls"], "decision")
         self.assertEqual(len(self.sent()), 1)
         r2 = self.run_cli("--send")
         self.assertEqual(r2.returncode, 0, r2.stderr)
         self.assertEqual(len(self.push_calls()), 1, r2.stdout)
-        self.assertIn("Wake-up brief: drop", r2.stdout)
+        self.assertIn("Back from nap: drop", r2.stdout)
 
     def test_log_only_kevin_push_is_not_sent(self):
         r = self.run_cli("--send", FAKE_PUSH_HOW="log (daily cap)")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.push_calls()), 1)
         self.assertEqual(self.sent(), [])
-        self.assertIn("Wake-up brief: hold", r.stdout)
+        self.assertIn("Back from nap: hold", r.stdout)
         self.assertIn("not delivered", r.stdout)
 
     def test_kevin_push_bin_from_env(self):
