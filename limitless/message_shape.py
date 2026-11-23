@@ -5,7 +5,8 @@
     limits(cfg)                 -> {"max_lines", "max_line_chars"} from config, defaults for bad values
 
 The first non-blank line is the TLDR: kept as it is, in first place. The closing ``Reply: A / B / C`` line
-(one_tap.choices_line, the last line before any why-now line) and the ``Why now: ...`` line
+(one_tap.choices_line, the last line before any why-now line; also any closing line with the word "reply",
+such as an asks list's "Reply in any bot chat with the id") and the ``Why now: ...`` line
 (send_gate.outgoing) are always kept in their places; the Reply line is never cut, so a tap still parses.
 When the message has more than ``max_lines`` non-blank lines, the middle lines past the limit are folded into
 one plain line, "and four more lines in the plugin", the count said in words. Any other line longer than
@@ -79,6 +80,15 @@ def _is_why(line: str) -> bool:
     return line.strip().startswith(WHY_PREFIX)
 
 
+_REPLY_WORD = re.compile(r"\breply\b", re.IGNORECASE)
+
+
+def _asks_reply(line: str) -> bool:
+    """The closing line says how to answer: a ``Reply: A / B`` choices line, or any line with the word reply
+    (an asks list's "Reply in any bot chat with the id"). It is kept, so the message stays answerable."""
+    return one_tap.choices_of(line.strip()) is not None or bool(_REPLY_WORD.search(line))
+
+
 def fit(title: str, body: str, lim: Optional[Mapping] = None) -> Tuple[str, int, int]:
     """(text, folded, cut): ``body`` held to ``lim`` (limits(); None = defaults), the number of middle lines
     folded into the one fold line, and the number of lines cut short."""
@@ -88,7 +98,7 @@ def fit(title: str, body: str, lim: Optional[Mapping] = None) -> Tuple[str, int,
     rows = [ln for ln in body.splitlines() if ln.strip()]
     head, rest = rows[0], rows[1:]
     why = [rest.pop()] if rest and _is_why(rest[-1]) else []
-    reply = [rest.pop()] if rest and one_tap.choices_of(rest[-1].strip()) is not None else []
+    reply = [rest.pop()] if rest and _asks_reply(rest[-1]) else []
     budget = lim["max_lines"] - 1 - len(reply) - len(why)
     folded = 0
     if len(rest) > budget:

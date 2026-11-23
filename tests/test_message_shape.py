@@ -85,6 +85,27 @@ class Fold(unittest.TestCase):
         self.assertEqual(out[0], "TLDR")
         self.assertEqual(out[-1], "and three more lines in the plugin")
 
+    def test_a_closing_line_that_asks_for_a_reply_is_kept(self):
+        # an asks list ends with how to answer; folding that away leaves the asks unanswerable
+        close = "Eight waiting on you. Reply in any bot chat with the id."
+        body = "\n".join([f"Ask {w}: decide something." for w in "abcdefgh"] + ["", close])
+        out = lines(ms.shape("Asks waiting on you", body, ms.limits({})))
+        self.assertEqual(out[0], "Ask a: decide something.")
+        self.assertEqual(out[-1], close)
+        self.assertLessEqual(len(out), 6)
+
+    def test_a_closing_reply_line_is_kept_before_the_why_line(self):
+        close = "Reply here with your question, or ignore to skip."
+        body = "\n".join(["Held while you slept."] + [f"held {w}" for w in "abcdefg"] + [close, WHY])
+        out = lines(ms.shape("Back from nap", body, ms.limits({})))
+        self.assertEqual(out[-2:], [close, WHY])
+        self.assertLessEqual(len(out), 6)
+
+    def test_a_word_that_only_contains_reply_does_not_count(self):
+        body = "\n".join(["TLDR"] + [f"m {w}" for w in "abcdef"] + ["the replying window closed"])
+        out = lines(ms.shape("t", body, ms.limits({})))
+        self.assertEqual(out[-1], "and three more lines in the plugin")
+
     def test_many_folded_lines_say_many(self):
         out = lines(ms.shape("t", self.body(25), ms.limits({})))
         self.assertIn("and many more lines in the plugin", out)
