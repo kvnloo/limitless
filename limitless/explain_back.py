@@ -18,20 +18,27 @@ the card through, ``mark`` writes ``explain-back.json`` in the state dir, ``{"wa
 seconds, mode 0600, never any text): the wake event it was offered for, so the rest of that wake day carries
 nothing. No wake seen (or one older than window.MAX_AWAKE_H) is unknown: no offer.
 
+The reply (``reply``): Later, or a bare Voice tap, records nothing. Any other text (the spoken answer as a
+transcript, or typed) is saved through capture.capture as ``kind: "explain_back"``, verbatim, so it lands in the
+one idea ledger when one is set. ``unknowns`` holds only the person's own "I could not explain X" phrases,
+verbatim; nothing else is derived. The answer is never graded and nothing here asks a follow-up.
+
 It is a suggestion: no score, no streak, no XP, no push of its own and no job. A skipped or Later offer is not
-logged. ``offer`` is pure; only ``mark`` writes. Stdlib only, Python 3.9+.
+logged. ``offer`` is pure; only ``mark`` and ``reply`` write. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import json
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import decision_window, jobs, one_tap
+from . import capture, decision_window, jobs, one_tap
 from . import overnight as _overnight
+from .envelope import missing
 from .window import MAX_AWAKE_H
 
 CHOICES = ("Voice", "Later")
@@ -123,3 +130,32 @@ def for_turn(reader, now: float, window, env: Optional[Mapping[str, str]] = None
     landed = 0 if c is None else c["done_since"]
     already = m is not None and m["wake_at"] == wake
     return offer(landed, window, already), wake
+
+
+# --- the reply ------------------------------------------------------------------------------------------------
+
+KIND = "explain_back"
+SOURCE = "explain_back"
+_UNKNOWN = re.compile(r"(?i)\bI (?:could not|couldn['\u2019]t) explain\b[^.!?\n]*[.!?]?")
+LATER = "Later: nothing recorded (a skipped explain-back is not logged)"
+VOICE = "Voice: nothing recorded until the spoken answer arrives as text"
+
+
+def unknowns(text) -> list:
+    """Every "I could not explain X" (or "I couldn't explain X") phrase in ``text``, verbatim, up to the end of
+    its sentence. Nothing else is derived; [] for anything else."""
+    if not isinstance(text, str):
+        return []
+    return [m.group(0).strip() for m in _UNKNOWN.finditer(text)]
+
+
+def reply(state_dir, text, now: float) -> dict:
+    """Save an explain-back answer through capture.capture as kind ``explain_back`` (with ``unknowns`` when the
+    person said "I could not explain X"). The one-tap Later, or a bare Voice tap, records nothing. The answer is
+    never graded and nothing follows up: the result is capture's envelope, which never echoes the text."""
+    tap = one_tap.parse(text, CHOICES)
+    if tap == "Later":
+        return missing(LATER)
+    if tap == "Voice":
+        return missing(VOICE)
+    return capture.capture(state_dir, text, now, source=SOURCE, kind=KIND, unknowns=unknowns(text))

@@ -18,8 +18,8 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import (bedtime, capture, card, card_view, catchup, jobs_runner, labeler, modes, schedule_cards, scorecard, stop_rule,
-               tier_audit, tools)
+from . import (bedtime, capture, card, card_view, catchup, explain_back, jobs_runner, labeler, modes, schedule_cards,
+               scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -69,6 +69,8 @@ def _scorecard(args, now):
 
 
 def _capture(args, now):
+    if args.get("kind") == explain_back.KIND:
+        return explain_back.reply(state_dir(), args.get("text"), now)
     return capture.capture(state_dir(), args.get("text"), now)
 
 
@@ -255,8 +257,13 @@ nothing is written or sent."), _loop, "🔁"),
     "limitless_capture": (_schema(
         "limitless_capture",
         "Record one thought, idea or to-do for later triage by appending it to the capture log. It only "
-        "records: do not start, plan or delegate the captured item.",
-        {"text": {"type": "string", "description": "The captured text, verbatim."}}, ["text"]),
+        "records: do not start, plan or delegate the captured item. With `kind: explain_back` it records the "
+        "person's answer to the state card's explain-back offer, verbatim (Later or a bare Voice tap records "
+        "nothing); never grade the answer and never ask a follow-up about it.",
+        {"text": {"type": "string", "description": "The captured text, verbatim."},
+         "kind": {"type": "string", "enum": [explain_back.KIND],
+                  "description": "explain_back only for an answer to the explain-back offer; leave it out "
+                                 "otherwise."}}, ["text"]),
         _capture, "📝"),
     "limitless_catchup": (_schema(
         "limitless_catchup",
