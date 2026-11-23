@@ -10,7 +10,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test_plugin import FakeCtx, load_plugin, manifest_list  # noqa: E402
+from test_plugin import FakeCtx, fake_ctx_hooks, load_plugin, manifest_list  # noqa: E402
 
 from limitless import jobs, schedule_cards  # noqa: E402
 
@@ -51,7 +51,7 @@ class HostRegistration(unittest.TestCase):
 
     def assert_rest_registered(self, ctx):
         self.assertEqual(sorted(ctx.tools), sorted(manifest_list("provides_tools")))
-        self.assertEqual(sorted(ctx.hooks), sorted(manifest_list("provides_hooks")))
+        self.assertEqual(sorted(ctx.hooks), fake_ctx_hooks())
 
     def test_the_method_name_is_the_documented_one(self):
         self.assertEqual(schedule_cards.HOST_METHOD, METHOD)

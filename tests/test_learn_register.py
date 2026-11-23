@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skill_checks import frontmatter  # noqa: E402
 from test_coach_register import SkillCtx, _ours  # noqa: E402
-from test_plugin import FakeCtx, load_plugin, manifest_list  # noqa: E402
+from test_plugin import FakeCtx, fake_ctx_hooks, load_plugin, manifest_list  # noqa: E402
 
 from limitless import coach_skill  # noqa: E402
 
@@ -49,7 +49,7 @@ class Register(unittest.TestCase):
 
     def assert_rest_registered(self, ctx):
         self.assertEqual(sorted(ctx.tools), sorted(manifest_list("provides_tools")))
-        self.assertEqual(sorted(ctx.hooks), sorted(manifest_list("provides_hooks")))
+        self.assertEqual(sorted(ctx.hooks), fake_ctx_hooks())
 
     def test_the_skill_names_are_a_small_tuple_with_a_file_each(self):
         self.assertEqual(coach_skill.NAMES, ("coach", "learn"))

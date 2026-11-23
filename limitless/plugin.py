@@ -7,7 +7,9 @@ ctx.register_command(name, handler, description="", args_hint="") for the ``/lim
 ctx.register_skill(name, path, description="", frontmatter=None) for the coach and learn skills (coach_skill.py) and,
 when the host has it, ctx.register_system_prompt_section(id, content, *, position, max_chars) for the static rules section
 (prompt_rules.py; config prompt_rules false turns it off). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
-bedtime.py) and pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args).
+bedtime.py), pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args) and, when the
+host knows the name, transform_tool_result (result_tier.py: a listed health tool's numbers become words; off by
+default).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
 result is recorded by tier_audit (content-free).
@@ -23,7 +25,7 @@ from typing import Callable
 
 from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs,
                jobs_runner,
-               labeler, modes, prompt_rules, schedule_cards, scorecard, stop_rule, tier_audit, tools)
+               labeler, modes, prompt_rules, result_tier, schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .prediction import LAG_DAYS as _PREDICTION_LAGS
 from .state_reader import StateReader, config, state_dir
@@ -182,6 +184,10 @@ def _focus_safe(args, now):
 
 def _experiment(args, now):
     return tools.experiment(state_dir(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
+def _result_tier(args, now):
+    return result_tier.tool()
 
 
 def _card_view(args, now):
@@ -526,6 +532,16 @@ off), protected_devices and last_warnings_this_week in words such as two devices
 when the audit log is off}; modality derived, age_h null, a digit-free T1 label. Never names a serial or a \
 display. Test phone and desktop UI on an agent display, never on the person's screen. Read-only; nothing is \
 written, sent or run on a device."), _focus_safe, "🖥️"),
+    "limitless_result_tier": (_schema(
+        "limitless_result_tier",
+        "Whether the result tier filter is on: when config t0_tools lists health tools by name glob (an MCP \
+tool is mcp__<server>__<tool>, so mcp__<server>__* covers one server), every number in such a tool's result \
+(readings with or without a unit, timestamps, ids that are numbers) becomes the words a number before the result \
+enters context, keys and words kept and JSON kept valid; off with no globs or with config raw_numbers_opt_in. \
+Each replaced result leaves one content-free audit row (the glob and the count, never a value). The value is \
+{filter (on or off), tool_globs and raw_numbers_opt_in in words, host_hook (known, or unknown when this host has \
+no transform_tool_result hook)}; modality derived, age_h null, a digit-free T1 label. Never names a glob or a \
+tool. Read-only; nothing is written or sent."), _result_tier, "🔢"),
 }
 
 
@@ -580,3 +596,6 @@ def register(ctx) -> None:
     # the plugin's standing rules as one static, digit-free system prompt section, limitless.rules, when the
     # host has register_system_prompt_section and config prompt_rules is not false; never raises (prompt_rules.py)
     prompt_rules.register(ctx)
+    # result tier (off until config t0_tools lists a health tool): every number in a listed tool's result
+    # becomes "a number" before it enters context, when the host knows transform_tool_result (result_tier.py)
+    result_tier.register(ctx, clock=lambda: time.time())

@@ -88,6 +88,7 @@ tool limitless_palace: off: no memory palace link set (config palace_link)
 tool limitless_schedule: live: answers from direct evidence
 tool limitless_card_view: off: no card dir set (config card_dir): the card is rendered only
 tool limitless_focus_safe: off: the focus guard is off (config focus_safe)
+tool limitless_result_tier: off: no health tools listed (config t0_tools)
 job NOOP export: off: the NOOP export job is off (config noop_export)
 $ limitless-doctor --strict > /dev/null; echo $?
 1

@@ -12,6 +12,12 @@ bug: the text is dropped, not sent, and the line says ``blocked: true``.
                                        push: hook ``message_shape``, the two counts, no text and no hash;
                                        not an injection (check leaves it out)
 
+    result_event(glob, replaced) -> dict   the one row result_tier writes when it replaced the numbers in a
+                                       listed tool's result: hook ``transform_tool_result:result_tier``, the
+                                       t0_tools glob that matched and how many numbers were replaced; no
+                                       value, no text and no hash; a filter record, not an injection (check
+                                       leaves it out)
+
 Where: $LIMITLESS_AUDIT, else config "audit_path"; off (nothing written) when neither is set. The file is
 created 0600 and only ever appended to. ``sha256`` is of the injected text; the text itself is never
 written. record never raises: a failed write returns False and the turn goes on.
@@ -34,6 +40,7 @@ T0, T1 = "T0", "T1"
 FIELDS = ("at", "hook", "tier", "lines", "digits", "opt_in", "sha256", "blocked")
 SHAPE_HOOK = "message_shape"
 SHAPE_FIELDS = ("folded", "cut")
+RESULT_HOOK = "transform_tool_result:result_tier"
 
 
 def audit_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
@@ -67,11 +74,22 @@ def shape_event(folded: int, cut: int, now: Optional[float] = None) -> dict:
             "folded": n(folded), "cut": n(cut)}
 
 
+def result_event(glob: str, replaced: int, now: Optional[float] = None) -> dict:
+    """The content-free row for one tool result result_tier replaced: the config glob that matched and how
+    many numbers became words, nothing else (no value, no text, no hash of the result)."""
+    n = replaced if isinstance(replaced, int) and not isinstance(replaced, bool) and replaced > 0 else 0
+    return {"at": _iso(datetime.now(timezone.utc).timestamp() if now is None else now), "hook": RESULT_HOOK,
+            "tier": T1, "lines": 0, "digits": 0, "opt_in": False, "sha256": "", "blocked": False,
+            "glob": str(glob), "replaced": n}
+
+
 def _clean(ev: Mapping) -> dict:
     """Only the documented fields, with their documented types (a stray ``text`` key is dropped)."""
     row = {k: ev[k] for k in FIELDS if k in ev}
     if ev.get("hook") == SHAPE_HOOK:
         row.update({k: int(ev.get(k) or 0) for k in SHAPE_FIELDS})
+    if ev.get("hook") == RESULT_HOOK:
+        row.update({"glob": str(ev.get("glob", "")), "replaced": int(ev.get("replaced") or 0)})
     if row.get("tier") not in (T0, T1) or not isinstance(row.get("sha256"), str):
         raise ValueError("not an audit event")
     for k in ("at", "hook"):
@@ -190,7 +208,7 @@ def check(path, since=None) -> dict:
             row = json.loads(ln)
         except ValueError:
             continue
-        if not isinstance(row, dict) or row.get("tier") not in (T0, T1) or row.get("hook") == SHAPE_HOOK:
+        if not isinstance(row, dict) or row.get("tier") not in (T0, T1) or row.get("hook") in (SHAPE_HOOK, RESULT_HOOK):
             continue
         at = parse_ts(row.get("at")) if isinstance(row.get("at"), str) else None
         if at is None or (floor is not None and at < floor):

@@ -268,8 +268,11 @@ class ToolRows(DoctorCase):
         with mock.patch.dict(plugin.TOOLS, {"limitless_body": (schema, digits, "x")}):
             r = self.tool("limitless_body")
         self.assertFalse(any(c.isdigit() for c in r["reason"]), r["reason"])
-        for r in self.rows():
-            self.assertFalse(any(c.isdigit() for c in r["status"] + r["reason"]), r)
+        for r in self.rows():   # a config key named in a reason (t0_tools) is a name, not a value
+            text = r["status"] + r["reason"]
+            for key in doctor.CONFIG_KEYS_WITH_A_DIGIT:
+                text = text.replace(key, "")
+            self.assertFalse(any(c.isdigit() for c in text), r)
 
 
 class AuditHeld(unittest.TestCase):

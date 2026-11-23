@@ -10,6 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "limitless-doctor"
+sys.path.insert(0, str(ROOT))
+from limitless import doctor  # noqa: E402
 # obvious raw numbers planted in the synthetic state: none may reach the output
 RAW = ["87654.3", "61.7", "27183", "31.4", "4.25", "93.1", "7.77", "18.9"]
 
@@ -59,6 +61,8 @@ class LimitlessDoctorCli(unittest.TestCase):
         for ln in lines:
             name, status, reason = ln.split(": ", 2)
             self.assertIn(status, ("live", "stale", "missing", "off"), ln)
+            for key in doctor.CONFIG_KEYS_WITH_A_DIGIT:   # a config key's name, not a value
+                reason = reason.replace(key, "")
             self.assertFalse(any(c.isdigit() for c in status + reason), ln)
 
     def test_json_is_the_full_rows(self):
