@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Skill tree</title><style>
+:root{color-scheme:light dark;--bg:#f3f0ea;--card:#fbfaf7;--ink:#33393d;--soft:#6f7478;--line:#e3ded5;
+--known-bg:#dde7de;--known-ink:#3f5f47;--unknown-bg:#e6e3de;--unknown-ink:#66625c;
+--held-bg:#efe4cf;--held-ink:#7a6136}
+@media (prefers-color-scheme:dark){:root{--bg:#1f2224;--card:#272b2e;--ink:#e4e1db;--soft:#a3a6a8;
+--line:#363b3e;--known-bg:#2f4236;--known-ink:#bcd3c1;--unknown-bg:#3a3a38;--unknown-ink:#c4c0b8;
+--held-bg:#463c2a;--held-ink:#e0cba3}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;padding:1rem;background:var(--bg);color:var(--ink);
+font:1.25rem/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.card{max-width:100%;margin:0 auto;padding:1.1rem 1.2rem;background:var(--card);border-radius:1.1rem;
+border:1px solid var(--line)}
+h1{margin:0 0 .6rem;font-size:1.6rem;font-weight:600;letter-spacing:.01em;overflow-wrap:anywhere}
+ul{list-style:none;margin:0;padding:0}
+.row{display:flex;gap:.7rem;align-items:flex-start;padding:.7rem 0;border-top:1px solid var(--line);
+animation:rise .5s ease-out both}
+.row:first-child{border-top:0}
+.text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.chip{flex:0 0 5.2rem;margin-top:.2rem;padding:.15rem .3rem;text-align:center;border-radius:99rem;font-size:.85rem;
+font-weight:600;letter-spacing:.02em}
+.known .chip{background:var(--known-bg);color:var(--known-ink)}
+.unknown .chip{background:var(--unknown-bg);color:var(--unknown-ink)}
+.held .chip{background:var(--held-bg);color:var(--held-ink)}
+.empty{color:var(--soft)}
+@keyframes rise{from{opacity:0;transform:translateY(.3rem)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head>
+<body><main class="card skill_tree"><h1>Skill tree</h1>
+<ul>
+<li class="row known"><span class="chip">known</span><span class="text">Foundation open: Feeds-free first hour kept; Daylight after waking dropped; Lights down at wind-down trying; Phone sleeps outside the bedroom not tried; Stand up after a long block not tried; An easy ride not tried</span></li>
+<li class="row known"><span class="chip">known</span><span class="text">Learning open: A short review after focus not tried</span></li>
+<li class="row held"><span class="chip">held</span><span class="text">Flow later, waiting for a kept habit in every earlier layer: Next step before the break not tried</span></li>
+<li class="row held"><span class="chip">held</span><span class="text">Enhancement later, waiting for a kept habit in every earlier layer: no habits on the list yet</span></li>
+</ul></main></body></html>
