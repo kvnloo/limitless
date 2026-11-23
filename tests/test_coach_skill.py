@@ -8,6 +8,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from skill_checks import (clock_hits, dosing_hits, frontmatter, named_tools,  # noqa: E402
+                          score_as_feature, table_tools)
 from test_plugin import manifest_list  # noqa: E402
 
 from limitless.envelope import MODALITIES  # noqa: E402
@@ -18,38 +20,10 @@ MAX_LINES = 120
 # tools in plugin.yaml the question -> tool table may leave out on purpose (none today)
 TABLE_EXCEPTIONS = set()
 TIERS = ("direct", "indirect", "stale", "none")
-CLOCK = [re.compile(r"(?i)\b\d{1,2}(:\d\d)? ?(am|pm)\b"), re.compile(r"\b\d{1,2}:\d\d\b")]
-DOSING = ["mg", "mcg", "milligram", "milligrams", "microgram", "micrograms", "iu", "dose", "doses", "dosage",
-          "dosages", "dosing", "supplement", "supplements", "supplementation", "melatonin", "caffeine amount",
-          "caffeine dose", "how much caffeine", "titrate", "prescribe", "prescription"]
 
 
 def text():
     return SKILL.read_text()
-
-
-def frontmatter(src):
-    """Flat ``key: value`` frontmatter between the two leading ``---`` lines (quotes stripped)."""
-    lines = src.split("\n")
-    if lines[0] != "---" or "---" not in lines[1:]:
-        raise ValueError("no frontmatter")
-    end = lines.index("---", 1)
-    out = {}
-    for ln in lines[1:end]:
-        if not ln.strip() or ln.startswith(" "):
-            continue
-        key, sep, val = ln.partition(":")
-        if not sep:
-            raise ValueError(f"bad frontmatter line {ln!r}")
-        val = val.strip()
-        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
-            val = val[1:-1]
-        out[key.strip()] = val
-    return out, "\n".join(lines[end + 1:])
-
-
-def table_tools(body):
-    return {t for ln in body.split("\n") if ln.startswith("|") for t in re.findall(r"limitless_[a-z_]+", ln)}
 
 
 class Format(unittest.TestCase):
@@ -70,7 +44,7 @@ class Format(unittest.TestCase):
 
 class Tools(unittest.TestCase):
     def test_every_tool_named_is_in_plugin_yaml(self):
-        named = set(re.findall(r"limitless_[a-z_]+", text()))
+        named = named_tools(text())
         self.assertTrue(named)
         self.assertEqual(sorted(named - set(manifest_list("provides_tools"))), [])
 
@@ -86,16 +60,14 @@ class Tools(unittest.TestCase):
 
 class Never(unittest.TestCase):
     def test_no_clock_time(self):
-        hits = [m.group(0) for pat in CLOCK for m in pat.finditer(text())]
-        self.assertEqual(hits, [])
+        self.assertEqual(clock_hits(text()), [])
 
     def test_no_dosing_words(self):
-        low = text().lower()
-        hits = [w for w in DOSING if re.search(r"\b" + re.escape(w) + r"\b", low)]
-        self.assertEqual(hits, [])
+        self.assertEqual(dosing_hits(text()), [])
 
     def test_no_capability_score_offered(self):
         self.assertNotRegex(text().lower(), r"\byour (score|level|xp)\b")
+        self.assertEqual(score_as_feature(text()), [])
 
 
 class Contract(unittest.TestCase):

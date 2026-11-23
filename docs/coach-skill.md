@@ -12,13 +12,14 @@ plugin's own jobs and send gate. The skill adds no tool, no job and no write.
 (`limitless/coach_skill.py`):
 
 - A host whose ctx has a callable `register_skill` (Hermes: `register_skill(name, path, description="",
-  frontmatter=None)`) gets one call, `register_skill("coach", <plugin dir>/skills/coach/SKILL.md,
+  frontmatter=None)`) gets one call per name in `coach_skill.NAMES` (`coach`, then `learn`, see
+  [learn-skill.md](learn-skill.md)), `register_skill("coach", <plugin dir>/skills/coach/SKILL.md,
   description=<the skill's frontmatter description>)`. The agent then loads it as `limitless:coach` with
   `skill_view`, and `skills_list` shows it while the plugin is enabled.
-- A host without it (an older Hermes) gets nothing and one content-free info line:
-  `limitless: the host has no skill registration; the coach skill is not registered`
-- A host that raises (a bad name, a missing file, anything else) gets one content-free warning line, and
-  every other registration has already happened:
+- A host without it (an older Hermes) gets nothing and one content-free info line in all:
+  `limitless: the host has no skill registration; the plugin's skills are not registered`
+- A call that raises (a bad name, a missing file, anything else) gets one content-free warning line, the
+  next skill is still offered, and every other registration has already happened:
   `limitless: the host's skill registration failed; register went on`
 
 Both lines come from the `limitless.coach_skill` logger, so the schedule-card line from `limitless.plugin`
@@ -42,7 +43,7 @@ test_the_description_is_the_frontmatter_one (test_coach_register.Register.test_t
 test_the_names_are_the_documented_ones (test_coach_register.Register.test_the_names_are_the_documented_ones) ... ok
 
 ----------------------------------------------------------------------
-Ran 7 tests in 0.092s
+Ran 7 tests in 0.076s
 
 OK
 ```
@@ -53,7 +54,7 @@ The checkout loaded as a directory plugin (`plugins.enabled: [limitless]`) into 
 `PluginManager`, which has `register_skill`:
 
 ```text
-list_plugin_skills('limitless'): ['coach']
+list_plugin_skills('limitless'): ['coach', 'learn']
 find_plugin_skill('limitless:coach') -> skills/coach/SKILL.md
 metadata: {'name': 'limitless:coach', 'description': 'Use when coaching over limitless tools. Act only on a yes.'}
 ```

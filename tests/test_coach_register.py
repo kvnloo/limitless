@@ -1,5 +1,6 @@
-"""register(ctx) offers the coach skill (skills/coach/SKILL.md) to a host with register_skill (feature detection);
-without it one content-free line and nothing else; a host that raises never breaks the other registrations."""
+"""register(ctx) offers the coach skill (skills/coach/SKILL.md), with the plugin's other skills, to a host with
+register_skill (feature detection); without it one content-free line and nothing else; a host that raises never
+breaks the other registrations."""
 import logging
 import os
 import re
@@ -57,14 +58,14 @@ def _ours(cm):
 
 
 class Register(unittest.TestCase):
-    def register(self, ctx, skill_path=None):
+    def register(self, ctx, skills_dir=None):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         env = {"LIMITLESS_CONFIG": str(Path(tmp.name) / "absent.json")}
         mod = load_plugin()
         loaded = sys.modules[mod.__name__ + ".limitless.coach_skill"]   # the plugin's own copy of the module
         with mock.patch.dict(os.environ, env, clear=True), self.assertLogs(level="DEBUG") as cm, \
-                mock.patch.object(loaded, "PATH", skill_path or loaded.PATH):
+                mock.patch.object(loaded, "SKILLS_DIR", skills_dir or loaded.SKILLS_DIR):
             logging.getLogger("limitless-coach-test").debug("anchor")   # assertLogs needs one record
             mod.register(ctx)
         return _ours(cm)
@@ -75,14 +76,14 @@ class Register(unittest.TestCase):
 
     def test_the_names_are_the_documented_ones(self):
         self.assertEqual(coach_skill.HOST_METHOD, METHOD)
-        self.assertEqual(coach_skill.NAME, "coach")
-        self.assertEqual(coach_skill.PATH.resolve(), SKILL.resolve())
+        self.assertIn("coach", coach_skill.NAMES)
+        self.assertEqual(coach_skill.path("coach").resolve(), SKILL.resolve())
 
     def test_a_host_with_register_skill_gets_the_coach_skill(self):
         ctx = SkillCtx()
         lines = self.register(ctx)
-        self.assertEqual(len(ctx.skills), 1)
-        s = ctx.skills[0]
+        self.assertEqual(len(ctx.skills), len(coach_skill.NAMES))
+        s = [s for s in ctx.skills if s["name"] == "coach"][0]
         self.assertEqual(s["name"], "coach")
         self.assertEqual(s["path"].resolve(), SKILL.resolve())
         self.assertTrue(s["path"].is_file())
@@ -91,7 +92,8 @@ class Register(unittest.TestCase):
         self.assert_rest_registered(ctx)
 
     def test_the_description_is_the_frontmatter_one(self):
-        self.assertEqual(coach_skill.description(), frontmatter(SKILL.read_text())[0]["description"])
+        self.assertEqual(coach_skill.description(coach_skill.path("coach")),
+                         frontmatter(SKILL.read_text())[0]["description"])
 
     def test_a_host_without_it_gets_one_content_free_line_and_nothing_else(self):
         ctx = FakeCtx()
@@ -113,7 +115,7 @@ class Register(unittest.TestCase):
                 ctx = RaisingSkillCtx(exc)
                 lines = self.register(ctx)
                 self.assertEqual([(r.levelno, r.getMessage()) for r in lines],
-                                 [(logging.WARNING, coach_skill.HOST_FAILED)])
+                                 [(logging.WARNING, coach_skill.HOST_FAILED)] * len(coach_skill.NAMES))
                 self.assertNotIn(str(exc), coach_skill.HOST_FAILED)
                 self.assert_rest_registered(ctx)
                 self.assertEqual(ctx.cards, schedule_cards.cards())
@@ -122,9 +124,9 @@ class Register(unittest.TestCase):
         ctx = SkillCtx()
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        lines = self.register(ctx, skill_path=Path(tmp.name) / "absent" / "SKILL.md")
+        lines = self.register(ctx, skills_dir=Path(tmp.name) / "absent")
         self.assertEqual(ctx.skills, [])
-        self.assertEqual([r.getMessage() for r in lines], [coach_skill.HOST_FAILED])
+        self.assertEqual([r.getMessage() for r in lines], [coach_skill.HOST_FAILED] * len(coach_skill.NAMES))
         self.assert_rest_registered(ctx)
 
 
