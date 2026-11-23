@@ -7,14 +7,14 @@ from typing import Mapping, Optional
 
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
                flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
-               naps as _naps,
+               naps as _naps, presleep_hr as _presleep_hr,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
                sleep as _sleep, stop_rule as _stop_rule, weekly_target as _weekly_target)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
-                           RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
+                           PRESLEEP_HR_CONFIG, RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
 from .window import window as _window
@@ -573,6 +573,32 @@ def sleep(reader: StateReader, now: float, today: date, raw: bool = False, env: 
         value["regularity_min"] = {src: {k: reg[src][k] for k in RAW_REGULARITY} for src in _regularity.SOURCES}
     out = envelope(value, modality, age_h)
     out["label"] = lab
+    return out
+
+
+def presleep_hr(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_presleep_hr: the newest wearable night's pre-sleep heart rate against the usual (presleep_hr.latest).
+
+    An envelope whose value is ``{label}`` (the T1 words: lower than usual, about usual or higher than usual,
+    with the wearable named) with the T1 label beside it; modality measured (only the wearable's rows are read);
+    age_h from the local midnight after the newest wearable night. ``bpm``, ``baseline_bpm``, ``baseline_nights``
+    and ``night`` are T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No file configured is missing
+    with a reason that never echoes the path; no wearable row, only phone rows, too few earlier nights or a
+    stale newest night is value None with presleep_hr's plain reason: unknown, never zero, never a phone
+    guess. No advice, no target, no score. Read-only.
+    """
+    if reader.presleep_hr_file(env, home) is None:
+        return missing(f"no pre-sleep heart-rate file: set \"{PRESLEEP_HR_CONFIG}\" in config.json")
+    got = _presleep_hr.latest(reader.presleep_hr_rows(env, home), now, tz)
+    if got["word"] is None:
+        return envelope(None, got["modality"], got["age_h"], reason=got["reason"])
+    value = {"label": got["label"]["label"]}
+    if raw:
+        value.update(bpm=got["bpm"], baseline_bpm=got["baseline_bpm"], baseline_nights=got["baseline_nights"],
+                     night=got["night"])
+    out = envelope(value, got["modality"], got["age_h"])
+    out["label"] = got["label"]
     return out
 
 

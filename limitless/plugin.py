@@ -96,6 +96,10 @@ def _naps(args, now):
     return tools.naps(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _presleep_hr(args, now):
+    return tools.presleep_hr(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _quiet(args, now):
     return tools.quiet(state_dir(), now)
 
@@ -269,6 +273,15 @@ wording only) of the night's start; unknown when Sleep mode did not change yeste
 mode is a phone switch, not a sleep sensor. The words only; start and end times need the person's raw opt-in. \
 Observation only: no target, no streak, no advice on when or how long to nap. Read-only; nothing is written, \
 sent or switched."), _naps, "💤"),
+    "limitless_presleep_hr": (_schema(
+        "limitless_presleep_hr",
+        "The heart rate before sleep on the newest wearable night (config presleep_hr_file: one row per night \
+from the wearable's export), against the median of the fourteen wearable nights before it, in plain words: \
+lower than usual, about usual or higher than usual (wearable). Wearable rows only: a phone row is never used \
+and a missing night is never zero or filled in. Unknown with a plain reason when there is no wearable reading, \
+fewer than five earlier wearable nights, or the newest is more than a day and a half old. The label only; the \
+beats per minute need the person's raw opt-in. Observation only: no advice, no target, no score, no clock \
+time. Read-only; nothing is written or sent."), _presleep_hr, "🫀"),
     "limitless_quiet": (_schema(
         "limitless_quiet",
         "Whether pushes to the person's phone are muted now: mode on, off (until they reply on), quiet \
