@@ -8,7 +8,8 @@ from typing import Mapping, Optional
 from . import (asks as _asks, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                owner_messages as _owner, prediction as _prediction, scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
-from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
+from .state_reader import (OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
+                           parse_ts)
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
 from .window import window as _window
@@ -278,18 +279,20 @@ OWNER_KIND = "owner_message_age_h"
 
 def owner_message(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
                   home: Optional[Path] = None) -> dict:
-    """When the person last wrote to any agent, across every configured Hermes session store: an envelope
+    """When the person last wrote to any agent, across every configured Hermes session store and owner beacon:
+    an envelope
     ``{value: ISO time, modality: "messages", age_h, evidence_tier}`` plus ``sources: {read, failed}`` and a
     digit-free T1 label (wrote recently | quiet for a while | no data). No store configured is missing, not
     zero. Never carries message content; reasons never echo a path."""
-    paths = reader.owner_db_paths(env, home)
-    if paths is None:
-        return missing(f"no owner session DBs: set {OWNER_DBS_ENV} or \"{OWNER_DBS_CONFIG}\" in config.json")
-    got = _owner.newest_user_message(paths, now)
+    paths, beacons = reader.owner_db_paths(env, home), reader.owner_beacon_paths(env, home)
+    if paths is None and beacons is None:
+        return missing(f"no owner session DBs or beacons: set {OWNER_DBS_ENV} or {OWNER_BEACONS_ENV} "
+                       f"(config \"{OWNER_DBS_CONFIG}\" or \"{OWNER_BEACONS_CONFIG}\")")
+    got = _owner.newest_user_message(paths, now, beacons=beacons)
     sources = {"read": got["sources_read"], "failed": got["sources_failed"]}
     if got["at"] is None:
-        why = ("no message from the person in the owner session DBs" if sources["read"]
-               else "the owner session DBs could not be read")
+        why = ("no message from the person in the owner session DBs or beacons" if sources["read"]
+               else "the owner session DBs or beacons could not be read")
         out = envelope(None, "messages", None, reason=why)
     else:
         out = envelope(got["at"], "messages", got["age_h"])

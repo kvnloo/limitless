@@ -1,7 +1,7 @@
 """When the person last wrote to an agent: the newest ``user`` message across several Hermes session stores.
 
-    out = newest_user_message([db, ...], now)   # {"at": iso | None, "age_h": float | None,
-                                                #  "sources_read": int, "sources_failed": int}
+    out = newest_user_message([db, ...], now, beacons=[path, ...])
+          # {"at": iso | None, "age_h": float | None, "sources_read": int, "sources_failed": int}
 
 The person chats from several machines, each with its own Hermes session store, so one store alone can look
 a day old while they are active. Every store is read; the newest role ``user`` message of any session
@@ -9,6 +9,13 @@ source wins. Only the timestamp is read: message content is never selected or re
 opened read-only (``mode=ro``) with a short busy timeout; a missing, locked or malformed store counts in
 ``sources_failed`` and never raises. A message stamped more than SKEW_S after ``now`` (a machine whose clock
 is wrong) is ignored; a smaller skew reads as age 0. Paths: ``StateReader.owner_db_paths`` ($LIMITLESS_OWNER_DBS or config ``owner_dbs``; none by default).
+
+A machine whose store this host cannot open writes a beacon instead (bin/limitless-owner-beacon): a JSON
+object ``{"at": ISO UTC, "v": 1}`` holding only its newest user-message time. Each beacon
+(``StateReader.owner_beacon_paths``) is one more source: read when it parses, failed when it is missing,
+unreadable, over BEACON_MAX_BYTES, not that shape, has no timezone, or is stamped more than SKEW_S after
+``now``. A beacon after the bound (``until``) was read but is ignored, like a newer row in a store. A stale
+beacon is only an old timestamp.
 Nothing here writes or sends. Stdlib only, Python 3.9+.
 
 Schema, as in NousResearch/hermes-agent ``persistence/sqlite/_schema_ddl.py`` (0f602c5):
@@ -23,6 +30,7 @@ A store with an index leading on ``timestamp`` is read with one ``ORDER BY times
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +41,8 @@ from .state_reader import OWNER_DBS_CONFIG as CONFIG_KEY, OWNER_DBS_ENV as ENV_K
 
 BUSY_TIMEOUT_S = 0.5   # a store Hermes holds locked counts as failed rather than holding up the turn
 SKEW_S = 300.0         # clock skew between machines tolerated before a timestamp counts as wrong
+BEACON_V = 1           # the only beacon shape: {"at": ISO with offset, "v": 1}
+BEACON_MAX_BYTES = 4096  # a beacon is a few dozen bytes; anything larger is not one
 
 FLAT_SQL = ("SELECT timestamp FROM messages WHERE role = 'user' AND timestamp <= ? "
             "ORDER BY timestamp DESC LIMIT 1")
@@ -92,20 +102,68 @@ def _newest_in(path, bound: float):
     return True, float(t) if _number(t) else None
 
 
-def newest_user_message(db_paths: Optional[Iterable], now: float, until: Optional[float] = None) -> dict:
+def beacon_time(text: str) -> Optional[float]:
+    """Epoch seconds from a beacon's text, or None when it is not ``{"at": ISO with offset, "v": 1}``."""
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or type(obj.get("v")) is not int or obj["v"] != BEACON_V:
+        return None
+    at = obj.get("at")
+    if not isinstance(at, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return None
+    return dt.timestamp()
+
+
+def _beacon_in(path, now: float, bound: float):
+    """(True, ts | None) when the beacon was read, (False, None) when it is missing, malformed or from the
+    future beyond SKEW_S. A time after ``bound`` reads as (True, None)."""
+    if not path or not isinstance(path, (str, Path)):
+        return False, None
+    p = Path(path)
+    if not p.is_file():
+        return False, None
+    with open(p, "rb") as f:
+        raw = f.read(BEACON_MAX_BYTES + 1)
+    if len(raw) > BEACON_MAX_BYTES:
+        return False, None
+    try:
+        t = beacon_time(raw.decode("utf-8"))
+    except UnicodeDecodeError:
+        return False, None
+    if t is None or t > float(now) + SKEW_S:
+        return False, None
+    return True, (t if t <= bound else None)
+
+
+def newest_user_message(db_paths: Optional[Iterable], now: float, until: Optional[float] = None,
+                        beacons: Optional[Iterable] = None) -> dict:
     """``{at, age_h, sources_read, sources_failed}``; ``at`` (ISO, UTC) and ``age_h`` are None when no store
-    read has a message from the person. ``until`` (epoch seconds) ignores messages after it, e.g. this
-    turn's own (catchup.py); by default the bound is ``now`` plus SKEW_S. Never raises, never returns
-    content."""
+    or beacon read has a message from the person. ``until`` (epoch seconds) ignores messages after it, e.g.
+    this turn's own (catchup.py); by default the bound is ``now`` plus SKEW_S. Each beacon counts as one
+    source. Never raises, never returns content."""
     newest, read, failed = None, 0, 0
     try:
         bound = float(now) + SKEW_S if until is None else float(until)
     except (TypeError, ValueError):
         bound = None
-    for path in db_paths or ():
+    sources = [(_newest_in, p) for p in db_paths or ()] + [(_beacon_in, p) for p in beacons or ()]
+    for kind, path in sources:
         try:
-            ok, t = _newest_in(path, bound) if bound is not None else (False, None)
-        except (OSError, ValueError, TypeError):
+            if bound is None:
+                ok, t = False, None
+            elif kind is _beacon_in:
+                ok, t = _beacon_in(path, now, bound)
+            else:
+                ok, t = _newest_in(path, bound)
+        except (OSError, ValueError, TypeError, OverflowError):
             ok, t = False, None
         if not ok:
             failed += 1

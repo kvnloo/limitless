@@ -3,7 +3,8 @@
     build(reader, now, last_seen) -> {"text", "lines"}
 
 ``last_seen`` is the person's newest message to any agent before this turn (``last_seen()``: the owner
-session DBs via owner_messages, skipping the last TURN_S seconds so this turn's own message does not count).
+session DBs and owner beacons via owner_messages, skipping the last TURN_S seconds so this turn's own message
+does not count).
 The catch-up is used only when ``now - last_seen`` is over ``catchup_after_h`` hours (config.json, default
 24). At most MAX_LINES lines, TLDR first, with at most one action ("next: ..."):
 
@@ -36,7 +37,8 @@ from . import asks as _asks
 from . import jobs, jobs_runner, owner_messages, tier_audit, tools
 from .capture import FILE as CAPTURES
 from .envelope import envelope, missing
-from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, config, parse_ts, state_dir
+from .state_reader import (OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
+                           config, parse_ts, state_dir)
 
 MAX_LINES = 5
 CONFIG_KEY = "catchup_after_h"
@@ -71,12 +73,12 @@ def after_h(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None
 
 def last_seen(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
               home: Optional[Path] = None) -> Optional[float]:
-    """Epoch seconds of the person's newest message before this turn; None when no owner DB is configured
-    or none has a message (unknown: no catch-up)."""
-    paths = reader.owner_db_paths(env, home)
-    if paths is None:
+    """Epoch seconds of the person's newest message before this turn; None when no owner DB or beacon is
+    configured or none has a message (unknown: no catch-up)."""
+    paths, beacons = reader.owner_db_paths(env, home), reader.owner_beacon_paths(env, home)
+    if paths is None and beacons is None:
         return None
-    return parse_ts(owner_messages.newest_user_message(paths, now, until=now - TURN_S)["at"])
+    return parse_ts(owner_messages.newest_user_message(paths, now, until=now - TURN_S, beacons=beacons)["at"])
 
 
 def _since(rows, key: str, since: float, now: float) -> int:
@@ -164,9 +166,10 @@ def tool(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = Non
         return missing("the state dir does not exist")
     seen = last_seen(reader, now, env, home)
     if seen is None:
-        if reader.owner_db_paths(env, home) is None:
-            return missing(f"no owner session DBs: set {OWNER_DBS_ENV} or \"{OWNER_DBS_CONFIG}\" in config.json")
-        return missing("no earlier message from the person in the owner session DBs")
+        if reader.owner_db_paths(env, home) is None and reader.owner_beacon_paths(env, home) is None:
+            return missing(f"no owner session DBs or beacons: set {OWNER_DBS_ENV} or {OWNER_BEACONS_ENV} "
+                           f"(config \"{OWNER_DBS_CONFIG}\" or \"{OWNER_BEACONS_CONFIG}\")")
+        return missing("no earlier message from the person in the owner session DBs or beacons")
     gap_h = max(0.0, now - seen) / 3600
     c = build(reader, now, seen, env=env, home=home)
     if tier_audit.gate("tool:limitless_catchup", c["text"], False, env=env, now=now) is None:

@@ -21,6 +21,9 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   owner session DBs    optional Hermes session stores, one per machine the person chats from:
                        $LIMITLESS_OWNER_DBS (os.pathsep-separated), else config "owner_dbs" (a list;
                        relative paths in the state dir); read only through owner_messages (owner_db_paths)
+  owner beacons        optional {"at": iso, "v": 1} files from bin/limitless-owner-beacon on other machines:
+                       $LIMITLESS_OWNER_BEACONS, else config "owner_beacons"; same path rules
+                       (owner_beacon_paths); read only through owner_messages
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -34,6 +37,8 @@ from typing import Mapping, Optional
 TAIL_BYTES = 64 * 1024
 OWNER_DBS_ENV = "LIMITLESS_OWNER_DBS"
 OWNER_DBS_CONFIG = "owner_dbs"
+OWNER_BEACONS_ENV = "LIMITLESS_OWNER_BEACONS"
+OWNER_BEACONS_CONFIG = "owner_beacons"
 
 
 def config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
@@ -195,11 +200,21 @@ class StateReader:
         """The person's Hermes session stores: $LIMITLESS_OWNER_DBS (os.pathsep-separated), else config
         ``owner_dbs`` (a list of strings); a relative path is in the state dir, empty entries are dropped.
         None when neither names a path (the input is missing, not zero)."""
+        return self._owner_paths(OWNER_DBS_ENV, OWNER_DBS_CONFIG, env, home)
+
+    def owner_beacon_paths(self, env: Optional[Mapping[str, str]] = None,
+                           home: Optional[Path] = None) -> Optional[list]:
+        """Owner beacons written on other machines (bin/limitless-owner-beacon): $LIMITLESS_OWNER_BEACONS
+        (os.pathsep-separated), else config ``owner_beacons``; same rules as owner_db_paths."""
+        return self._owner_paths(OWNER_BEACONS_ENV, OWNER_BEACONS_CONFIG, env, home)
+
+    def _owner_paths(self, env_key: str, config_key: str, env: Optional[Mapping[str, str]],
+                     home: Optional[Path]) -> Optional[list]:
         env = os.environ if env is None else env
-        if env.get(OWNER_DBS_ENV):
-            items = env[OWNER_DBS_ENV].split(os.pathsep)
+        if env.get(env_key):
+            items = env[env_key].split(os.pathsep)
         else:
-            v = config(env, home).get(OWNER_DBS_CONFIG)
+            v = config(env, home).get(config_key)
             items = v if isinstance(v, list) else []
         out = []
         for v in items:
