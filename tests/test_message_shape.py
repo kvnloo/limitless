@@ -129,6 +129,11 @@ class Cut(unittest.TestCase):
         self.assertTrue(out[-1].startswith("Why now: "))
         self.assertLessEqual(len(out[-1]), 160)
 
+    def test_a_line_with_a_link_is_never_cut(self):
+        line = "Screens down and lights low, or slow breathing in your app: https://example.org/" + "b" * 150
+        out = lines(ms.shape("t", f"TLDR\n{line}\n{WHY}", ms.limits({})))
+        self.assertEqual(out[1], line)
+
     def test_cutting_adds_no_digit(self):
         body = "TLDR\n" + " ".join(["about one"] * 40) + "\n" + WHY
         self.assertEqual(digits(ms.shape("t", body, ms.limits({}))), 0)

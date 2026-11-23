@@ -9,7 +9,8 @@ The first non-blank line is the TLDR: kept as it is, in first place. The closing
 (send_gate.outgoing) are always kept in their places; the Reply line is never cut, so a tap still parses.
 When the message has more than ``max_lines`` non-blank lines, the middle lines past the limit are folded into
 one plain line, "and four more lines in the plugin", the count said in words. Any other line longer than
-``max_line_chars`` is cut at a word boundary and ends with an ellipsis. Nothing is reworded and nothing is
+``max_line_chars`` is cut at a word boundary and ends with an ellipsis, except a line that offers a link
+(``scheme://...``, e.g. the wind-down breathing link): a cut link is a broken one, so it is kept whole. Nothing is reworded and nothing is
 asked that was not asked; no digit is ever added. A message that already fits comes back byte for byte.
 
 Used in one place: bin/kevin-push, on the text it hands to the transport (after send_gate.outgoing added the
@@ -23,6 +24,7 @@ send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import re
 from typing import Mapping, Optional, Tuple
 
 from . import one_tap
@@ -35,6 +37,7 @@ MIN_LINE_CHARS = 40
 CONFIG_LINES, CONFIG_CHARS = "message_max_lines", "message_max_line_chars"
 ELLIPSIS = "…"
 FOLD = "and {} more lines in the plugin"
+_LINK = re.compile(r"[A-Za-z][A-Za-z+.-]*://\S")   # a line that offers a link is never cut: a cut link is broken
 _WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
           "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
 
@@ -62,7 +65,7 @@ def fold_line(n: int) -> str:
 
 def cut(line: str, max_chars: int) -> str:
     """``line`` when it fits, else its head up to the last whole word plus an ellipsis, at most ``max_chars``."""
-    if len(line) <= max_chars:
+    if len(line) <= max_chars or _LINK.search(line):
         return line
     room = max(max_chars - len(ELLIPSIS), 1)
     head = line[:room]
