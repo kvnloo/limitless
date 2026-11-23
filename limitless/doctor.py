@@ -10,16 +10,18 @@ Nothing here writes, sends, pushes or starts a job.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
+import time
 from datetime import date
 from pathlib import Path
 from typing import Mapping, Optional
 
 from . import card, tier_audit, tools
 from .envelope import STALE_H
-from .state_reader import StateReader, parse_ts
+from .state_reader import StateReader, config, parse_ts
 
 LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
 STATUSES = (LIVE, STALE, MISSING, OFF)
@@ -214,3 +216,31 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     return [dict(r, reason=words(r["reason"])) for r in rows]
+
+
+def text(rows: list) -> str:
+    """One line per row: ``name: status: reason``."""
+    return "\n".join(f"{r['name']}: {r['status']}: {r['reason']}" for r in rows)
+
+
+def as_json(rows: list) -> str:
+    """The full rows as a JSON list, one row per line."""
+    return "[\n" + ",\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n]"
+
+
+def strict_failed(rows: list) -> bool:
+    """--strict: true when the state dir, an input or the last sync run is not live (tool rows never count)."""
+    return any(r["kind"] != "tool" and r["status"] != LIVE for r in rows)
+
+
+def main(argv=None, now: Optional[float] = None) -> int:
+    import argparse
+    p = argparse.ArgumentParser(prog="limitless-doctor", description="Read-only: which inputs are live and which "
+                                "tools would answer unknown, and why. Never writes, sends or starts a job.")
+    p.add_argument("--json", action="store_true", help="print the full rows as JSON")
+    p.add_argument("--strict", action="store_true",
+                   help="exit 1 when the state dir, an input or the last sync run is not live")
+    args = p.parse_args(argv)
+    rows = report(config(), time.time() if now is None else now)
+    print(as_json(rows) if args.json else text(rows))
+    return 1 if args.strict and strict_failed(rows) else 0
