@@ -318,7 +318,7 @@ def receipt(state_dir, week_of, write: bool = False, today: Optional[date] = Non
     if lag:
         if today < start + timedelta(days=lag + WEEK_DAYS):
             return {"action": PENDING, "verdict": PENDING, "receipt": None,
-                    "reason": "the outcome is judged later, after " + _SPAN_WORDS[lag] + ": nothing written"}
+                    "reason": "the outcome is judged later, once " + _SPAN_WORDS[lag] + " is over: nothing written"}
     elif today < start + timedelta(days=WEEK_DAYS):
         return {"action": REFUSED, "reason": "the habit week is not over: a receipt comes after day seven",
                 "receipt": None}
