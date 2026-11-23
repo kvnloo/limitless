@@ -108,5 +108,37 @@ class LongBlockShare(unittest.TestCase):
         self.assertIsNone(d["long_block_share"])
 
 
+class TimeBack(unittest.TestCase):
+    def test_median_time_back_to_work_after_a_switch(self):
+        rows = [row(0, 30, "editor"), row(30, 32, "chat"), row(32, 60, "editor"),        # back in two
+                row(60, 65, "feed"), row(65, 66, "chat"), row(66, 90, "editor"),         # back in six
+                row(90, 93, "feed"), row(93, 120, "editor")]                             # back in three
+        (d,) = run(rows)
+        self.assertEqual(d["returns"], 3)
+        self.assertEqual(d["median_return_s"], 3 * M)
+
+    def test_even_count_takes_the_middle_two(self):
+        rows = [row(0, 30, "editor"), row(30, 32, "chat"), row(32, 60, "editor"),
+                row(60, 64, "feed"), row(64, 90, "editor")]
+        (d,) = run(rows)
+        self.assertEqual(d["median_return_s"], 3 * M)
+
+    def test_no_return_that_day_is_not_counted(self):
+        rows = [row(0, 30, "editor"), row(30, 32, "chat"), row(32, 60, "editor"), row(60, 120, "feed")]
+        (d,) = run(rows)
+        self.assertEqual((d["switches"], d["returns"], d["median_return_s"]), (2, 1, 2 * M))
+
+    def test_a_hole_with_no_row_before_the_return_is_a_break_not_a_return(self):
+        # a switch, then nothing for longer than the gap (away), then work: not a time back to work
+        rows = [row(0, 30, "editor"), row(30, 32, "feed"), row(32 + 40, 120, "editor")]
+        (d,) = run(rows)
+        self.assertEqual((d["switches"], d["returns"]), (1, 0))
+        self.assertIsNone(d["median_return_s"])
+
+    def test_no_switch_is_unknown_time_back_not_zero(self):
+        (d,) = run([row(0, 120, "editor")])
+        self.assertIsNone(d["median_return_s"])
+
+
 if __name__ == "__main__":
     unittest.main()
