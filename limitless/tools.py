@@ -1,11 +1,12 @@
 """Tool bodies as plain functions of (reader, now, ...) returning evidence envelopes. Handlers live in plugin.py."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration as _body_calibration,
+               delivery_audit as _delivery,
                explain_back as _explain_back,
                feeds_evidence,
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
@@ -1175,4 +1176,62 @@ def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = No
         out["reason"] = r["why"]
     if r.get("posture_ignored"):
         out["posture_ignored"] = r["posture_ignored"]
+    return out
+
+
+def delivery_wake_days(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                       home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[list]:
+    """The local dates of the wake events the plugin already merges (jobs_runner.events, jobs.wake_times: Sleep
+    mode, screen-event wakes, events.jsonl), up to ``now``; None when there is none or the state cannot be read
+    (unknown, never "no wake")."""
+    try:
+        wakes = jobs.wake_times(jobs_runner.events(reader, env, home), now)
+    except Exception:  # noqa: BLE001 - unreadable state is unknown wake days, never a traceback
+        return None
+    return sorted({datetime.fromtimestamp(t, tz).date() for t in wakes}) or None
+
+
+def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
+    """limitless_delivery: the delivery audit (delivery_audit.audit) of kevin-push's own log over the seven local
+    days up to ``now``, read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: within or over the push limit, whether the wake brief
+    reached the person on the wake days, whether every push had a reply line) with the T1 label beside it;
+    modality measured (the log is kevin-push's own record), aged by the newest row in the window. The counts
+    (per-day deliveries, days over the cap, wake days and briefs, pushes with no reply line, skipped lines) are
+    T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). Config ``push_log`` unset, an unreadable log or a
+    week with no row is value None with a reason (unknown, not zero); reasons never echo the path. The cap is
+    config ``push_cap``, else the send gate's own. Nothing is written or sent.
+    """
+    cfg = config(env, home)
+    unknown = {"label": _delivery.UNKNOWN_ROWS, "tier": "T1", "modality": _delivery.MODALITY}
+    path = _delivery.log_path(cfg, reader.path)
+    if path is None:
+        out = envelope(None, _delivery.MODALITY, None, reason=_delivery.NO_LOG_REASON)
+        out["label"] = dict(unknown, label=_delivery.NO_LOG)
+        return out
+    got = _delivery.read_log(path)
+    if got is None:
+        out = envelope(None, _delivery.MODALITY, None, reason=_delivery.UNREADABLE_REASON)
+        out["label"] = unknown
+        return out
+    rows, skipped = got
+    a = _delivery.audit(rows, wake_days=delivery_wake_days(reader, now, env, home, tz),
+                        today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=_delivery.push_cap(cfg),
+                        skipped=skipped)
+    if not a["known_days"]:
+        out = envelope(None, _delivery.MODALITY, None, reason=_delivery.NO_ROWS_REASON)
+        out["label"] = unknown
+        return out
+    days = {d["day"] for d in a["days"]}
+    ats = [float(r["at"]) for r in rows if datetime.fromtimestamp(float(r["at"]), tz).date().isoformat() in days
+           and float(r["at"]) <= now]
+    value = {"label": a["label"]["label"]}
+    if raw:
+        for k in ("days", "delivered", "known_days", "cap", "over_cap_days", "wake", "no_action",
+                  "action_unknown", "skipped"):
+            value[k] = a[k]
+    out = envelope(value, _delivery.MODALITY, (now - max(ats)) / 3600 if ats else None)
+    out["label"] = a["label"]
     return out

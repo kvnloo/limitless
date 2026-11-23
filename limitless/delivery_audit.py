@@ -98,6 +98,21 @@ def read_log(path) -> Optional[tuple]:
     return parse_lines(text)
 
 
+NO_LOG_REASON = f"no push log set (config {LOG_CONFIG})"
+UNREADABLE_REASON = "the push log could not be read"
+NO_ROWS_REASON = "no push row in the last seven days"
+
+
+def log_path(cfg: Optional[Mapping], state_dir) -> Optional[Path]:
+    """The push log: config ``push_log`` (kevin-push writes it under its own state dir; a relative path is in
+    the limitless state dir). None when it is not set: there is no default, so unset is unknown, not zero."""
+    v = cfg.get(LOG_CONFIG) if isinstance(cfg, Mapping) else None
+    if not isinstance(v, str) or not v.strip():
+        return None
+    p = Path(v.strip()).expanduser()
+    return p if p.is_absolute() else Path(state_dir) / p
+
+
 def push_cap(cfg: Optional[Mapping] = None) -> int:
     """Config ``push_cap`` (a whole number, at least one); anything else is the send gate's own DAILY_CAP."""
     v = cfg.get(CAP_CONFIG) if isinstance(cfg, Mapping) else None

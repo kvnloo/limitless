@@ -143,6 +143,10 @@ def _ideas(args, now):
     return tools.ideas(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _delivery(args, now):
+    return tools.delivery(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _phase(args, now):
     return tools.phase(_reader(), now)
 
@@ -452,6 +456,14 @@ by limitless-ledger-append): how many ideas were recorded and whether the person
 words such as a few new ideas this week, none triaged. Self-reported. The words only; the counts and the idea \
 text need the person's raw opt-in. No ledger set is no value with the reason. It never triages, ranks or \
 starts an idea: the person triages in a review. Read-only; nothing is written or sent."), _ideas, "💡"),
+    "limitless_delivery": (_schema(
+        "limitless_delivery",
+        "Whether the pushes stayed useful over the last seven days, read from kevin-push's own log (config \
+push_log): within the push limit every day or over it on some days (config push_cap, else the send gate's own \
+cap), whether the wake brief reached the person on the wake days, and whether every delivered push had a reply \
+line, in plain words. Only real Telegram deliveries count; held, folded, dropped and log-only rows never do, and \
+a day with no log row is unknown, not zero. The words only; the counts need the person's raw opt-in. No push \
+log set is no value with the reason. Read-only; nothing is written or sent."), _delivery, "📬"),
     "limitless_phase": (_schema(
         "limitless_phase",
         "The part of the day the person is in, in plain words, from the wake event (phone Sleep mode going \

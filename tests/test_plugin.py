@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_experiment", "limitless_explain_back", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
+TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_delivery", "limitless_experiment", "limitless_explain_back", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
          "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_outages", "limitless_overnight",
          "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_result_tier", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
@@ -252,6 +252,13 @@ class Wiring(unittest.TestCase):
                 ideas.write_text(json.dumps({"kind": "idea", "id": "idea_synthetic", "at": "2030-01-15T11:00:00+00:00",
                                              "text": "a synthetic idea", "source": "hermes", "status": "new"}) + "\n")
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_IDEA_LEDGER": str(ideas)}
+            if name == "limitless_delivery":   # a synthetic push log with one delivery an hour before NOW
+                (st / "push-log.jsonl").write_text(json.dumps(
+                    {"at": int(NOW - 3600), "tag": "x", "cls": "decision", "title": "Pick one",
+                     "body": "Keep it?\nReply: Yes / No\nWhy now: you woke up", "how": "telegram"}) + "\n")
+                cfg = st / "delivery-config.json"
+                cfg.write_text(json.dumps({"push_log": "push-log.jsonl"}))
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(cfg)}
             if name == "limitless_loop":   # one synthetic decided week
                 from limitless import stop_rule
                 (st / "loop").mkdir()
