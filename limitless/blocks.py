@@ -4,6 +4,7 @@
     b = current_block(bs, now, gap_s=GAP_S)       # the block still going at ``now``, else None
     evs = long_block_events(bs, break_after_s)    # one ``long_block`` event per block that ran that long
     rows = read_rows(aw_db, lo, hi)               # app-in-foreground rows from an ActivityWatch DB copy
+    rows, why = source_rows(reader, lo, hi)       # the phone DB's rows and the desktop's, labelled by source
 
 A row is ``{"start", "end"}`` (epoch seconds) with the app's ``app`` / ``package`` names and ``title`` (or
 ``names``, a list, as read_rows gives them). A work row is one whose app is in ``work_apps`` (config
@@ -20,7 +21,10 @@ only when the rows show the block lasted that long; its ``block_start`` is the o
 
 Durations, not clock times: nothing here has a time of day, and nothing reads the clock (``now`` comes from
 the caller). The DB is read through flow_week's read-only reader (``mode=ro``), cut to the not-afk spans
-when the DB has an afk bucket. Nothing here sends or writes. Stdlib only, Python 3.9+.
+when the DB has an afk bucket. The desktop's ActivityWatch (aw_desktop, config ``desktop_aw_url`` or
+``desktop_aw_export``) is a second source for the same rows (source_rows): its rows carry only the app name,
+never the window title, so ``title:`` entries never match them. A desktop source that is set and cannot be
+read makes the rows unknown, never zero work. Nothing here sends or writes. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
@@ -28,7 +32,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
-from . import flow_week
+from . import aw_desktop, flow_week
 from .state_reader import config
 
 EVENT = "long_block"
@@ -107,6 +111,29 @@ def read_rows(aw_db, lo: float, hi: float) -> Optional[list]:
     return out
 
 
+PHONE = "phone"
+
+
+def source_rows(reader, lo: float, hi: float, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None) -> tuple:
+    """``(rows, why)`` for [lo, hi): the phone DB's rows (read_rows, source "phone") and the desktop's
+    (aw_desktop.for_config, source "desktop"), oldest first. ``rows`` None (unknown) with a plain digit-free
+    ``why`` when the phone DB is set and unreadable, the desktop is set and unreadable, or neither is set.
+    With no desktop set this is read_rows exactly, plus the source label."""
+    db = reader.aw_db_path(env, home)
+    phone = None if db is None else read_rows(db, lo, hi)
+    if db is not None and phone is None:
+        return None, NO_DB
+    phone = [dict(r, source=PHONE) for r in phone or ()]
+    desk = aw_desktop.for_config(env, home, lo, hi)
+    if desk["state"] == aw_desktop.OFF:
+        return (phone, "") if db is not None else (None, NO_DB)
+    rows = aw_desktop.rows(desk)
+    if rows is None:
+        return None, desk["why"]
+    return sorted(phone + rows, key=lambda r: (r["start"], r["end"])), ""
+
+
 def _minutes(env, home, key: str, default: float) -> float:
     v = _num(config(env, home).get(key))
     return (v if v is not None and v > 0 else default) * 60.0
@@ -124,14 +151,14 @@ def gap_s(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) 
 
 def read_for(reader, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
     """Everything from config: ``{blocks, rows_end, why, break_after_s, gap_s}`` for the LOOKBACK_S up to
-    ``now``. ``blocks`` None (unknown) carries ``why``, plain and digit-free. Read-only."""
+    ``now``, from both sources (source_rows). ``blocks`` None (unknown) carries ``why``, plain and digit-free.
+    Read-only."""
     after, gap = break_after_s(env, home), gap_s(env, home)
     out = {"blocks": None, "rows_end": None, "why": "", "break_after_s": after, "gap_s": gap}
-    db = reader.aw_db_path(env, home)
     apps = flow_week.work_apps(env, home)
-    rows = None if db is None else read_rows(db, now - LOOKBACK_S, now)
+    rows, why = source_rows(reader, now - LOOKBACK_S, now, env, home)
     if rows is None:
-        out["why"] = NO_DB
+        out["why"] = why
         return out
     if flow_week._matcher(apps) is None:
         out["why"] = "no work apps set (flow_work_apps)"

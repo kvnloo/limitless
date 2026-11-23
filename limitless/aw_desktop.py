@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -43,6 +44,8 @@ CURRENT_WINDOW, AFK = "currentwindow", "afkstatus"
 SOURCE = "desktop"
 TIMEOUT_S = 2.0                     # a desktop that is asleep or off reads as unreachable quickly
 MAX_BYTES = 64 * 1024 * 1024        # a body larger than this is not read
+HOLD_S = 300.0                      # after no answer, for_config does not ask the same server again this soon
+_HOLD: dict = {}                    # server -> monotonic second until which it reads unreachable, unasked
 
 OFF, LIVE, UNKNOWN, UNREACHABLE = "off", "live", "unknown", "unreachable"
 OFF_WHY = "desktop ActivityWatch is not set (desktop_aw_url or desktop_aw_export)"
@@ -247,10 +250,19 @@ def configured(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
 def for_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None, lo: float = 0.0,
                hi: float = 0.0, fetch: Optional[Fetch] = None, timeout: float = TIMEOUT_S) -> dict:
     """read_events on config ``desktop_aw_url``, else read_export on ``desktop_aw_export`` (a relative path is
-    in the state dir), else off: no fetch, no file read."""
+    in the state dir), else off: no fetch, no file read. A server that did not answer reads unreachable,
+    unasked, for HOLD_S (a desktop that is asleep must not slow every card build)."""
     url = _setting(env, home, URL_CONFIG)
     if url is not None:
-        return read_events(url, lo, hi, fetch=fetch, timeout=timeout)
+        base = _base(url) or url
+        if _HOLD.get(base, -math.inf) > time.monotonic():
+            return _unknown(NO_ANSWER, UNREACHABLE)
+        got = read_events(url, lo, hi, fetch=fetch, timeout=timeout)
+        if got["state"] == UNREACHABLE:
+            _HOLD[base] = time.monotonic() + HOLD_S
+        else:
+            _HOLD.pop(base, None)
+        return got
     exp = _setting(env, home, EXPORT_CONFIG)
     if exp is not None:
         p = Path(exp).expanduser()

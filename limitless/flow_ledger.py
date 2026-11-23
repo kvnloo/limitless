@@ -161,17 +161,16 @@ def t1(got: Optional[dict]) -> dict:
 def read_for(reader, day: date, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None) -> dict:
     """ledger() for ``day`` with every input from config: the ActivityWatch DB (blocks.read_rows, read-only,
-    cut to not-afk spans), ``flow_work_apps``, ``feed_apps``, ``block_gap_min``, ``break_after_min`` and the
+    cut to not-afk spans) and the desktop's ActivityWatch when set (blocks.source_rows), ``flow_work_apps``, ``feed_apps``, ``block_gap_min``, ``break_after_min`` and the
     work queue (overnight.items_for). Adds ``rows_end``: the newest activity moment inside the day (None when
     unknown). No readable DB says so in ``why``. Never writes."""
     lo, hi = day_bounds(day, tz)
-    db = reader.aw_db_path(env, home)
-    rows = None if db is None else _blocks.read_rows(db, lo, hi)
+    rows, why = _blocks.source_rows(reader, lo, hi, env, home)
     got = ledger(rows, flow_week.work_apps(env, home), feeds_evidence.feed_apps(env, home),
                  _overnight.items_for(reader, env, home), day, now, tz,
                  _blocks.gap_s(env, home), _blocks.break_after_s(env, home))
     if got["why"] == NO_ACTIVITY and rows is None:
-        got["why"] = _blocks.NO_DB
+        got["why"] = why
     day_rows = _clip(rows, lo, hi) if got["blocks"] is not None else []
     got["rows_end"] = max((r["end"] for r in day_rows), default=None)
     return got

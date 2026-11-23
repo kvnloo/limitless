@@ -18,7 +18,7 @@ from limitless import aw_desktop  # noqa: E402
 
 T0 = 2_000_000_000.0
 M = 60.0
-SECRET = "PLANTED-TITLE-zq"
+PLANTED = "PLANTED-TITLE-zq"
 URL = "http://aw.example.invalid:5600"
 
 
@@ -32,7 +32,7 @@ def ev(start_m, end_m, **data):
 
 
 def win(start_m, end_m, app="editor"):
-    return ev(start_m, end_m, app=app, title=f"{SECRET} {app}")
+    return ev(start_m, end_m, app=app, title=f"{PLANTED} {app}")
 
 
 def afk(start_m, end_m, status="not-afk"):
@@ -101,7 +101,7 @@ class ReadEvents(unittest.TestCase):
     def test_titles_never_leave_the_read(self):
         got, _ = self.read(server([win(0, 60), win(60, 90, "browser")], [afk(0, 120)]))
         text = json.dumps(got) + repr(got) + repr(aw_desktop.rows(got))
-        self.assertNotIn(SECRET, text)
+        self.assertNotIn(PLANTED, text)
         self.assertNotIn("title\": \"PLANTED", text)
         for r in aw_desktop.rows(got):
             self.assertEqual(r["title"], "")
@@ -118,7 +118,7 @@ class ReadEvents(unittest.TestCase):
         self.assertEqual(got["newest"], T0 + 45 * M)
 
     def test_z_and_millisecond_timestamps(self):
-        e = {"timestamp": iso(T0, z=True), "duration": 600.0, "data": {"app": "editor", "title": SECRET}}
+        e = {"timestamp": iso(T0, z=True), "duration": 600.0, "data": {"app": "editor", "title": PLANTED}}
         e2 = {"timestamp": "2033-05-18T03:33:20.250+00:00", "duration": 60, "data": {"app": "notes"}}
         got, _ = self.read(server([e, e2], [afk(0, 600)]))
         self.assertEqual([x[2] for x in got["events"]], ["editor", "notes"])
@@ -131,7 +131,7 @@ class ReadEvents(unittest.TestCase):
                {"timestamp": iso(T0), "duration": "long", "data": {"app": "x"}},
                {"timestamp": iso(T0), "duration": 60, "data": "x"},
                {"timestamp": iso(T0), "duration": 60, "data": {"app": ""}},
-               {"timestamp": iso(T0), "duration": 60, "data": {"title": SECRET}},
+               {"timestamp": iso(T0), "duration": 60, "data": {"title": PLANTED}},
                {"timestamp": iso(T0), "duration": True, "data": {"app": "x"}},
                "not an event", None, win(0, 10)]
         got, _ = self.read(server(bad, [afk(0, 60), {"timestamp": "x"}, "y"]))
@@ -211,7 +211,7 @@ class ReadExport(unittest.TestCase):
         live = aw_desktop.read_events(URL, T0, T0 + 600 * M, fetch=FakeFetch(b))
         self.assertEqual(got["events"], live["events"])
         self.assertEqual(got["state"], aw_desktop.LIVE)
-        self.assertNotIn(SECRET, json.dumps(got))
+        self.assertNotIn(PLANTED, json.dumps(got))
 
     def test_a_missing_or_broken_export_is_unknown_without_its_path(self):
         p = self.dir / "secret-folder-name" / "x.json"
@@ -233,8 +233,10 @@ class FromConfig(unittest.TestCase):
         self.dir = Path(self.tmp.name)
         self.cfg = self.dir / "config.json"
         self.env = {"LIMITLESS_CONFIG": str(self.cfg)}
+        aw_desktop._HOLD.clear()
 
     def tearDown(self):
+        aw_desktop._HOLD.clear()
         self.tmp.cleanup()
 
     def config(self, **kv):
@@ -258,6 +260,18 @@ class FromConfig(unittest.TestCase):
         self.assertTrue(aw_desktop.configured(self.env, self.dir))
         self.assertEqual(got["events"], [(T0, T0 + 60 * M, "editor")])
         self.assertTrue(f.calls[0][0].startswith(URL + "/api/0/buckets/"))
+
+    def test_no_answer_is_held_then_asked_again_after_an_answer(self):
+        self.config(desktop_aw_url=URL)
+        down = FakeFetch({}, fail=OSError("refused"))
+        for _ in range(3):
+            got = aw_desktop.for_config(self.env, self.dir, T0, T0 + 60, fetch=down)
+            self.assertEqual(got["state"], aw_desktop.UNREACHABLE)
+        self.assertEqual(len(down.calls), 1)
+        aw_desktop._HOLD.clear()          # the hold has passed
+        up = FakeFetch(server([win(0, 60)], [afk(0, 60)]))
+        self.assertEqual(aw_desktop.for_config(self.env, self.dir, T0, T0 + 60, fetch=up)["state"], aw_desktop.LIVE)
+        self.assertNotIn(URL, aw_desktop._HOLD)
 
     def test_a_trailing_slash_in_the_url_is_fine(self):
         self.config(desktop_aw_url=URL + "/")

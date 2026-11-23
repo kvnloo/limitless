@@ -48,6 +48,7 @@ from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Optional
 
 from . import anki as _anki, bedtime, explain_back as _explain_back, flow_week, modes, peak as _peak, phase as _phase
+from . import aw_desktop
 from . import palace as _palace
 from . import labeler as _labeler
 from . import sleep_debt as _sleep_debt
@@ -135,8 +136,9 @@ def _owner_text(owner: dict) -> str:
 
 def flow_label(reader: StateReader, today: date, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
     """The flow T1 label (flow_week.t1_label: digit-free) for the seven days to ``today`` against the seven
-    before, in this machine's zone; None when no ActivityWatch DB is configured."""
-    if reader.aw_db_path(env) is None:
+    before, in this machine's zone; None when neither the ActivityWatch DB nor the desktop's ActivityWatch
+    (aw_desktop: desktop_aw_url or desktop_aw_export) is configured."""
+    if reader.aw_db_path(env) is None and not aw_desktop.configured(env):
         return None
     this = flow_week.for_week(reader, today - timedelta(days=6), None, env)
     last = flow_week.for_week(reader, today - timedelta(days=13), None, env)
@@ -170,6 +172,15 @@ def _aw_mtime(reader: StateReader, env: Optional[Mapping[str, str]]) -> Optional
         return None if p is None else p.stat().st_mtime_ns
     except OSError:
         return None
+
+
+DESKTOP_REFRESH_S = 3600.0   # with a desktop source set, the card's flow label is rebuilt at most this often
+
+
+def _desktop_tick(now: float, env: Optional[Mapping[str, str]]) -> Optional[int]:
+    """A cache-key part for the desktop's ActivityWatch, which has no file mtime: the DESKTOP_REFRESH_S slot
+    ``now`` falls in when it is configured, else None (no change to the key)."""
+    return int(now // DESKTOP_REFRESH_S) if aw_desktop.configured(env) else None
 
 
 def _saved_last_night(reader: StateReader, now: float, env: Optional[Mapping[str, str]]) -> int:
@@ -366,7 +377,7 @@ class CardCache:
         self.palace = (pal["line"], pal["wake"]) if pal["line"] else None
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed)
+               _desktop_tick(now, env), _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
