@@ -54,7 +54,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import habit_catalogue, idea_ledger as _idea_ledger, prediction as _prediction
+from . import delivery_audit as _delivery, habit_catalogue, idea_ledger as _idea_ledger, prediction as _prediction
 from . import anki as _anki, aw_reader, blocks as _blocks, body_calibration as _body_calibration, feeds_evidence, flow_ledger as _flow_ledger, \
     flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
@@ -90,7 +90,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
          anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "",
          wind_down_line: str = "", rule_line: str = "", presleep_line: str = "", ideas_line: str = "",
-         experiment_line: str = "") -> str:
+         experiment_line: str = "", delivery_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -105,7 +105,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     proxy, in words), then ``presleep_line`` (week_presleep_hr: the wearable's pre-sleep heart rate against the
     usual, in words, next to the night), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
     ``anki_line`` (week_anki: this week's Anki reviews in words), then ``ideas_line`` (week_ideas: the idea
-    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``experiment_line`` (week_experiment:
+    ledger's week, "Ideas recorded this week: a few, none triaged."), then ``delivery_line`` (week_delivery: the
+    push log's week in words, "Pushes: within the push limit every day this week; ..."), then ``experiment_line`` (week_experiment:
     "Experiment: outcome pending (judged later)" while a lagged outcome waits), then ``rule_line`` (week_rule: what the stop
     rule picked at the week's start says, "Your rule says: keep it"), each as one more line
     when given, then ``Reply: Keep / Drop``: the rule only suggests, the reply decides. The first line's number
@@ -124,7 +125,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
                                       passive, flow, fragment, body_line,
                                       rides_line, sleep_line, presleep_line, naps_line, anki_line, ideas_line,
-                                      experiment_line, rule_line,
+                                      delivery_line, experiment_line, rule_line,
                                       one_tap.choices_line(spec.answers))
                          if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
@@ -152,7 +153,8 @@ def week_review_body(state_dir, habit: Optional[dict], synced: Optional[dict] = 
                 naps_line=week_naps(state_dir, env, home, today, tz), rule_line=week_rule(habit, synced, env, home),
                 presleep_line=week_presleep_hr(state_dir, env, home, today),
                 experiment_line=week_experiment(state_dir, habit, today, env, home),
-                ideas_line=week_ideas(state_dir, now, env, home) if now is not None else "")
+                ideas_line=week_ideas(state_dir, now, env, home) if now is not None else "",
+                delivery_line=week_delivery(state_dir, env, home, today, tz, now))
 
 
 def delivered(result: object) -> bool:
@@ -639,6 +641,48 @@ def week_ideas(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
     except Exception:  # noqa: BLE001 - a broken ledger must not stop the review
         return ""
     return _gated("week_review:ideas", line, env, home)
+
+
+def delivery_wake_days(state_dir, now: Optional[float] = None, env: Optional[Mapping[str, str]] = None,
+                       home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[list]:
+    """The local dates of the wake events this module already merges (events, jobs.wake_times: Sleep mode,
+    screen-event wakes, events.jsonl) up to ``now`` (no bound when None); None when there is none or the state
+    cannot be read (unknown, never "no wake"). Dates only: no time of day is compared."""
+    try:
+        evs = events(StateReader(Path(state_dir)), env, home)
+        wakes = jobs.wake_times(evs, math.inf if now is None else now)
+    except Exception:  # noqa: BLE001 - unreadable state is unknown wake days, never a traceback
+        return None
+    return sorted({datetime.fromtimestamp(t, tz).date() for t in wakes}) or None
+
+
+DELIVERY_LINE = "Pushes: {}."
+
+
+def week_delivery(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                  today: Optional[date] = None, tz: Optional[tzinfo] = None, now: Optional[float] = None) -> str:
+    """The week review's delivery line (delivery_audit.audit of kevin-push's log, config ``push_log``, over the
+    seven local days up to ``today``): "Pushes: within the push limit every day this week; brief reached you on
+    most wake days; every push had a reply line.", digit-free, through tier_audit.gate (hook
+    ``week_review:delivery``); an unknown brief clause is left out. "" when no ``today`` is given, the log is
+    unset or unreadable, or the week has no row (unknown, not zero). Read-only: the log is never written."""
+    if not isinstance(today, date):
+        return ""
+    try:
+        cfg = config(env, home)
+        path = _delivery.log_path(cfg, state_dir)
+        got = _delivery.read_log(path) if path is not None else None
+        if got is None:
+            return ""
+        a = _delivery.audit(got[0], wake_days=delivery_wake_days(state_dir, now, env, home, tz), today=today,
+                            tz=tz, cap=_delivery.push_cap(cfg), skipped=got[1])
+        if not a["known_days"]:
+            return ""
+        words = [w for k, w in a["labels"].items() if w and not (k == "brief" and w == _delivery.BRIEF_UNKNOWN)]
+        line = DELIVERY_LINE.format("; ".join(words))
+    except Exception:  # noqa: BLE001 - a broken log must not stop the review
+        return ""
+    return _gated("week_review:delivery", line, env, home)
 
 
 def week_rule(habit: Optional[dict], synced: Optional[dict] = None, env: Optional[Mapping[str, str]] = None,

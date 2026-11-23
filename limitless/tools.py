@@ -1179,18 +1179,6 @@ def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = No
     return out
 
 
-def delivery_wake_days(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
-                       home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[list]:
-    """The local dates of the wake events the plugin already merges (jobs_runner.events, jobs.wake_times: Sleep
-    mode, screen-event wakes, events.jsonl), up to ``now``; None when there is none or the state cannot be read
-    (unknown, never "no wake")."""
-    try:
-        wakes = jobs.wake_times(jobs_runner.events(reader, env, home), now)
-    except Exception:  # noqa: BLE001 - unreadable state is unknown wake days, never a traceback
-        return None
-    return sorted({datetime.fromtimestamp(t, tz).date() for t in wakes}) or None
-
-
 def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
              home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
     """limitless_delivery: the delivery audit (delivery_audit.audit) of kevin-push's own log over the seven local
@@ -1217,7 +1205,7 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
         out["label"] = unknown
         return out
     rows, skipped = got
-    a = _delivery.audit(rows, wake_days=delivery_wake_days(reader, now, env, home, tz),
+    a = _delivery.audit(rows, wake_days=jobs_runner.delivery_wake_days(reader.path, now, env, home, tz),
                         today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=_delivery.push_cap(cfg),
                         skipped=skipped)
     if not a["known_days"]:
