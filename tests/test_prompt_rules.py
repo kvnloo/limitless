@@ -265,7 +265,7 @@ class Register(unittest.TestCase):
                 self.assertNotIn(str(exc), prompt_rules.HOST_FAILED)
                 self.assert_rest_registered(ctx)
                 self.assertEqual(ctx.cards, schedule_cards.cards())
-                self.assertEqual(ctx.skills, ["coach", "learn"])
+                self.assertEqual(ctx.skills, ["coach", "learn", "chief"])
 
     def test_a_duplicate_id_is_caught(self):
         ctx = PluginSectionCtx()
