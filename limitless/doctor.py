@@ -5,7 +5,9 @@
 status is one of STATUSES: live, stale, missing or off. The rows are the state dir (exists, readable), each
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
 last sync run's age in words from runs.jsonl, one row per tool in plugin.yaml, from that tool's own
-envelope for an empty call, and the NOOP export job's row (config noop_export, its mark noop-export.json).
+envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
+open-wearables.json; the server is never called) and the NOOP export job's row (config noop_export,
+its mark noop-export.json).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -141,6 +143,30 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
 
 
+OW_ROW = "export Open Wearables"
+_OW_MODE_WORDS = {"dry_run": "dry run mode (counts only, no file written)", "write": "write mode"}
+
+
+def open_wearables_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
+    """The Open Wearables export (config ``open_wearables_export``) from its mark open-wearables.json, never the
+    server: off by config; live when the last run read the server within STALE_H; failing (stale) when it could
+    not, with its one plain reason; stale when it has not run yet or its last good run is older. Words only."""
+    from . import open_wearables as ow
+    mode = ow.mode(cfg)
+    if mode == ow.OFF:
+        return _row(OW_ROW, "export", OFF, ow.IS_OFF)
+    mark = ow.load_mark(reader.path)
+    if mark.get("ran_at") is None:
+        return _row(OW_ROW, "export", STALE, f"on ({_OW_MODE_WORDS[mode]}), but limitless-ow-export has not run "
+                                             "yet")
+    age_h = max(0.0, now - mark["ran_at"]) / 3600
+    ran = f"{_OW_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {age_words(age_h)}"
+    said = mark.get("said") or "nothing said"
+    if mark.get("outcome") != ow.DONE:
+        return _row(OW_ROW, "export", STALE, f"failing: {ran}: {said}")
+    return _row(OW_ROW, "export", LIVE if age_h <= STALE_H else STALE, f"{ran}: {said}")
+
+
 MANIFEST = Path(__file__).resolve().parents[1] / "plugin.yaml"
 
 
@@ -252,8 +278,8 @@ def tool_row(name: str, now: float) -> dict:
 
 
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, then the NOOP export
-    job (noop_export_row).
+    """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the Open Wearables
+    export (open_wearables_row), then the NOOP export job (noop_export_row).
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -261,7 +287,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
-    rows += [noop_export_row(reader, cfg, now)]
+    rows += [open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
 
