@@ -28,12 +28,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Mapping, Optional, Tuple
 
 DONE, NO, SKIP = "Done", "No", "Skip"
 REPLIES = (DONE, NO, SKIP)
 MAX_START_S = 120
+WEEK_DAYS = 7
 CHECKINS = "checkins"           # the card state's table: {ISO day: Done | No}
 _EVENT = re.compile(r"[a-z]+(?:_[a-z]+)*")
 
@@ -93,3 +94,31 @@ def record(card_state: Optional[Mapping], day: Any, answer: Any) -> dict:
         checkins.pop(_day(day), None)
     out[CHECKINS] = checkins
     return out
+
+
+def week_start_of(v: Any) -> Optional[date]:
+    """The week's first day from a ``date`` or an ISO date string; None for anything else."""
+    if isinstance(v, date):
+        return v
+    try:
+        return date.fromisoformat(v) if isinstance(v, str) else None
+    except ValueError:
+        return None
+
+
+def entry(card_state: Optional[Mapping], day: Any) -> Optional[str]:
+    """The day's Done or No entry; None for a day with no entry (skipped, unanswered or never asked)."""
+    table = card_state.get(CHECKINS) if isinstance(card_state, Mapping) else None
+    r = reply(table.get(_day(day))) if isinstance(table, Mapping) else None
+    return r if r in (DONE, NO) else None
+
+
+def week_number(card_state: Optional[Mapping], week_start: Any) -> Optional[dict]:
+    """``{done, logged, unknown}`` for the WEEK_DAYS days from ``week_start``: Done days, Done + No days, and
+    days with no entry. Unknown is never a No. None when ``week_start`` is not a date (no week, not zero)."""
+    start = week_start_of(week_start)
+    if start is None:
+        return None
+    days = [entry(card_state, start + timedelta(days=i)) for i in range(WEEK_DAYS)]
+    done, logged = days.count(DONE), days.count(DONE) + days.count(NO)
+    return {"done": done, "logged": logged, "unknown": WEEK_DAYS - logged}
