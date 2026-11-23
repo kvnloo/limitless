@@ -45,7 +45,8 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
+from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_ledger as _flow_ledger, \
+    flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
     wind_down
@@ -498,6 +499,25 @@ def brief_naps(state_dir, now: float, env: Optional[Mapping[str, str]] = None, h
         word = got["label"]["label"]
         return _gated("brief:naps", f"{word[0].upper()}{word[1:]}{_naps.SOURCE}", env, home)
     except Exception:  # noqa: BLE001 - broken Sleep-mode rows must not stop the brief
+        return ""
+
+
+BRIEF_WORK = "Yesterday's work: {}."
+
+
+def brief_flow_ledger(state_dir, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                      tz: Optional[tzinfo] = None) -> str:
+    """The wake brief's one flow-ledger line for yesterday (the local day before ``now``): flow_ledger.label's
+    words, "Yesterday's work: two long blocks, one with a feed leak; three items landed.", through
+    tier_audit.gate (hook ``brief:flow_ledger``); "" when unknown (no DB, no work apps, no activity that day) or
+    unreadable. It rides in the brief that is already going out: no push or job of its own. Read-only."""
+    try:
+        day = datetime.fromtimestamp(now, tz).date() - timedelta(days=1)
+        got = _flow_ledger.read_for(StateReader(Path(state_dir)), day, now, env, home, tz)
+        if got["blocks"] is None:
+            return ""
+        return _gated("brief:flow_ledger", BRIEF_WORK.format(_flow_ledger.label(got)), env, home)
+    except Exception:  # noqa: BLE001 - broken activity data must not stop the brief
         return ""
 
 

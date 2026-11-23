@@ -75,7 +75,7 @@ class Handlers(unittest.TestCase):
     def test_every_tool_keeps_the_envelope_and_labels_a_value(self):
         for name in plugin.TOOLS:
             if name in ("limitless_anki", "limitless_body", "limitless_overnight", "limitless_rides",
-                        "limitless_sleep", "limitless_naps", "limitless_quiet", "limitless_blocks", "limitless_flow_metrics",
+                        "limitless_sleep", "limitless_naps", "limitless_quiet", "limitless_blocks", "limitless_flow_metrics", "limitless_flow_ledger",
                         "limitless_propose", "limitless_loop", "limitless_presleep_hr",
                         "limitless_schedule"):  # own T1 words; the
                 continue                     # fixture has no body_file, work queue, rides, sleep or AW data;

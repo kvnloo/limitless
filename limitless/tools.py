@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
-               flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
+               flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction, propose as _propose,
@@ -692,6 +692,39 @@ def flow_metrics(reader: StateReader, now: float, raw: bool = False, env: Option
     if out["evidence_tier"] != "stale":
         out["evidence_tier"] = _flow_metrics.EVIDENCE_TIER
     out["label"] = dict(label, label=word)
+    return out
+
+
+def flow_ledger(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None, tz=None) -> dict:
+    """limitless_flow_ledger: yesterday's (the local day before ``now`` in ``tz``) focus blocks, whether a feed
+    app leaked into each, and how many work-queue items landed (flow_ledger.read_for), read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: "two long blocks, one with a feed leak; three items
+    landed", "no long blocks") with the T1 label beside it; modality observed (app activity as observed),
+    evidence_tier observed-activity (stale when the newest activity row of the day is over a day old), aged by
+    that row. The day, the counts and each block's start and end seconds and app names are T0 and appear only
+    with ``raw`` (LIMITLESS_RAW_IN_PROMPT); work-queue file names never appear. No DB, no work apps, no
+    activity that day is value None with the label "unknown: <why>". No score, no ranking, no target, no
+    advice. Nothing is written or sent.
+    """
+    from datetime import datetime
+    day = datetime.fromtimestamp(now, tz).date() - timedelta(days=1)
+    got = _flow_ledger.read_for(reader, day, now, env, home, tz)
+    label = _flow_ledger.t1(got)
+    if got["blocks"] is None or got["rows_end"] is None:
+        out = envelope(None, "proxy", None, reason=f"flow ledger unknown: {got['why'] or _flow_ledger.NO_ACTIVITY}")
+        out["modality"], out["label"] = _flow_ledger.MODALITY, label
+        return out
+    value = {"label": label["label"]}
+    if raw:
+        value.update(day=got["day"], long_blocks=got["long_blocks"], leaks=got["leaks"], landed=got["landed"],
+                     blocks=[dict(b) for b in got["blocks"]])
+    out = envelope(value, "proxy", max(0.0, now - got["rows_end"]) / 3600)
+    out["modality"] = _flow_ledger.MODALITY
+    if out["evidence_tier"] != "stale":
+        out["evidence_tier"] = _flow_metrics.EVIDENCE_TIER
+    out["label"] = label
     return out
 
 
