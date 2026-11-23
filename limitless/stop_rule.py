@@ -31,7 +31,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from . import jobs, prediction as _prediction, weekly_target
+from . import habit_card, jobs, prediction as _prediction
 from .envelope import MODALITIES
 from .state_reader import StateReader, normalize_digest
 
@@ -59,10 +59,11 @@ def rule_of(habit: Optional[dict]) -> Optional[str]:
     return rule(habit.get(CONFIG_KEY)) if isinstance(habit, dict) else None
 
 
-def _answers(habit: Optional[dict], synced: Optional[dict]):
-    """(Done days, Done + No days) over the started week's seven days; Skipped and unlogged stay out."""
-    days = list(weekly_target.week_days(habit, synced).values())
-    return days.count("Done"), days.count("Done") + days.count("No")
+def _inputs(habit: Optional[dict], synced: Optional[dict], rid: Optional[str]) -> Optional[dict]:
+    """habit_card.verdict_inputs for the started week (Done days, Done + No days; Skipped and unlogged stay
+    out); None when no week is started."""
+    start = jobs._week_start(habit)
+    return None if start is None else habit_card.verdict_inputs(jobs.week_card_state(habit, synced), start, rid)
 
 
 def verdict(habit_week: Optional[dict], rule_id: Any, synced: Optional[dict] = None) -> str:
@@ -72,9 +73,10 @@ def verdict(habit_week: Optional[dict], rule_id: Any, synced: Optional[dict] = N
     not a listed one, or no day of the week has a Done or No answer.
     """
     rid = rule(rule_id)
-    done, logged = _answers(habit_week, synced)
-    if rid is None or logged == 0:
+    inputs = _inputs(habit_week, synced, rid)
+    if rid is None or inputs is None or inputs["logged"] == 0:
         return UNKNOWN
+    done, logged = inputs["done"], inputs["logged"]
     if rid == "most_done":
         return KEEP if done * 2 > logged else DROP     # "most" = more than half of the logged days
     if rid == "any_done":

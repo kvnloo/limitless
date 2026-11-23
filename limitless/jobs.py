@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Any, Mapping, NamedTuple, Optional, Tuple
 
-from . import decision_window, send_gate
+from . import decision_window, habit_card, send_gate
 from .decision_window import WINDOW_CLASSES
 from .state_reader import parse_ts
 from .window import MAX_AWAKE_H
@@ -505,23 +505,35 @@ def habit_day(habit: Optional[dict], day: str, synced: Optional[dict] = None) ->
 
 
 def record_checkin(habit: Optional[dict], day: str, tap: Any) -> dict:
-    """A copy of habit.json with the day's answer; no answer leaves the day as it was. The caller writes it."""
-    out = dict(habit or {})
-    checkins = dict(out.get("checkins") or {}) if isinstance(out.get("checkins"), dict) else {}
-    answer = habit_answer(tap)
-    if answer is not None:
-        checkins[day] = answer
-    out["checkins"] = checkins
+    """A copy of habit.json with the day's answer; no answer leaves the day as it was. The caller writes it.
+
+    habit_card.record does the recording. A Skip, which the card leaves with no entry, is then marked
+    ``Skipped`` in habit.json, so the day reads as answered and a later tap never overwrites it (the first tap
+    wins). Every reader still counts Skipped as unlogged, exactly as the card counts no entry."""
+    out = habit_card.record(habit if isinstance(habit, dict) else None, day, tap)
+    if habit_answer(tap) == HABIT_TAPS["skip"]:
+        out[habit_card.CHECKINS][day] = HABIT_TAPS["skip"]
     return out
 
 
+def week_card_state(habit: Optional[dict], synced: Optional[dict] = None) -> dict:
+    """The started week as a habit_card state: ``{"checkins": {day: Done | No}}`` over its seven days, each
+    day as habit_day reads it (a tap wins over the sync). Skipped and unlogged days have no entry; no started
+    week is an empty table."""
+    start = _week_start(habit)
+    days = [] if start is None else [(start + timedelta(days=i)).isoformat() for i in range(HABIT_WEEK_DAYS)]
+    words = ((d, habit_day(habit, d, synced)) for d in days)
+    return {habit_card.CHECKINS: {d: w for d, w in words if w in (habit_card.DONE, habit_card.NO)}}
+
+
 def week_logged(habit: Optional[dict], synced: Optional[dict] = None) -> Tuple[int, int]:
-    """(N, M) for the week's seven days: N Done, M Done + No. Skipped and unlogged days stay out of M."""
+    """(N, M) for the week's seven days: N Done, M Done + No. Skipped and unlogged days stay out of M.
+    The number is habit_card.week_number's ``done`` and ``logged``."""
     start = _week_start(habit)
     if start is None:
         return 0, 0
-    days = [habit_day(habit, (start + timedelta(days=i)).isoformat(), synced) for i in range(HABIT_WEEK_DAYS)]
-    return days.count("Done"), days.count("Done") + days.count("No")
+    n = habit_card.week_number(week_card_state(habit, synced), start)
+    return n["done"], n["logged"]
 
 
 def week_review_text(habit: Optional[dict], synced: Optional[dict] = None) -> str:
