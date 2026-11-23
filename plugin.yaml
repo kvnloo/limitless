@@ -31,3 +31,4 @@ provides_tools:
 provides_hooks:
   - pre_llm_call
   - post_gateway_admission
+  - pre_tool_call

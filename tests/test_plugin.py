@@ -208,7 +208,7 @@ class Wiring(unittest.TestCase):
 
     def test_the_six_tools_and_the_hook(self):
         self.assertEqual(sorted(self.ctx.tools), TOOLS)
-        self.assertEqual(sorted(self.ctx.hooks), ["post_gateway_admission", "pre_llm_call"])
+        self.assertEqual(sorted(self.ctx.hooks), ["post_gateway_admission", "pre_llm_call", "pre_tool_call"])
 
     def test_every_tool_returns_an_envelope(self):
         st = Path(self.tmp.name)

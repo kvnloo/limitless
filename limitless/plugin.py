@@ -3,8 +3,8 @@ ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=No
 description="", emoji="", override=False), ctx.register_hook(hook_name, callback) and, when the host has it,
 ctx.register_command(name, handler, description="", args_hint="") for the ``/limitless mode`` slash command
 (attention modes, modes.py) and, when the host has it, ctx.register_schedule_card(card) for each job's schedule card
-(schedule_cards.py; a proposed name, not in the published API yet). Hooks: pre_llm_call (the state card) and post_gateway_admission (bedtime capture,
-bedtime.py).
+(schedule_cards.py; a proposed name, not in the published API yet). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
+bedtime.py) and pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
 result is recorded by tier_audit (content-free).
@@ -18,8 +18,8 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import (bedtime, capture, card, card_view, catchup, explain_back, jobs_runner, labeler, modes, schedule_cards,
-               scorecard, stop_rule, tier_audit, tools)
+from . import (bedtime, capture, card, card_view, catchup, explain_back, focus_safe, jobs_runner, labeler, modes,
+               schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -465,5 +465,8 @@ def register(ctx) -> None:
     # bedtime capture (off unless config bedtime_capture is "on"): an admitted message in an asleep or
     # wind_down window is saved for tomorrow and acknowledged; any error lets it through to the agent
     ctx.register_hook("post_gateway_admission", bedtime.make_post_gateway_admission(clock=lambda: time.time()))
+    # focus safe (off unless config focus_safe is "warn"): a shell command that drives the person's phone or
+    # desktop instead of an agent display gets one content-free audit line; it never blocks or rewrites args
+    ctx.register_hook("pre_tool_call", focus_safe.make_pre_tool_call(clock=lambda: time.time()))
     # every recurring job as a Hermes schedule card, when the host can take them (schedule_cards.py)
     _register_cards(ctx)

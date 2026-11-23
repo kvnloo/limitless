@@ -15,15 +15,30 @@ reason ``no protected devices set``. A phone rule applies only when protected se
 that names no serial (no ``-s``, no ``ANDROID_SERIAL``) may pick a protected phone and is read as one. Display
 ``0`` is the default display and is never an agent display. Every ``why`` is plain and digit-free and never
 names a serial or a display id. Nothing here runs a command, reads config or raises: a command that cannot be
-read is ``ok``. Stdlib only, Python 3.9+.
+read is ``ok``.
+
+The hook (make_pre_tool_call, registered for Hermes ``pre_tool_call``) is off unless config ``focus_safe`` is
+``"warn"``. The Hermes contract (hermes_cli/plugins.py ``_get_pre_tool_call_directive_details``) reads only
+``block``, ``approve`` and ``modify`` returns and has no way to add a note, so the hook always returns None:
+it never blocks (Hermes approvals own that) and never rewrites args. On a warn it records the plain note
+(``note``) as one content-free tier_audit line, hook HOOK (counts and a hash, never the note or the command;
+nothing when the audit is off). Any exception is ok: a raising pre_tool_call callback would block the call,
+so the hook catches everything. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import os
 import shlex
-from typing import Iterable, List, Mapping, Optional
+import time
+from typing import Callable, Iterable, List, Mapping, Optional, Tuple
+
+from . import tier_audit
+from .state_reader import config
 
 OK, WARN = "ok", "warn"
+MODE_KEY, SERIALS_KEY, DISPLAYS_KEY = "focus_safe", "focus_safe_serials", "focus_safe_agent_displays"
+OFF = "off"
+HOOK = "pre_tool_call:focus_safe"
 INERT = "no protected devices set"
 NOTHING = "no foreground UI command"
 UNREADABLE = "command not readable"
@@ -221,3 +236,40 @@ def classify(tool_name, args, serials: Iterable[str] = (), agent_displays: Itera
         return {"verdict": OK, "why": NOTHING}
     except Exception:  # noqa: BLE001 - advisory: anything unexpected is ok
         return {"verdict": OK, "why": UNREADABLE}
+
+
+def _ids(v) -> tuple:
+    """Config ids as strings: a list of strings or numbers (or one string); anything else is none."""
+    items = [v] if isinstance(v, str) else v if isinstance(v, (list, tuple)) else []
+    return tuple(str(x).strip() for x in items
+                 if isinstance(x, (str, int)) and not isinstance(x, bool) and str(x).strip())
+
+
+def settings(cfg) -> Tuple[str, tuple, tuple]:
+    """``(mode, serials, agent_displays)`` from host config; mode is ``warn`` or ``off`` (the default)."""
+    if not isinstance(cfg, Mapping):
+        return OFF, (), ()
+    mode = cfg.get(MODE_KEY)
+    mode = WARN if isinstance(mode, str) and mode.strip().lower() == WARN else OFF
+    return mode, _ids(cfg.get(SERIALS_KEY)), _ids(cfg.get(DISPLAYS_KEY))
+
+
+def note(why: str) -> str:
+    """The one plain note for the agent on a warn."""
+    return f"focus safe: {why}. Run it on an agent display, or ask the person first."
+
+
+def make_pre_tool_call(clock: Callable[[], float] = time.time) -> Callable:
+    """The Hermes ``pre_tool_call`` callback: advisory, always returns None, never raises."""
+    def pre_tool_call(tool_name: str = "", args=None, **kwargs) -> None:
+        try:
+            mode, serials, displays = settings(config())
+            if mode != WARN:
+                return None
+            got = classify(tool_name, args, serials, displays)
+            if got.get("verdict") == WARN:
+                tier_audit.record(tier_audit.event(HOOK, note(got["why"]), False, clock()))
+        except Exception:  # noqa: BLE001 - fail open: a raising pre_tool_call would block the call
+            pass
+        return None
+    return pre_tool_call
