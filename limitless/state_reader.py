@@ -50,6 +50,9 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        (the evening the night began), "bpm", "modality": "measured" for the wearable}; read only
                        through presleep_hr_rows (tier T0: raw numbers stay in code; presleep_hr.py reads only
                        measured rows)
+  NOOP DB              optional copy of the NOOP app's SQLite DB, config "noop_db" (relative to the state
+                       dir; none by default); read only by noop_export.py, which writes the sleep file and
+                       the pre-sleep HR file from it (bin/limitless-noop-export --write)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations

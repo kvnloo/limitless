@@ -11,7 +11,8 @@ both side by side, each with its modality and age, and never passes the proxy of
   after today, or a second row with the same night and source is dropped (`StateReader.sleep_rows()`; the
   first in file order is kept). Optional `start` and `end` (when the sleep began and ended) are kept as a span
   for regularity ([sleep-regularity.md](sleep-regularity.md)); other fields are never read. The reader never
-  raises and never writes.
+  raises and never writes. `bin/limitless-noop-export --write` writes these rows (source `noop`, with `start`
+  and `end`) from a NOOP database copy, wearable sessions only ([noop-export.md](noop-export.md)).
 - **Phone proxy**: the same rows the screen wakes use (`screen-events.jsonl` and the optional ActivityWatch
   DB, through `jobs_runner.person_rows` and `wake_proxy.person_times`). A night's proxy is the longest quiet
   gap that starts in the evening half (noon on, local time) of its date; a gap of a day or more is a hole in

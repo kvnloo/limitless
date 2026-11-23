@@ -8,9 +8,11 @@ supplement, caffeine or dosing note, and no push or job of its own.
 - **Source** (config `presleep_hr_file`, relative to the state dir; none by default): a JSONL file, one row per
   night, `{"night": "YYYY-MM-DD", "bpm": <number>, "modality": "measured"}`. `night` is the evening the night
   began. Whatever exports the wearable's reading writes it, for example a mean over the half hour before the main
-  sleep began. The public NOOP repo has such a reading in its analytics package (`PreSleepHeartRateFeedback`,
-  a window before the longest sleep against a personal baseline), but it has no export or stored field to read,
-  so limitless reads this file instead. `StateReader.presleep_hr_rows` reads only `night`, `bpm` and `modality`.
+  sleep began; `bin/limitless-noop-export --write` writes it from a NOOP database copy (the mean over the half
+  hour before onset, see [noop-export.md](noop-export.md)). The public NOOP repo also has such a reading in its
+  analytics package (`PreSleepHeartRateFeedback`,
+  a window before the longest sleep against a personal baseline), but it stores no such field, so the exporter
+  computes the mean from NOOP's heart-rate samples itself. `StateReader.presleep_hr_rows` reads only `night`, `bpm` and `modality`.
 - **Wearable only**: only rows with `modality` `measured` are used. A phone row (or any other modality) is never
   read, not even for a night the wearable missed. A night with no valid wearable row is unknown: it is skipped,
   never zero and never filled in. A `bpm` outside 25 to 250 is not a heart rate and is skipped. The first
