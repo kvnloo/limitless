@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import math
 import os
+import re
+from datetime import date
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import tools
+from . import card, tier_audit, tools
 from .envelope import STALE_H
 from .state_reader import StateReader, parse_ts
 
@@ -102,8 +104,113 @@ def run_row(reader: StateReader, now: float) -> dict:
     return _row("last sync run", "run", status, f"the last sync run was {age_words(age_h)}{tail}")
 
 
+MANIFEST = Path(__file__).resolve().parents[1] / "plugin.yaml"
+
+
+def manifest_tools(path: Path = MANIFEST) -> list:
+    """The names under ``provides_tools:`` in plugin.yaml (stdlib only: the simple ``  - name`` lines)."""
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return []
+    out, inside = [], False
+    for ln in lines:
+        if ln.strip() == "provides_tools:":
+            inside = True
+        elif inside and ln.startswith("  - "):
+            out.append(ln[4:].strip())
+        elif inside:
+            break
+    return out
+
+
+def _card_view(args, now):
+    """limitless_card_view's default call (kind state), rendered only: the doctor never writes a card file."""
+    from . import card_view, labeler, plugin
+    from .state_reader import state_dir
+    return card_view.view(state_dir(), now, date.fromtimestamp(now), "state", bands=plugin._bands(),
+                          labeler=labeler.from_config(), write=False)
+
+
+# tools whose plugin function would write for an empty call: the doctor calls a read-only twin instead
+READ_ONLY_CALLS = {"limitless_card_view": _card_view}
+
+# a feature off by config still answers with a value: these read the value to say so
+OFF_WHEN = {
+    "limitless_focus_safe": (lambda e: (e.get("value") or {}).get("mode") == "off",
+                             "the focus guard is off (config focus_safe)"),
+    "limitless_breathing": (lambda e: (e.get("value") or {}).get("link_set") is False,
+                            "no breathing link set (config wind_down_breathing_link)"),
+    "limitless_card_view": (lambda e: bool(e.get("note")),
+                            "no card dir set (config card_dir): the card is rendered only"),
+}
+# a null value whose reason says an input or feature is not configured: "...: set X in config", "... set"
+_NOT_SET = re.compile(r": set \S|\bset$|\bset \(")
+_DIGITS = re.compile(r"\d+(?:[.,:]\d+)*")
+TIER_WORDS = {
+    "direct": "answers from direct evidence",
+    "indirect": "answers from a proxy",
+    "observed-activity": "answers from observed app activity",
+    "none": "answers, with nothing measured behind it yet",
+}
+
+
+def words(text) -> str:
+    """A reason as words only: every number becomes "a number"."""
+    return _DIGITS.sub("a number", str(text)).strip()
+
+
+def _unknown(value) -> bool:
+    if value == "unknown":
+        return True
+    return isinstance(value, dict) and any(v == "unknown" for v in value.values())
+
+
+def classify(name: str, env, needs_args: bool = False) -> tuple:
+    """(status, reason) for one tool from its envelope. The value itself is read, never returned."""
+    if not isinstance(env, dict):
+        return MISSING, "the tool returned no envelope"
+    value = env.get("value")
+    if value is None or (_unknown(value) and env.get("reason")):
+        reason = str(env.get("reason") or "no reason given")
+        if needs_args:
+            return MISSING, words(f"needs its arguments: {reason}")
+        return (OFF if _NOT_SET.search(reason) else MISSING), words(reason)
+    off = OFF_WHEN.get(name)
+    if off is not None and off[0](env):
+        return OFF, off[1]
+    tier = env.get("evidence_tier")
+    if tier == "stale":
+        return STALE, "answers, but its evidence is stale or of unknown age"
+    return LIVE, TIER_WORDS.get(tier, "answers")
+
+
+def tool_row(name: str, now: float) -> dict:
+    """Call the tool's plugin function with {} as its handler does (tools.labeled, then tier_audit.audit_result)
+    at ``now``, with the audit log held (tier_audit.held: nothing appended), and read its envelope."""
+    from . import plugin
+    entry = plugin.TOOLS.get(name)
+    if entry is None:
+        return _row(f"tool {name}", "tool", MISSING, "listed in plugin.yaml but not registered")
+    schema, fn = entry[0], READ_ONLY_CALLS.get(name, entry[1])
+    needs_args = bool(((schema or {}).get("parameters") or {}).get("required"))
+    try:
+        with tier_audit.held():
+            env = tier_audit.audit_result(f"tool:{name}", tools.labeled(fn({}, now)),
+                                          card.raw_in_prompt(os.environ), now=now)
+    except Exception as exc:  # noqa: BLE001 - a failing tool is a row, never a traceback (its message stays out)
+        return _row(f"tool {name}", "tool", MISSING, f"the tool failed with {type(exc).__name__}")
+    status, reason = classify(name, env, needs_args)
+    return _row(f"tool {name}", "tool", status, reason)
+
+
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, then each plugin tool."""
+    """Every row, in order: state dir, inputs, the last sync run, then each tool in plugin.yaml.
+
+    cfg is the host config (state_reader.config()); the tools read the same config through the environment,
+    as they do inside Hermes."""
     path = state_path(cfg)
     reader = StateReader(path)
-    return [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
+    rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
+    rows += [tool_row(name, now) for name in manifest_tools()]
+    return [dict(r, reason=words(r["reason"])) for r in rows]

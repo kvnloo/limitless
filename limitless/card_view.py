@@ -80,9 +80,11 @@ def skill_tree_lines(state_dir, now: float, today: date):
 
 
 def view(state_dir, now: float, today: date, kind: str = "state", env: Optional[Mapping[str, str]] = None,
-         home: Optional[Path] = None, bands=None, labeler: Optional[Callable] = None, tz=None) -> dict:
+         home: Optional[Path] = None, bands=None, labeler: Optional[Callable] = None, tz=None,
+         write: bool = True) -> dict:
     """The limitless_card_view envelope for ``kind`` (state, week or skill_tree). Writes one card file only when a card
-    dir is set (ui_card.card_dir); never sends, schedules or starts anything."""
+    dir is set (ui_card.card_dir) and ``write`` is true (limitless-doctor passes false: render only, path null);
+    never sends, schedules or starts anything."""
     env = os.environ if env is None else env
     if kind not in ui_card.KINDS:
         return missing("kind must be state, week or skill_tree")
@@ -98,10 +100,10 @@ def view(state_dir, now: float, today: date, kind: str = "state", env: Optional[
         lines, tier = skill_tree_lines(reader.path, now, today)
     r = ui_card.render(ui_card.TITLES[kind], lines, kind, env=env, now=now)
     out_dir = ui_card.card_dir(env, home)
-    path = ui_card.write(out_dir, r["html"]) if out_dir is not None else None
+    path = ui_card.write(out_dir, r["html"]) if out_dir is not None and write else None
     out = {"value": {"path": path, "rows": r["rows"], "dropped": r["dropped"]}, "modality": MODALITY,
            "age_h": None, "evidence_tier": tier,
            "label": {"label": LABEL[kind].format(n=count_words(r["rows"])), "tier": "T1", "modality": MODALITY}}
-    if path is None:
+    if path is None and (write or out_dir is None):
         out["note"] = ui_card.NO_DIR
     return out

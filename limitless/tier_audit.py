@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional
@@ -82,8 +83,24 @@ def _clean(ev: Mapping) -> dict:
     return row
 
 
+_HELD = []   # non-empty while inside held(): record writes nothing
+
+
+@contextmanager
+def held():
+    """Inside this block record writes nothing and returns False; gate still blocks a digit. For
+    limitless-doctor, whose read-only tool calls are a report to the operator, not an injection."""
+    _HELD.append(True)
+    try:
+        yield
+    finally:
+        _HELD.pop()
+
+
 def record(ev, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> bool:
-    """Append one JSON line for ``ev``; True when written. Off without a path; never raises."""
+    """Append one JSON line for ``ev``; True when written. Off without a path or inside held(); never raises."""
+    if _HELD:
+        return False
     try:
         path = audit_path(env, home)
         if path is None:
