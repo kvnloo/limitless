@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""limitless-apps-ingest [--db PATH] [--write]: set the work-app and feed-app lists from one reply.
+
+Reads the person's Telegram messages from the Hermes session DB (read-only) after the current apps.json
+"since" (with no apps.json, the last day only). A whole message "work apps: A, B" or "feed apps: C, D" (both
+lines may be in one message; "none" clears a list) sets that list; anything else changes nothing. Per list the
+newest reply wins, and apps.json in the state dir ({since, work_apps, feed_apps}) is written atomically, mode
+0600. Without --write it is a dry run: it prints what it would write and writes nothing. The config file is
+never edited: a list set in config (or the env) still wins over apps.json. The DB is --db, else
+$LIMITLESS_HERMES_DB, else "hermes_db" in $LIMITLESS_CONFIG (a relative path is in the state dir); with none
+set it reads nothing and says so. The state dir is $LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG.
+Nothing here sends.
+"""
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import apps_reply, habit_replies  # noqa: E402
+from limitless.state_reader import state_dir  # noqa: E402
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-apps-ingest", add_help=True)
+    ap.add_argument("--db", help="the Hermes session DB (state.db)")
+    ap.add_argument("--write", action="store_true", help="write apps.json (default: dry run)")
+    args = ap.parse_args(argv[1:])
+    now = time.time()
+    state = state_dir()
+    db = habit_replies.hermes_db_path(state, arg=args.db)
+    if db is None:
+        print(f"limitless-apps-ingest: no Hermes DB set (--db, {habit_replies.ENV_KEY} or config "
+              f"\"{habit_replies.CONFIG_KEY}\"): nothing read, nothing written")
+        return 0
+    replies = habit_replies.replies_from_hermes_db(db, apps_reply.read_after(state, now))
+    got = apps_reply.ingest(state, replies, now, dry_run=not args.write)
+    for r in got["rows"]:
+        lists = f"{', '.join(r['lists'])}: " if r["lists"] else ""
+        print(f"{r['reply_at'] or 'no reply'}: {r['action']}: {lists}{r['reason']}")
+    if got["apps"] is not None:
+        verb = "wrote" if args.write else "would write"
+        print(f"{verb} {apps_reply.APPS_FILE}: {json.dumps(got['apps'])}")
+    if not args.write:
+        print(f"dry run: nothing written (--write writes {apps_reply.APPS_FILE})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

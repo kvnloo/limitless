@@ -7,12 +7,25 @@ case, loose spacing); names follow on that line and the next ones, comma or newl
 de-duplicated (case-insensitively, the first spelling kept), until a line that starts the other list. Both
 lists may be in one message. ``none`` alone clears a list. A list with no name, more than MAX_NAMES names or
 a name longer than MAX_LEN characters, the same list twice, or any text before the first prefix makes the
-whole message not a command: it changes nothing. Stdlib only, Python 3.9+.
+whole message not a command: it changes nothing.
+
+Replies (``ingest``, bin/limitless-apps-ingest [--db PATH] [--write], the quiet-ingest shape): the person's
+Telegram messages from the Hermes session DB (read-only), after ``read_after`` (the second after the current
+``since``; with no valid apps.json, FIRST_READ_S back, so a first run never acts on an old message). Per list
+the newest command wins; ``apps.json`` in the state dir is ``{"since": ISO UTC, "work_apps": [...],
+"feed_apps": [...]}``, written atomically with mode 0600, a list no reply named kept as it was. Dry run
+unless written. Rows never echo a reply or a name. The config file is never edited. Nothing here sends.
+Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
-from typing import Iterable, Optional
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable, Optional, Tuple
 
 WORK, FEED = "work_apps", "feed_apps"
 MAX_NAMES, MAX_LEN = 20, 60
@@ -68,3 +81,118 @@ def parse(text) -> Optional[dict]:
             return None
         out[k] = names
     return out
+
+
+# --- apps.json: the lists set from a reply ----------------------------------------------------------------
+
+APPS_FILE = "apps.json"
+WRITE, WOULD_WRITE, IGNORE, NOTHING = "write", "would write", "ignore", "nothing"
+FIRST_READ_S = 24 * 3600   # ingest only: how far back a first run (no apps.json) reads replies
+_WORDS = {WORK: "work apps", FEED: "feed apps"}
+
+
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def iso(t: float) -> str:
+    """UTC ISO time in whole seconds (the fraction is cut)."""
+    return datetime.fromtimestamp(int(float(t)), timezone.utc).isoformat(timespec="seconds")
+
+
+def load(state_dir) -> Optional[dict]:
+    """apps.json as a dict, or None when it is missing, unreadable or not an object."""
+    try:
+        data = json.loads((Path(state_dir) / APPS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _since(state) -> Optional[float]:
+    v = state.get("since") if isinstance(state, dict) else None
+    if not isinstance(v, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.timestamp() if dt.tzinfo is not None else None
+
+
+def stored(state, key: str) -> tuple:
+    """One list from an apps.json dict, cleaned; () when absent or not a list."""
+    v = state.get(key) if isinstance(state, dict) else None
+    return clean(v) if isinstance(v, list) else ()
+
+
+def write(state_dir, obj: dict) -> dict:
+    """Write apps.json atomically (temp file in the state dir, mode 0600, then a rename)."""
+    d = Path(state_dir)
+    fd, tmp = tempfile.mkstemp(prefix=".apps-", suffix=".tmp", dir=str(d))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, d / APPS_FILE)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return obj
+
+
+def read_after(state_dir, now: float) -> float:
+    """Epoch seconds after which replies are read: the second after the current ``since``, else FIRST_READ_S
+    before ``now``."""
+    since = _since(load(state_dir))
+    return since + 1 if since is not None else float(now) - FIRST_READ_S
+
+
+def _row(t, keys, action, reason) -> dict:
+    return {"reply_at": None if t is None else iso(t), "lists": [_WORDS[k] for k in keys],
+            "action": action, "reason": reason}
+
+
+def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, dry_run: bool = True) -> dict:
+    """``{"rows", "apps"}``: one plain-word row per reply (or one ``nothing`` row), never a name or the reply;
+    ``apps`` is the apps.json it writes (only when not ``dry_run``) or would write, None when nothing changes.
+    Per list the newest reply after the current ``since`` wins; the other list is kept as it is."""
+    start = read_after(state_dir, now)
+    ok = sorted(((float(t), x) for t, x in (replies or ()) if _number(t)), key=lambda r: r[0])
+    if not ok:
+        return {"rows": [_row(None, (), NOTHING, "no new message: the app lists stay as they are")], "apps": None}
+    rows, parsed, newest = [], [], {}
+    for i, (t, text) in enumerate(ok):
+        got = parse(text)
+        parsed.append(got)
+        if int(t) < start:
+            rows.append(_row(t, (), IGNORE, "before the current app lists"))
+        elif t > now:
+            rows.append(_row(t, (), IGNORE, "after now"))
+        elif got is None:
+            rows.append(_row(t, (), IGNORE, "not work apps or feed apps: changes nothing"))
+        else:
+            rows.append(None)
+            for k in got:
+                newest[k] = i
+    if not newest:
+        return {"rows": rows, "apps": None}
+    act = WOULD_WRITE if dry_run else WRITE
+    for i, r in enumerate(rows):
+        if r is None:
+            keys = [k for k in (WORK, FEED) if newest.get(k) == i]
+            rows[i] = (_row(ok[i][0], keys, act, "the newest reply for these lists") if keys
+                       else _row(ok[i][0], (), IGNORE, "a later reply wins"))
+    old = load(state_dir)
+    apps = {"since": iso(ok[max(newest.values())][0])}
+    for k in (WORK, FEED):
+        apps[k] = list(parsed[newest[k]][k]) if k in newest else list(stored(old, k))
+    if not dry_run:
+        write(state_dir, apps)
+    return {"rows": rows, "apps": apps}
