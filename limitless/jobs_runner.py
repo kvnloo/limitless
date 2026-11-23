@@ -24,6 +24,11 @@ has its own sender with the real content, so run_once still gives its verdict bu
 never logs it as sent. When the caller passes ``brief``, the wake brief is sent by calling it (the CLI runs
 ``limitless-brief send``, which builds the whole brief and passes the same event key) instead of pushing
 the one-line placeholder; a failed ``brief`` sends nothing and the job holds.
+
+Quiet: a push or brief that reports ``(quiet: ...)`` (kevin-push while quiet.json holds) drops the job; it is
+not retried by the next run, and kevin-push has claimed its event key, so nothing is queued for later. A
+``push`` that takes a ``why`` parameter gets the verdict's reason (trigger event and decision window), which
+kevin-push turns into the message's one "Why now" line.
 """
 from __future__ import annotations
 
@@ -35,7 +40,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, passive_habit, \
-    rides as _rides, send_gate, wake_proxy
+    quiet as _quiet, rides as _rides, send_gate, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -47,6 +52,7 @@ EXTERNAL_CONFIG = "external_jobs"
 OWN_SENDER = "sent by its own sender, not by limitless-jobs"
 NIGHT_JOBS = (jobs.MIQ.name,)    # one message per night, keyed by the night's date, not by its event
 DELIVERED = "telegram"
+QUIET_DROP = f"({_quiet.PREFIX}"   # how kevin-push reports a push quiet dropped: "log (quiet: ...)"
 _BODY = {
     jobs.WAKE_BRIEF.name: "You are up. Your brief comes next.",
     jobs.NAP.name: "Welcome back from your nap. Anything held while you slept is in your brief.",
@@ -108,18 +114,27 @@ def external_jobs(env: Optional[Mapping[str, str]] = None, home: Optional[Path] 
     return [s.strip() for s in items if isinstance(s, str) and s.strip()]
 
 
-def _takes_once(push) -> bool:
+def _takes(push, name: str) -> bool:
     try:
-        inspect.signature(push).bind("title", "body", once="key")
+        inspect.signature(push).bind("title", "body", **{name: "x"})
     except (TypeError, ValueError):
         return False
     return True
 
 
-def _push(push, title: str, text: str, once: Optional[str] = None):
+def _takes_once(push) -> bool:
+    return _takes(push, "once")
+
+
+def _push(push, title: str, text: str, once: Optional[str] = None, why: Optional[str] = None):
     """(delivered, how) for one push; an exception is a failed push, never a send."""
+    kw = {}
+    if once is not None and _takes(push, "once"):
+        kw["once"] = once
+    if why and _takes(push, "why"):
+        kw["why"] = why
     try:
-        result = push(title, text, once=once) if once is not None and _takes_once(push) else push(title, text)
+        result = push(title, text, **kw)
     except Exception as e:  # noqa: BLE001 - a broken push must not stop the other jobs
         return False, f"push failed ({type(e).__name__})"
     return delivered(result), (result if isinstance(result, str) and result else "no delivery reported")
@@ -383,7 +398,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 rides_line = week_rides(state_dir, env, home, today) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
                             body_line, plan, rides_line)
-                ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit))
+                ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:
@@ -392,6 +407,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 reason = f"{reason}; sent"
             elif send_gate.ONCE_DROP in how:
                 action, reason = jobs.DROP, f"{reason}; not sent: {send_gate.ONCE_DROP} by another sender"
+            elif QUIET_DROP in how:
+                said = how[how.index(QUIET_DROP) + 1:].split(")")[0]
+                action, reason = jobs.DROP, f"{reason}; not sent: {said}"
             else:
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
