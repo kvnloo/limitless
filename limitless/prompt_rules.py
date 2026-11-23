@@ -23,6 +23,9 @@ MAX_CHARS = 800   # the host's cap for the section; CONTENT stays well under it
 POSITION = "after_memory"
 CONFIG_KEY = "prompt_rules"   # default on; false (or "off") registers nothing
 DISABLED = "limitless: prompt_rules is off in config; the rules section is not registered"
+HOST_METHOD = "register_system_prompt_section"   # the host ctx method register looks for (feature detection)
+NO_HOST = "limitless: the host has no system prompt sections; the rules section is not registered"
+HOST_FAILED = "limitless: the host's system prompt section registration failed; register went on"
 
 CONTENT = "\n".join((
     "Limitless plugin rules (they hold in every turn):",
@@ -49,8 +52,21 @@ def enabled(cfg: dict) -> bool:
 
 
 def register(ctx, cfg: Optional[dict] = None) -> None:
-    """Offer the rules section to the host, unless config turns it off."""
-    if not enabled(config() if cfg is None else cfg):
+    """Offer the rules section to a host that has register_system_prompt_section, unless config turns it off.
+    Off, or a host without the method: nothing registered and one content-free line. A host that raises (a
+    duplicate id, anything) gets one content-free line too. Never raises."""
+    try:
+        on = enabled(config() if cfg is None else cfg)
+    except Exception:  # noqa: BLE001 - config is best effort; the default is on
+        on = True
+    if not on:
         logger.info(DISABLED)
         return
-    ctx.register_system_prompt_section(SECTION_ID, CONTENT, position=POSITION, max_chars=MAX_CHARS)
+    method = getattr(ctx, HOST_METHOD, None)
+    if not callable(method):
+        logger.info(NO_HOST)
+        return
+    try:
+        method(SECTION_ID, CONTENT, position=POSITION, max_chars=MAX_CHARS)
+    except Exception:  # noqa: BLE001 - a host's prompt API must never break plugin registration
+        logger.warning(HOST_FAILED)

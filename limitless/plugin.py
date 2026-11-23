@@ -4,7 +4,9 @@ description="", emoji="", override=False), ctx.register_hook(hook_name, callback
 ctx.register_command(name, handler, description="", args_hint="") for the ``/limitless mode`` slash command
 (attention modes, modes.py) and, when the host has it, ctx.register_schedule_card(card) for each job's schedule card
 (schedule_cards.py; a proposed name, not in the published API yet) and, when the host has it,
-ctx.register_skill(name, path, description="", frontmatter=None) for the coach skill (coach_skill.py). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
+ctx.register_skill(name, path, description="", frontmatter=None) for the coach skill (coach_skill.py) and, when the
+host has it, ctx.register_system_prompt_section(id, content, *, position, max_chars) for the static rules section
+(prompt_rules.py; config prompt_rules false turns it off). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
 bedtime.py) and pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
@@ -20,7 +22,7 @@ from datetime import date
 from typing import Callable
 
 from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs_runner,
-               labeler, modes, schedule_cards, scorecard, stop_rule, tier_audit, tools)
+               labeler, modes, prompt_rules, schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .prediction import LAG_DAYS as _PREDICTION_LAGS
 from .state_reader import StateReader, config, state_dir
@@ -543,3 +545,6 @@ def register(ctx) -> None:
     # the plugin's own coach skill, limitless:coach (skills/coach/SKILL.md), when the host has register_skill;
     # read-only text, never raises (coach_skill.py)
     coach_skill.register(ctx)
+    # the plugin's standing rules as one static, digit-free system prompt section, limitless.rules, when the
+    # host has register_system_prompt_section and config prompt_rules is not false; never raises (prompt_rules.py)
+    prompt_rules.register(ctx)
