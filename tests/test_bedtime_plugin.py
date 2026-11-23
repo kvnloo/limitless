@@ -46,7 +46,9 @@ class Wiring(unittest.TestCase):
 
     def test_one_post_gateway_admission_hook_and_the_card_hook_stay(self):
         self.assertEqual(len(self.ctx.hooks["post_gateway_admission"]), 1)
-        self.assertEqual(len(self.ctx.hooks["pre_llm_call"]), 1)
+        # bedtime adds no pre_llm_call of its own: only the card's and the catch-up's are there
+        self.assertEqual(sorted(f.__module__.rsplit(".", 1)[-1] for f in self.ctx.hooks["pre_llm_call"]),
+                         ["card", "catchup"])
 
     def test_off_by_default(self):
         self.assertIsNone(self.run_hook({}))
