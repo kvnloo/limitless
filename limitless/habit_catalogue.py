@@ -2,6 +2,8 @@
 
     habit_catalogue.CATALOGUE                  -> the list (read-only entries)
     habit_catalogue.find("Feeds-free first hour")   -> that entry (by id or name, any case), else None
+    habit_catalogue.next_habit(stop_rule.loop_rows(state_dir), current=habit_json)
+        -> Next(habit, reason): the next one to offer, or Next(None, why) when the list is exhausted
 
 Few good habits, not many goals. When a week ends with Drop, or before the first week, the agent offers the
 next habit from this list instead of inventing one. The list is ordered by layer (foundation: sleep, energy
@@ -14,6 +16,11 @@ never a clock time; ``start`` is a first step of two minutes or less, in plain w
 optional thing to set up around you (None when there is none). ``name`` is what habit.json's ``habit`` holds
 once the person starts it (habit_start.start_week): this module keeps no habit store of its own.
 
+``next_habit`` reads the weekly loop rows (stop_rule.loop_rows, in predictions.jsonl): a habit whose latest
+decision is Keep is never offered again, the running one is not offered, untried habits come first in
+list order, and a dropped habit comes back only after every other one has been tried. A week with no
+loop row (skipped, or never decided) is unlogged, never a drop.
+
 No entry has a digit, a clock time, or a drug, supplement, caffeine or dosing word (``problems`` says which,
 and a test holds every entry to it). Pure: nothing here reads a clock, touches a file or sends. It never
 starts a habit: that needs the person's yes and habit_start. Stdlib only, Python 3.9+.
@@ -22,7 +29,7 @@ from __future__ import annotations
 
 import re
 from types import MappingProxyType
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Mapping, NamedTuple, Optional
 
 from . import jobs
 
@@ -117,3 +124,51 @@ def find(v) -> Optional[MappingProxyType]:
         if k in (h["id"], _key(h["name"])):
             return h
     return None
+
+
+class Next(NamedTuple):
+    habit: Optional[MappingProxyType]   # the catalogue entry to offer, or None when the list is exhausted
+    reason: str                         # plain words, no digit
+
+
+FIRST_REASON = "the first habit on the list not tried yet"
+UNTRIED_REASON = "the next habit on the list not tried yet"
+RETRY_REASON = "every other habit was tried: a dropped one comes back"
+EXHAUSTED = "every habit on the list is kept or running: nothing new to offer"
+
+
+def _current_id(current) -> Optional[str]:
+    """The catalogue id of the running habit: ``current`` is a name or id, or habit.json's dict."""
+    if isinstance(current, Mapping):
+        current = current.get("habit")
+    h = find(current)
+    return h["id"] if h is not None else None
+
+
+def decisions(loop_rows) -> dict:
+    """{catalogue id: the latest Keep or Drop} from the weekly loop rows (stop_rule.loop_rows), oldest first.
+    A row for a habit not on the list, or without a Keep or Drop, says nothing: a week with no loop row (a
+    skipped or undecided week) is never a drop."""
+    out = {}
+    for r in loop_rows or ():
+        if not isinstance(r, Mapping) or r.get("kind") != "loop" or r.get("decision") not in jobs.DECISIONS:
+            continue
+        h = find(r.get("habit"))
+        if h is not None:
+            out[h["id"]] = r["decision"]
+    return out
+
+
+def next_habit(loop_rows, current=None) -> Next:
+    """The first catalogue habit that is neither kept nor running (``current``), untried ones first; a
+    dropped habit comes back only once every other one has been tried. ``Next(None, reason)`` when the list is
+    exhausted. It only suggests: starting the habit is the person's yes and habit_start."""
+    seen = decisions(loop_rows)
+    running = _current_id(current)
+    open_ = [h for h in CATALOGUE if h["id"] != running and seen.get(h["id"]) != "Keep"]
+    for h in open_:
+        if h["id"] not in seen:
+            return Next(h, FIRST_REASON if not seen and running is None else UNTRIED_REASON)
+    if open_:
+        return Next(open_[0], RETRY_REASON)
+    return Next(None, EXHAUSTED)
