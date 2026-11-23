@@ -82,6 +82,7 @@ tool limitless_ideas: stale: answers, but its evidence is stale or of unknown ag
 tool limitless_phase: live: answers from a proxy
 tool limitless_explain_back: stale: answers, but its evidence is stale or of unknown age
 tool limitless_propose: stale: answers, but its evidence is stale or of unknown age
+tool limitless_palace: off: no memory palace link set (config palace_link)
 tool limitless_schedule: live: answers from direct evidence
 tool limitless_card_view: off: no card dir set (config card_dir): the card is rendered only
 tool limitless_focus_safe: off: the focus guard is off (config focus_safe)

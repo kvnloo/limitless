@@ -45,7 +45,8 @@ def state_row(path: Path) -> dict:
     if not path.is_dir():
         return _row("state dir", "state", MISSING, "the state dir does not exist")
     try:
-        next(iter(os.scandir(path)), None)
+        with os.scandir(path) as it:
+            next(it, None)
     except OSError:
         return _row("state dir", "state", MISSING, "the state dir exists but is not readable")
     return _row("state dir", "state", LIVE, "the state dir exists and is readable")
@@ -143,6 +144,8 @@ OFF_WHEN = {
                              "the focus guard is off (config focus_safe)"),
     "limitless_breathing": (lambda e: (e.get("value") or {}).get("link_set") is False,
                             "no breathing link set (config wind_down_breathing_link)"),
+    "limitless_palace": (lambda e: "why" in (e.get("value") or {}),
+                         "no memory palace link set (config palace_link)"),
     "limitless_card_view": (lambda e: bool(e.get("note")),
                             "no card dir set (config card_dir): the card is rendered only"),
 }

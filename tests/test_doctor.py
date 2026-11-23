@@ -206,6 +206,23 @@ class ToolRows(DoctorCase):
         self.assertEqual(r["status"], "off")
         self.assertIn("no card dir", r["reason"])
 
+    def test_the_memory_palace_offer_without_a_link_is_off(self):
+        r = self.tool("limitless_palace")
+        self.assertEqual((r["status"], r["reason"]), ("off", "no memory palace link set (config palace_link)"))
+
+    def test_the_memory_palace_offer_with_a_link_is_not_off(self):
+        r = self.tool("limitless_palace", dict(self.cfg, palace_link="palace-app://walk"))
+        self.assertNotEqual(r["status"], "off")
+
+    def test_the_state_dir_row_leaves_no_open_iterator(self):
+        import warnings
+        with warnings.catch_warnings(record=True) as got:
+            warnings.simplefilter("always")
+            doctor.state_row(self.home)
+            import gc
+            gc.collect()
+        self.assertEqual([w for w in got if issubclass(w.category, ResourceWarning)], [])
+
     def test_turning_a_feature_on_makes_it_live(self):
         cfg = dict(self.cfg, focus_safe="warn", card_dir=str(self.home / "cards"),
                    wind_down_breathing_link="breath-app://open")
