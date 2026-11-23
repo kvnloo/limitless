@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""limitless-ow-export [--write]: wearable sleep from a self-hosted Open Wearables server into config "sleep_file".
+
+Off unless config "open_wearables_export" is "dry_run" or "write". Reads config "open_wearables_url" and
+"open_wearables_user" and the API key from the environment variable LIMITLESS_OW_KEY only (never config.json),
+and lists the user's sleep sessions of the last thirty days over the documented REST API (see
+limitless/open_wearables.py and docs/open-wearables.md). By default a dry run: it prints the counts in words and
+writes nothing. With --write, and the config set to "write", the nightly rows are merged into "sleep_file" with the
+NOOP export's merge (temp file + rename, mode 0600); a night another source already holds keeps that row.
+
+Exit 0 when done or off, 1 when the server cannot be read or the file cannot be written (one plain line on
+stderr, nothing written), 2 for bad arguments. It never prints a path, the URL, the user, the key, a reading or a
+traceback, and never sends.
+"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import open_wearables  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(open_wearables.main(sys.argv[1:]))

@@ -27,15 +27,19 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import socket
+import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Callable, Mapping, Optional
 from urllib.parse import quote, urlencode, urlsplit
 
-from .noop_export import night_of, sleep_row
-from .state_reader import MAX_ASLEEP_S, parse_ts
+from .noop_export import merge, night_of, nights_words, sleep_row, words, write_atomic
+from .state_reader import MAX_ASLEEP_S, StateReader, config, parse_ts, state_dir
 
 SOURCE = "open_wearables"     # the one source name these sleep rows carry: never a provider, device or id
 API = "/api/v1"
@@ -212,3 +216,136 @@ def fetch_sleep(base_url, api_key, since, http: Optional[Http] = None, *, user=N
     out = _empty(None)
     out.update(sleep=[ow_row(s) for s in nights.values()], skipped=skipped)
     return out
+
+
+# --- the CLI: bin/limitless-ow-export -------------------------------------------------------------------------
+
+EXPORT_CONFIG, URL_CONFIG, USER_CONFIG = "open_wearables_export", "open_wearables_url", "open_wearables_user"
+KEY_ENV = "LIMITLESS_OW_KEY"   # the API key comes from this variable only: never config.json, never printed
+OFF, DRY_RUN, WRITE = "off", "dry_run", "write"
+MODES = (OFF, DRY_RUN, WRITE)
+DAYS = 30                      # sessions from this many days before today are read on each run
+MARK = "open-wearables.json"   # the last run: when, which mode, done or failed, and the line it said
+DONE, FAILED = "done", "failed"
+USAGE = "usage: limitless-ow-export [--write]"
+IS_OFF = f"the Open Wearables export is off (config {EXPORT_CONFIG})"
+SKIP_WORDS = (("nap", "nap", ""), ("not_wearable", "session", " not from a wearable"),
+              ("no_asleep_time", "session", " with no asleep time"), ("not_a_night", "session", " not a night"))
+
+
+def mode(cfg) -> str:
+    """Config ``open_wearables_export``: off (the default, and any value not in MODES), dry_run or write."""
+    v = cfg.get(EXPORT_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in MODES else OFF
+
+
+def _skipped(skipped: dict) -> str:
+    parts = [f"{words(skipped[k])} {noun}{'' if skipped[k] == 1 else 's'}{why}"
+             for k, noun, why in SKIP_WORDS if skipped.get(k)]
+    return ("; skipped " + ", ".join(parts)) if parts else ""
+
+
+def merge_sleep(existing: str, rows: list) -> tuple:
+    """(new text, rows new or changed, nights kept from another source): ``rows`` (ours) merged into the sleep
+    file text with noop_export.merge by night and source. A night that a row of another source already holds keeps
+    only that row: our row for it is not added, and a row of ours left from an earlier run is dropped."""
+    held, lines = set(), []
+    parsed = []
+    for ln in existing.splitlines():
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            r = None
+        ok = isinstance(r, dict) and isinstance(r.get("night"), str)
+        parsed.append((ln, r if ok else None))
+        if ok and r.get("source") != SOURCE:
+            held.add(r["night"])
+    for ln, r in parsed:
+        if r is not None and r.get("source") == SOURCE and r["night"] in held:
+            continue
+        lines.append(ln + "\n")
+    ours = [r for r in rows if r["night"] not in held]
+    text, changed = merge("".join(lines), ours, ("night", "source"))
+    return text, changed, len(rows) - len(ours)
+
+
+def load_mark(state) -> dict:
+    """open-wearables.json as ``{"ran_at", "mode", "outcome", "said"}``; {} when missing or malformed."""
+    try:
+        data = json.loads((Path(state) / MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    at = data.get("ran_at")
+    ok_at = isinstance(at, (int, float)) and not isinstance(at, bool) and math.isfinite(at)
+    return {"ran_at": float(at) if ok_at else None,
+            "mode": data.get("mode") if data.get("mode") in MODES else None,
+            "outcome": data.get("outcome") if data.get("outcome") in (DONE, FAILED) else None,
+            "said": data.get("said") if isinstance(data.get("said"), str) else None}
+
+
+def _mark(state: Path, now: float, run_mode: str, outcome: str, said: str) -> None:
+    try:
+        write_atomic(state / MARK, json.dumps({"ran_at": now, "mode": run_mode, "outcome": outcome, "said": said},
+                                              sort_keys=True) + "\n")
+    except OSError:
+        pass   # the mark is a note for the doctor; a run never fails on it
+
+
+def main(argv, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None, tz=None, out=None, err=None,
+         http: Optional[Http] = None, today: Optional[date] = None, now: Optional[float] = None) -> int:
+    """The CLI: 0 when done or off, 1 when the server cannot be read or the sleep file cannot be written (one
+    plain line why on stderr, nothing written), 2 for bad arguments. Prints counts in words; never a path, the
+    URL, the user, the key or a reading."""
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
+    env = os.environ if env is None else env
+    args = list(argv)
+    if args not in ([], ["--write"]):
+        print(USAGE, file=err)
+        return 2
+    cfg = config(env, home)
+    run_mode = mode(cfg)
+    if run_mode == OFF:
+        print(IS_OFF, file=out)
+        return 0
+    state = state_dir(env, home)
+    now = time.time() if now is None else now
+    today = date.today() if today is None else today
+
+    def fail(line: str) -> int:
+        print(line, file=err)
+        _mark(state, now, run_mode, FAILED, line)
+        return 1
+
+    got = fetch_sleep(cfg.get(URL_CONFIG), env.get(KEY_ENV), today - timedelta(days=DAYS), http,
+                      user=cfg.get(USER_CONFIG), until=today + timedelta(days=1), tz=tz)
+    if got["reason"] is not None:
+        return fail(got["reason"])
+    found = f"{nights_words(len(got['sleep']))} of wearable sleep from Open Wearables{_skipped(got['skipped'])}"
+    if not args or run_mode == DRY_RUN:
+        hint = "(run with --write to write them)" if run_mode == WRITE else \
+            f'(config {EXPORT_CONFIG} "{WRITE}" writes them)'
+        line = f"dry run: {found}; nothing written {hint}"
+        print(line, file=out)
+        _mark(state, now, run_mode, DONE, line)
+        return 0
+    print(f"found {found}", file=out)
+    path = StateReader(state).sleep_file(env, home)
+    if path is None:
+        return fail('sleep file: not configured (set "sleep_file" in config.json), not written')
+    try:
+        old = path.read_text(encoding="utf-8") if path.is_file() else ""
+        text, changed, kept = merge_sleep(old, got["sleep"])
+        if text != old:
+            write_atomic(path, text)
+    except (OSError, ValueError) as e:
+        return fail(f"sleep file: not written: {getattr(e, 'strerror', None) or type(e).__name__}")
+    tail = f"; {nights_words(kept)} kept from another source" if kept else ""
+    line = "sleep file: unchanged" + tail if text == old else \
+        f"sleep file: written, {nights_words(changed)} new or changed{tail}"
+    print(line, file=out)
+    _mark(state, now, run_mode, DONE, line)
+    return 0
