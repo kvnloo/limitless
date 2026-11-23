@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (asks as _asks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
+from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                overnight as _overnight, owner_messages as _owner, passive_habit, prediction as _prediction,
                quiet as _quiet, rides as _rides, scorecard as _scorecard, sleep as _sleep)
 from .envelope import STALE_H, envelope, missing, with_label
@@ -476,4 +476,35 @@ def quiet(state_dir, now: float, env: Optional[Mapping[str, str]] = None, home: 
     age_h = None if since is None else max(0.0, now - since) / 3600
     out = envelope({"mode": mode, "set": set_mode, "held": held, "why": why}, "self_report", age_h)
     out["label"] = {"label": _quiet.label(mode), "tier": "T1", "modality": "self_report"}
+    return out
+
+
+BLOCK_LABELS = ("in a long block", "between blocks", "unknown")
+
+
+def blocks(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+           home: Optional[Path] = None) -> dict:
+    """limitless_blocks: today's focus blocks from the ActivityWatch DB (blocks.read_for), read-only.
+
+    An envelope whose value is ``{in_block, long, blocks, long_blocks}``: whether a block is going now, whether
+    it has run past ``break_after_min``, and how many blocks (and long ones) the last day had. A proxy (app
+    activity, not attention), aged by the newest activity row, with the T1 label "in a long block", "between
+    blocks" or "unknown". No DB, no work apps (flow_work_apps) or no activity row in the last day is value
+    None with a reason and the label unknown, never zero blocks. No score, no target. Nothing is written or sent.
+    """
+    label = {"tier": "T1", "modality": "proxy"}
+    got = _blocks.read_for(reader, now, env, home)
+    bs = got["blocks"]
+    if bs is None or got["rows_end"] is None:
+        why = got["why"] or "no activity rows in the last day"
+        out = envelope(None, "proxy", None, reason=f"focus blocks unknown: {why}")
+        out["label"] = dict(label, label=BLOCK_LABELS[2])
+        return out
+    after = got["break_after_s"]
+    cur = _blocks.current_block(bs, now, got["gap_s"])
+    long_now = cur is not None and cur[1] - cur[0] >= after
+    value = {"in_block": cur is not None, "long": long_now, "blocks": len(bs),
+             "long_blocks": sum(1 for s, e in bs if e - s >= after)}
+    out = envelope(value, "proxy", max(0.0, now - got["rows_end"]) / 3600)
+    out["label"] = dict(label, label=BLOCK_LABELS[0] if long_now else BLOCK_LABELS[1])
     return out

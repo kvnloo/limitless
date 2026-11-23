@@ -1,6 +1,6 @@
 name: limitless
 version: 0.1.0
-description: Limitless Protocol state for the agent - input freshness, today's coarse state card, decision window, this week's habit, the north-star scorecard block, quick capture, a short catch-up after an absence, the body fat trend and the weekly ride count in words, sleep (the wearable beside a labelled phone proxy), the overnight work queue in counts, and whether pushes are muted (quiet, snoozed or off). Read-only except captures and the opt-in tier audit log.
+description: Limitless Protocol state for the agent - input freshness, today's coarse state card, decision window, this week's habit, the north-star scorecard block, quick capture, a short catch-up after an absence, the body fat trend and the weekly ride count in words, sleep (the wearable beside a labelled phone proxy), the overnight work queue in counts, whether pushes are muted (quiet, snoozed or off), and focus blocks from app activity (in a long block, between blocks or unknown). Read-only except captures and the opt-in tier audit log.
 provides_tools:
   - limitless_status
   - limitless_state
@@ -14,6 +14,7 @@ provides_tools:
   - limitless_rides
   - limitless_sleep
   - limitless_quiet
+  - limitless_blocks
 provides_hooks:
   - pre_llm_call
   - post_gateway_admission
