@@ -11,16 +11,19 @@ result is recorded by tier_audit (content-free).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from datetime import date
 from typing import Callable
 
-from . import bedtime, capture, card, catchup, labeler, modes, scorecard, stop_rule, tier_audit, tools
+from . import (bedtime, capture, card, catchup, jobs_runner, labeler, modes, schedule_cards, scorecard, stop_rule,
+               tier_audit, tools)
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
 TOOLSET = "limitless"
+logger = logging.getLogger(__name__)
 _ENVELOPE = ("Returns an evidence envelope {value, modality (measured|imported|proxy|self_report|messages), age_h, "
              "evidence_tier}; value null means no data and comes with a reason. Never guess a missing value.")
 
@@ -313,6 +316,21 @@ def _mode_command(raw_args: str) -> str:
         return modes.NOT_SET
 
 
+def _register_cards(ctx) -> None:
+    """Each job's schedule card to a host whose ctx has register_schedule_card (feature detection), one call
+    per card. Without it nothing is registered and one content-free line is logged; a host that raises gets
+    one content-free line too. Never raises: register goes on either way."""
+    method = getattr(ctx, schedule_cards.HOST_METHOD, None) if hasattr(ctx, schedule_cards.HOST_METHOD) else None
+    if not callable(method):
+        logger.info(schedule_cards.NO_HOST)
+        return
+    try:
+        for c in schedule_cards.cards(external=jobs_runner.external_jobs()):
+            method(c)
+    except Exception:  # noqa: BLE001 - a host's card API must never break plugin registration
+        logger.warning(schedule_cards.HOST_FAILED)
+
+
 def register(ctx) -> None:
     for name, (schema, fn, emoji) in TOOLS.items():
         ctx.register_tool(name=name, toolset=TOOLSET, schema=schema, handler=_handler(fn, name),
@@ -328,3 +346,5 @@ def register(ctx) -> None:
     # bedtime capture (off unless config bedtime_capture is "on"): an admitted message in an asleep or
     # wind_down window is saved for tomorrow and acknowledged; any error lets it through to the agent
     ctx.register_hook("post_gateway_admission", bedtime.make_post_gateway_admission(clock=lambda: time.time()))
+    # every recurring job as a Hermes schedule card, when the host can take them (schedule_cards.py)
+    _register_cards(ctx)
