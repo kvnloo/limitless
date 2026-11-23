@@ -32,7 +32,8 @@ no times of day and no durations anywhere in this.
 Every message that goes out ends with exactly one plain line, `Why now: ...`. `limitless-jobs` passes the
 job's verdict (trigger event and decision-window reason) as `kevin-push --why`; another sender can pass
 `--why` or `KEVIN_PUSH_WHY`. Without one, an always-sent message names its event ("you woke up") and any
-other gets the decision window's reason for its class. Digits and card ids are left out of the line. The
+other gets the decision window's reason for its class, each said in plain words ([one-tap.md](one-tap.md)).
+Digits and card ids are left out of the line. The
 dedupe key is the message without it.
 
 ## Setting it from a reply
@@ -70,7 +71,7 @@ $ kevin-push --why "wake event; peak window open (since wake)" x "Pick one" "Kee
 kevin-push: telegram
 # what the phone got:
 Keep the synthetic loop?
-Why now: wake event; peak window open (since wake)
+Why now: you woke up; your focus is high right now
 ```
 
 `limitless_quiet` during the quiet night, twelve minutes after the reply (real handler output):

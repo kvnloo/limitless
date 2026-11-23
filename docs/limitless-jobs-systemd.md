@@ -27,7 +27,7 @@ placeholder for a job another sender owns.
 | `nap` (Back from nap) | `limitless-jobs --send` (short text) | your own re-entry sender only (e.g. a Sleep-mode poller), with `bin/limitless-once-key nap` |
 | `miq` (MIQ for tonight?) | `limitless-jobs --send` | your own wind-down sender only, with `bin/limitless-once-key miq --night` |
 | `habit_checkin` (Habit check-in) | `limitless-jobs --send` | your own sender only, with `bin/limitless-once-key habit_checkin` |
-| `week_review` (Week review) | `limitless-jobs --send`, on the first habit cue from day seven of a started week, once per week (key `week_review:<week_of>`): the habit, "N of M logged days" and "Reply Keep or Drop." A Keep or Drop reply is logged by `bin/limitless-habit-ingest`. | your own sender only, with `bin/limitless-once-key week_review` |
+| `week_review` (Week review) | `limitless-jobs --send`, on the first habit cue from day seven of a started week, once per week (key `week_review:<week_of>`): the habit, "N of M logged days" and a last line "Reply: Keep / Drop" A Keep or Drop reply is logged by `bin/limitless-habit-ingest`. | your own sender only, with `bin/limitless-once-key week_review` |
 
 Name the jobs another sender owns in `~/.config/limitless/config.json` as `"external_jobs": ["wake_brief", "nap"]`
 or in the env as `LIMITLESS_EXTERNAL_JOBS=wake_brief,nap` (the env wins). For those jobs `limitless-jobs`
