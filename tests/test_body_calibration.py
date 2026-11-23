@@ -133,5 +133,55 @@ class Fit(unittest.TestCase):
         self.assertAlmostEqual(f["offset"], 3.5)
 
 
+class CalibratedRows(unittest.TestCase):
+    def setUp(self):
+        self.rows = paired([20, 24], [23, 30]) + [scale(30, 21), scale(31, 22, calibrated=True, method="other"),
+                                                   ref(40, 26)]
+        self.rows[1]["calibrated"] = False      # a reference row written with the flag off stays exactly so
+        self.fit = bc.fit(self.rows)
+
+    def test_scale_rows_are_corrected_and_marked_calibrated_with_their_method_kept(self):
+        self.assertEqual(self.fit["model"], "offset")
+        out = bc.calibrated_rows(self.rows, self.fit)
+        self.assertEqual(len(out), len(self.rows))
+        for before, after in zip(self.rows, out):
+            if bc.is_scale(before):
+                self.assertAlmostEqual(after["bf_pct"], before["bf_pct"] + 4.5)
+                self.assertEqual((after["day"], after["method"], after["calibrated"]),
+                                 (before["day"], before["method"], True))
+
+    def test_reference_rows_and_rows_already_calibrated_pass_through_unchanged(self):
+        out = bc.calibrated_rows(self.rows, self.fit)
+        for i in (1, 3, 5, 6):
+            self.assertEqual(out[i], self.rows[i])
+        self.assertIs(out[1]["calibrated"], False)
+
+    def test_it_is_pure(self):
+        snapshot = [dict(r) for r in self.rows]
+        out = bc.calibrated_rows(self.rows, self.fit)
+        self.assertEqual(self.rows, snapshot)
+        self.assertIsNot(out, self.rows)
+        self.assertEqual(bc.calibrated_rows(self.rows, self.fit), out)
+
+    def test_a_line_corrects_by_the_line(self):
+        rows = paired([16, 18, 20, 22, 24], [17, 20, 23, 26, 29]) + [scale(60, 30)]
+        f = bc.fit(rows)
+        self.assertEqual(f["model"], "linear")
+        self.assertAlmostEqual(bc.calibrated_rows(rows, f)[-1]["bf_pct"], 38.0)
+
+    def test_no_fit_returns_the_rows_as_they_were(self):
+        rows = paired([20], [23]) + [scale(5, 21)]
+        for f in (bc.fit(rows), None, {}, "x"):
+            out = bc.calibrated_rows(rows, f)
+            self.assertEqual(out, rows)
+            self.assertIsNot(out, rows)
+
+    def test_the_fits_own_methods_decide_what_a_reference_is(self):
+        rows = [scale(0, 20), ref(0, 24, "synthetic-reference"), scale(10, 22), ref(10, 25, "synthetic-reference")]
+        f = bc.fit(rows, methods=["synthetic-reference"])
+        out = bc.calibrated_rows(rows, f)
+        self.assertEqual([r["bf_pct"] for r in out], [23.5, 24.0, 25.5, 25.0])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -141,3 +141,20 @@ def predict(f, bf: float) -> Optional[float]:
     if f.get("model") == "offset":
         return bf + f["offset"]
     return None
+
+
+def calibrated_rows(rows, f) -> list:
+    """``rows`` with every scale row corrected by fit ``f`` and marked ``calibrated: true`` (its day and method
+    kept); reference rows and rows already calibrated pass through unchanged. Pure: a new list of new dicts,
+    ``rows`` is not touched. No fit is the rows as they were."""
+    rows = list(rows) if isinstance(rows, (list, tuple)) else []
+    methods = f.get("methods") if isinstance(f, dict) else None
+    out = []
+    for r in rows:
+        r = dict(r) if isinstance(r, dict) else r
+        if isinstance(r, dict) and _body._valid(r) and is_scale(r, methods):
+            v = predict(f, r["bf_pct"])
+            if v is not None:
+                r.update(bf_pct=v, calibrated=True)
+        out.append(r)
+    return out
