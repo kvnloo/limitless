@@ -7,7 +7,7 @@ from typing import Mapping, Optional
 
 from . import (asks as _asks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                overnight as _overnight, owner_messages as _owner, passive_habit, prediction as _prediction,
-               rides as _rides, scorecard as _scorecard, sleep as _sleep)
+               quiet as _quiet, rides as _rides, scorecard as _scorecard, sleep as _sleep)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, parse_ts)
@@ -457,4 +457,23 @@ def sleep(reader: StateReader, now: float, today: date, raw: bool = False, env: 
                             "proxy_min": _minutes(n["proxy"])} for n in ns]
     out = envelope(value, modality, age_h)
     out["label"] = lab
+    return out
+
+
+def quiet(state_dir, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """limitless_quiet: whether pushes are muted now (quiet.check), read-only.
+
+    An envelope whose value is ``{mode, set, held, why}``: ``set`` is the mode quiet.json names (on with no
+    file), ``mode`` the one in force now (on once its event ended it), ``held`` whether a push would be
+    dropped and ``why`` the plain reason. Self-reported, aged by ``since``, with the digit-free T1 label
+    (on, off, quiet tonight or snoozed). Nothing is written or sent.
+    """
+    state = _quiet.load(state_dir)
+    held, why = _quiet.check(state_dir, now, env, home)
+    set_mode = _quiet.mode_of(state)
+    mode = set_mode if held else _quiet.ON
+    since = _quiet._since(state)
+    age_h = None if since is None else max(0.0, now - since) / 3600
+    out = envelope({"mode": mode, "set": set_mode, "held": held, "why": why}, "self_report", age_h)
+    out["label"] = {"label": _quiet.label(mode), "tier": "T1", "modality": "self_report"}
     return out

@@ -74,8 +74,9 @@ class Handlers(unittest.TestCase):
 
     def test_every_tool_keeps_the_envelope_and_labels_a_value(self):
         for name in plugin.TOOLS:
-            if name in ("limitless_body", "limitless_overnight", "limitless_rides", "limitless_sleep"):  # own T1
-                continue                    # words; the fixture has no body_file, work queue, rides or sleep data
+            if name in ("limitless_body", "limitless_overnight", "limitless_rides", "limitless_sleep",
+                        "limitless_quiet"):  # own T1 words; the fixture has no body_file, work queue, rides or
+                continue                     # sleep data; quiet: on, off, ...
             res = self.call(name, {"text": "a synthetic thought"})
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], name)

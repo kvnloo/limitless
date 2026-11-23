@@ -43,7 +43,8 @@ class KevinPushCli(unittest.TestCase):
         r = self.push("x", "Pick one", "Decision: t_510c250d: keep the loop")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.last_log()["how"], "telegram")
-        self.assertEqual((self.home / "sent-body.txt").read_text(), "Decision: keep the loop")
+        self.assertEqual((self.home / "sent-body.txt").read_text(),
+                         "Decision: keep the loop\nWhy now: anytime job and awake")
 
     def test_asks_digest_is_folded_and_saved_for_the_brief(self):
         r = self.push("asks", "Asks waiting on you", "A1: one\nA2: two\nA3: three")

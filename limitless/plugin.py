@@ -85,6 +85,10 @@ def _sleep(args, now):
     return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _quiet(args, now):
+    return tools.quiet(state_dir(), now)
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -198,6 +202,12 @@ with its modality and age. Plain words: wearable on most, some or no nights, and
 about the same, shorter or longer. Counts and the label only; per-night minutes need the person's raw opt-in. \
 measured only when the wearable covers the newest night, else proxy; a night with neither is unknown, never \
 zero. A quiet phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
+    "limitless_quiet": (_schema(
+        "limitless_quiet",
+        "Whether pushes to the person's phone are muted now: mode on, off (until they reply on), quiet \
+tonight (until they wake up) or snoozed (until they write again), whether a push would be dropped and the \
+plain reason, with a label. The person sets it with one whole-message reply (quiet, quiet tonight, snooze, \
+on); there are no clock times or durations. Read-only; nothing is written or sent."), _quiet, "🔕"),
 }
 
 
