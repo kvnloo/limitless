@@ -71,6 +71,37 @@ unknown.
 - **Pacing.** The peak budget is the "one at the moment it matters" rule, enforced per window
   rather than per day.
 
+## Asks
+
+A chief-of-staff agent keeps a queue of asks that need the person: approvals, decisions,
+FYIs. `limitless/asks.py` is the adapter between such a queue and the window; it never
+rebuilds or edits the queue. Each ask gets a class from its own fields, never from the clock:
+
+| ask | class |
+| --- | --- |
+| `kind: decision`, or `kind: approval` with `effort: deep` | `peak` |
+| `kind: approval` with `effort: light` (or none) | `anytime` |
+| `kind: fyi` | `trough` |
+| any other kind | `anytime` (never dropped) |
+
+`plan(asks, window, sent_this_window)` returns `(ask_id, deliver | hold | fold, reason)` per ask:
+
+1. `urgent: true` delivers whatever the window and does not count against the limit.
+2. a focus block (a provider with `hold_asks`, e.g. Glide) holds everything else.
+3. a `trough` ask folds into the next brief line.
+4. asleep holds the rest.
+5. an `anytime` ask delivers, meaning it passes to the send gate (dedupe, daily cap).
+6. in a peak window, ONE `peak` ask delivers, oldest first, and only if no decision was
+   delivered in that window yet; every other `peak` ask holds for the next peak window.
+
+Reasons are plain words: the ask's title with internal card ids removed by the send gate's
+`scrub`. The queue is JSONL at `LIMITLESS_ASKS` or config `asks_path`; a missing or broken
+file is an empty plan. A row with `delivered_at` is done; a peak one delivered since the wake
+event counts as this window's decision. `limitless_window` adds
+`asks: {deliver, hold, fold, label}`, where the label is one of "one decision ready",
+"decisions waiting" or "nothing waiting". Nothing here sends: the host delivers, after
+which it sets `delivered_at`.
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
