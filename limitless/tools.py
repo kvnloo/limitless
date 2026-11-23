@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (asks as _asks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
-               owner_messages as _owner, passive_habit, prediction as _prediction, scorecard as _scorecard)
+               overnight as _overnight, owner_messages as _owner, passive_habit, prediction as _prediction,
+               scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
-from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
+from .state_reader import (BODY_CONFIG, WORK_QUEUE_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
                            parse_ts)
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
@@ -363,4 +364,30 @@ def body(reader: StateReader, now: float, today: date, raw: bool = False, env: O
             value[k] = None if v is None else round(v, 2)
     out = envelope(value, t["modality"], age_h)
     out["label"] = t["label"]
+    return out
+
+
+def overnight(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None) -> dict:
+    """limitless_overnight: the overnight work queue since the latest wind-down (overnight.since), read-only.
+
+    An envelope whose value is ``{running, queued, done_since, failed_since}`` counts, modality measured,
+    aged by the newest item's mtime (the dir's when it is empty), with the digit-free T1 label beside it.
+    Item names never appear. No dir configured or not there is value None with a reason (unknown, not
+    zero); reasons never echo the path.
+    """
+    d = reader.work_queue_dir(env, home)
+    if d is None:
+        return missing(f"no work queue: set \"{WORK_QUEUE_CONFIG}\" in config.json")
+    items = _overnight.items_for(reader, env, home)
+    if items is None:
+        return missing("no work queue dir at the configured path")
+    since = _overnight.since(jobs_runner.events(reader, env, home), now)
+    try:
+        newest = max([r["mtime"] for r in items] or [d.stat().st_mtime])
+        age_h = max(0.0, now - newest) / 3600
+    except OSError:
+        age_h = None
+    out = envelope(_overnight.counts(items, since), _overnight.MODALITY, age_h)
+    out["label"] = _overnight.label(items, since)
     return out

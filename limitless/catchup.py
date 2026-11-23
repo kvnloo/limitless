@@ -36,6 +36,7 @@ from typing import Callable, Mapping, Optional
 
 from . import asks as _asks
 from . import jobs, jobs_runner, owner_messages, tier_audit, tools
+from . import labeler as _labeler
 from .capture import FILE as CAPTURES
 from .envelope import envelope, missing
 from .state_reader import (OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
@@ -51,10 +52,8 @@ AWAY, NOT_AWAY = "away", "not away"
 
 
 def count_word(n: Optional[int]) -> str:
-    """none | one | a few | many; None (the source is missing) is unknown, never none."""
-    if n is None:
-        return UNKNOWN
-    return "none" if n <= 0 else "one" if n == 1 else "a few" if n < 5 else "many"
+    """none | one | a few | many; None (the source is missing) is unknown, never none (labeler.count_word)."""
+    return _labeler.count_word(n)
 
 
 def away_word(gap_h: float) -> str:

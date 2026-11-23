@@ -34,7 +34,8 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, passive_habit, send_gate, wake_proxy
+from . import aw_reader, body as _body, feeds_evidence, flow_week, jobs, overnight as _overnight, passive_habit, send_gate, \
+    wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -54,7 +55,8 @@ _BODY = {
 
 
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
-         synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "") -> str:
+         synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
+         overnight: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit and its taps.
 
     ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
@@ -62,8 +64,11 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     jobs.week_review_text: the habit, "N of M logged days" (``synced``: StateReader.habit_days()) and
     "Reply Keep or Drop.", then ``passive`` (week_passive: what the phone measured, a proxy) and ``flow``
     (flow_week.review_line), then ``body_line`` (week_body: the body fat trend in words), each as one more
-    line when given. The first line's number stays the tapped one.
+    line when given. The first line's number stays the tapped one. The MIQ (wind-down) body is its
+    question, then ``overnight`` (overnight.plan_for: what runs tonight, count words only) when given.
     """
+    if spec.name == jobs.MIQ.name:
+        return "\n".join(x for x in (_BODY[spec.name], overnight) if x)
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), passive, flow, body_line) if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
@@ -358,8 +363,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 review = spec.name == jobs.WEEK_REVIEW.name
                 passive = week_passive(state_dir, p.habit, env, home) if review else ""
                 body_line = week_body(state_dir, env, home, today) if review else ""
+                plan = _overnight.plan_for(state_dir, now, env, home) if spec.name == jobs.MIQ.name else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
-                            body_line)
+                            body_line, plan)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)

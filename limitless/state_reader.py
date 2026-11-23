@@ -30,6 +30,9 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   body file            optional JSONL from a body-composition app, config "body_file" (relative to the state
                        dir; none by default), one row per measurement visit: {"day", "bf_pct", "method",
                        "calibrated": bool}; read only through body_rows (tier T0: raw numbers stay in code)
+  work queue dir       optional overnight lane queue, config "work_queue_dir" (relative to the state dir; none
+                       by default): subdirs queue/, running/, done/, failed/ with one <name>.md per item; read
+                       only through work_items, which reads file names and mtimes, never the content
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -49,6 +52,9 @@ OWNER_BEACONS_ENV = "LIMITLESS_OWNER_BEACONS"
 OWNER_BEACONS_CONFIG = "owner_beacons"
 PASSIVE_HABIT_CONFIG = "passive_habit_file"
 BODY_CONFIG = "body_file"
+WORK_QUEUE_CONFIG = "work_queue_dir"
+WORK_STATUS = {"queue": "queued", "running": "running", "done": "done", "failed": "failed"}  # subdir -> status
+_ID_NAME = re.compile(r"t_[0-9a-f]+")   # a card id as a file name means nothing to the person: skipped
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -305,6 +311,52 @@ class StateReader:
                 continue
             out.append({"day": day, "bf_pct": float(bf), "method": method, "calibrated": cal})
         return sorted(out, key=lambda r: r["day"])
+
+    def work_queue_dir(self, env: Optional[Mapping[str, str]] = None,
+                       home: Optional[Path] = None) -> Optional[Path]:
+        """The overnight work queue: config ``work_queue_dir``; a relative path is in the state dir. None
+        when it is not set (there is no default dir)."""
+        v = config(env, home).get(WORK_QUEUE_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def work_items(self, since=None, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> list:
+        """``[{"name", "status": queued | running | done | failed, "mtime": epoch s}]`` from the work queue's
+        status subdirs, sorted by status then name. Only file names and mtimes are read, never the content.
+        Not a ``.md`` file, a hidden file or a name that is a card id (``t_`` + hex) is skipped. With a
+        numeric ``since``, done and failed items at or before it are dropped (queued and running are the
+        current state and stay). [] when no dir is configured, it is missing or unreadable; never raises."""
+        try:
+            root = self.work_queue_dir(env, home)
+            if root is None or not root.is_dir():
+                return []
+            cut = None
+            if isinstance(since, (int, float)) and not isinstance(since, bool) and math.isfinite(since):
+                cut = float(since)
+            out = []
+            for sub, status in WORK_STATUS.items():
+                d = root / sub
+                if not d.is_dir():
+                    continue
+                for f in sorted(d.iterdir()):
+                    name = f.stem
+                    if f.suffix != ".md" or name.startswith(".") or not name or _ID_NAME.fullmatch(name):
+                        continue
+                    try:
+                        if not f.is_file():
+                            continue
+                        mtime = f.stat().st_mtime
+                    except OSError:
+                        continue
+                    if cut is not None and status in ("done", "failed") and mtime <= cut:
+                        continue
+                    out.append({"name": name, "status": status, "mtime": mtime})
+            return out
+        except Exception:  # noqa: BLE001 - an unreadable queue is no items, never a traceback
+            return []
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")

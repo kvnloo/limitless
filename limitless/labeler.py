@@ -79,6 +79,13 @@ def _owner_age(v) -> str:
 RULES = {"sleep_h": _sleep, "readiness": _readiness, "age_h": _age, "owner_message_age_h": _owner_age}
 
 
+def count_word(n: Optional[int]) -> str:
+    """The T1 count words: none | one | a few | many; None (the source is missing) is unknown, never none."""
+    if n is None:
+        return UNKNOWN
+    return "none" if n <= 0 else "one" if n == 1 else "a few" if n < 5 else "many"
+
+
 def t1(lab: str, modality) -> dict:
     return {"label": lab, "tier": TIER, "modality": modality if modality in MODALITIES else None}
 
