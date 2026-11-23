@@ -7,7 +7,9 @@
 
 An N-of-1 experiment needs its prediction fixed before the exposure and its outcome judged against it.
 Both rows go to ``predictions.jsonl`` in the existing state dir, append-only: a prediction row
-``{kind: "prediction", week_of, text, metric, direction, locked_at}`` and later a receipt row
+``{kind: "prediction", week_of, text, metric, direction, falsifier, lag_days, locked_at}`` (``falsifier``: the
+person's words for what would show it wrong, or None; ``lag_days``: 0, 7 or 14; a row from before these
+fields reads as None and 0) and later a receipt row
 ``{kind: "receipt", week_of, locked_at, verdict, reason, outcome, at}``. A row is never rewritten.
 
 ``metric`` is ``logged`` (the habit's own "N of M logged days": N Done, M Done + No) with ``direction``
@@ -142,19 +144,51 @@ def week_days(state_dir, week_of: date, through: Optional[date] = None) -> list:
     return out
 
 
+LAG_DAYS = (0, 7, 14)         # the outcome is judged on the habit week, or a week or two weeks after it
+# only a habit is an experiment here: a prediction about anything taken is refused (no dosing experiments)
+_NOT_A_HABIT = re.compile(r"(?i)\b(dos(e|es|ed|ing|age)|microdos\w*|supplement\w*|drugs?|medication\w*|"
+                          r"medicine\w*|pills?|tablets?|capsules?|milligrams?|mg)\b")
+
+
+def falsifier_of(row: dict) -> Optional[str]:
+    """The falsifier stated when the prediction was locked (the person's words), else None (old rows too)."""
+    f = row.get("falsifier") if isinstance(row, dict) else None
+    return f if isinstance(f, str) and f.strip() else None
+
+
+def lag_of(row: dict) -> Optional[int]:
+    """The prediction's lag in days (0 for an old row without one); None when it is not one of LAG_DAYS."""
+    v = row.get("lag_days", 0) if isinstance(row, dict) else None
+    return v if type(v) is int and v in LAG_DAYS else None
+
+
 def lock(state_dir, week_of, text, metric, direction, write: bool = False, today: Optional[date] = None,
-         now: Optional[float] = None) -> dict:
-    """``{action, reason, prediction}``: action is would lock, locked or refused; prediction is the row."""
+         now: Optional[float] = None, falsifier: Optional[str] = None, lag_days: int = 0) -> dict:
+    """``{action, reason, prediction}``: action is would lock, locked or refused; prediction is the row.
+
+    ``falsifier`` is the person's own words for what result would show the prediction is wrong (optional).
+    ``lag_days`` (LAG_DAYS) moves the judged span that many days past the habit week's start, for effects that
+    show late; a lag needs a state metric (logged days are the habit itself, judged on its own week).
+    """
     today = date.today() if today is None else today
     words = text.strip() if isinstance(text, str) else ""
     if not words:
         return _result(REFUSED, "the prediction text is empty: nothing locked")
+    if falsifier is not None and not isinstance(falsifier, str):
+        return _result(REFUSED, "the falsifier must be plain words: nothing locked")
+    stated = falsifier.strip() if isinstance(falsifier, str) and falsifier.strip() else None
+    if type(lag_days) is not int or lag_days not in LAG_DAYS:
+        return _result(REFUSED, "the lag must be none, one week or two weeks: nothing locked")
+    if _NOT_A_HABIT.search(words) or (stated and _NOT_A_HABIT.search(stated)):
+        return _result(REFUSED, "only a habit can be the experiment here, not anything taken: nothing locked")
     start = _day(week_of)
     if start is None:
         return _result(REFUSED, "week_of is not a date: nothing locked")
     d, why = _parse_direction(metric, direction)
     if why:
         return _result(REFUSED, why)
+    if lag_days and metric == LOGGED:
+        return _result(REFUSED, "a lagged outcome needs a state metric: logged days are judged on the habit week")
     if locked(state_dir, start.isoformat()) is not None:
         return _result(REFUSED, "a prediction for that week is already locked: it is never rewritten")
     if today >= start + timedelta(days=WEEK_DAYS):
@@ -162,7 +196,7 @@ def lock(state_dir, week_of, text, metric, direction, write: bool = False, today
     if today > start and any(c != "unlogged" for _, c in week_days(state_dir, start, today)):
         return _result(REFUSED, "that week already started and has check-ins logged: lock before the week")
     row = {"kind": "prediction", "week_of": start.isoformat(), "text": words, "metric": metric,
-           "direction": d, "locked_at": _now_iso(now)}
+           "direction": d, "falsifier": stated, "lag_days": lag_days, "locked_at": _now_iso(now)}
     if not write:
         return _result(WOULD_LOCK, "dry run: nothing written", row)
     _append(state_dir, row)
@@ -179,7 +213,7 @@ def label(r: dict) -> str:
 # --- receipts --------------------------------------------------------------------------------------------
 
 SUPPORTS, CONTRADICTS, INCONCLUSIVE = "supports", "contradicts", "inconclusive"
-WOULD_WRITE, WROTE = "would write", "wrote"
+WOULD_WRITE, WROTE, PENDING = "would write", "wrote", "pending"
 MIN_DAYS = 3                  # fewer logged days (or state values) than this is inconclusive, never contradicts
 
 
@@ -231,27 +265,44 @@ def _values(state_dir, metric: str, first: date, last: date) -> list:
     return list(by_day.values())
 
 
-def _state_verdict(state_dir, start: date, metric: str, direction: str):
+_SPAN_WORDS = {0: "the habit week", 7: "the week after the habit week", 14: "the second week after the habit week"}
+
+
+def _state_verdict(state_dir, start: date, metric: str, direction: str, lag: int = 0):
+    """The habit week needs three logged days (the exposure happened); the judged span is the seven days from
+    ``lag`` days after the week's start, against the seven days before the habit week."""
     answers = [c for _, c in week_days(state_dir, start)]
     if answers.count("Done") + answers.count("No") < MIN_DAYS:
         return INCONCLUSIVE, "fewer than three logged days: too little to judge", None
-    week = _values(state_dir, metric, start, start + timedelta(days=WEEK_DAYS - 1))
+    first = start + timedelta(days=lag)
+    span = _SPAN_WORDS[lag]
+    week = _values(state_dir, metric, first, first + timedelta(days=WEEK_DAYS - 1))
     before = _values(state_dir, metric, start - timedelta(days=WEEK_DAYS), start - timedelta(days=1))
     if len(week) < MIN_DAYS or len(before) < MIN_DAYS:
-        return INCONCLUSIVE, f"fewer than three days with {metric} in the week or the week before", None
+        return INCONCLUSIVE, f"fewer than three days with {metric} in {span} or the week before it began", None
     a, b = sum(week) / len(week), sum(before) / len(before)
     outcome = "higher" if a > b else "lower" if a < b else "unchanged"
     want = "higher" if direction == UP else "lower"
     if outcome == want:
-        return SUPPORTS, f"{metric} was {outcome} in the habit week than the week before", outcome
-    return CONTRADICTS, f"{metric} was {outcome} in the habit week, not {want}, against the week before", outcome
+        return SUPPORTS, f"{metric} was {outcome} in {span} than the week before", outcome
+    return CONTRADICTS, f"{metric} was {outcome} in {span}, not {want}, against the week before", outcome
+
+
+def due_day(p: dict) -> Optional[date]:
+    """The first day a receipt may be written for prediction row ``p``: the day after its judged span (day
+    eight for no lag; a lag that cannot be read counts as none). None when week_of is not a date."""
+    start = _day(p.get("week_of")) if isinstance(p, dict) else None
+    return None if start is None else start + timedelta(days=(lag_of(p) or 0) + WEEK_DAYS)
 
 
 def receipt(state_dir, week_of, write: bool = False, today: Optional[date] = None,
             now: Optional[float] = None) -> dict:
-    """``{action, reason, receipt}``: action is would write, wrote or refused; receipt is the row.
+    """``{action, reason, receipt}``: action is would write, wrote, pending or refused; receipt is the row.
 
-    Only after day seven, only for a locked prediction and only once per prediction (append-only).
+    Only after day seven, only for a locked prediction and only once per prediction (append-only). With a lag
+    (``lag_days`` on the prediction) the action and ``verdict`` are pending, with nothing written, until the
+    lagged span is over; then the outcome is judged on that span (the reason names it in words; the lag stays
+    on the prediction row the receipt points at, so the receipt row has no digit beyond its dates).
     """
     today = date.today() if today is None else today
     start = _day(week_of)
@@ -263,13 +314,20 @@ def receipt(state_dir, week_of, write: bool = False, today: Optional[date] = Non
     if receipt_for(state_dir, start.isoformat()) is not None:
         return {"action": REFUSED, "reason": "a receipt for that prediction is already written: one per prediction",
                 "receipt": None}
-    if today < start + timedelta(days=WEEK_DAYS):
+    lag = lag_of(p)
+    if lag:
+        if today < start + timedelta(days=lag + WEEK_DAYS):
+            return {"action": PENDING, "verdict": PENDING, "receipt": None,
+                    "reason": "the outcome is judged later, after " + _SPAN_WORDS[lag] + ": nothing written"}
+    elif today < start + timedelta(days=WEEK_DAYS):
         return {"action": REFUSED, "reason": "the habit week is not over: a receipt comes after day seven",
                 "receipt": None}
-    if p.get("metric") == LOGGED:
+    if lag is None:
+        verdict, why, outcome = INCONCLUSIVE, "the locked lag cannot be read", None
+    elif p.get("metric") == LOGGED and not lag:
         verdict, why, outcome = _logged_verdict(state_dir, start, p.get("direction"))
     elif p.get("metric") in STATE_METRICS and p.get("direction") in (UP, DOWN):
-        verdict, why, outcome = _state_verdict(state_dir, start, p["metric"], p["direction"])
+        verdict, why, outcome = _state_verdict(state_dir, start, p["metric"], p["direction"], lag)
     else:
         verdict, why, outcome = INCONCLUSIVE, "the locked metric or direction cannot be read", None
     row = {"kind": "receipt", "week_of": p["week_of"], "locked_at": p.get("locked_at"), "verdict": verdict,
@@ -284,4 +342,6 @@ def receipt_label(r: dict) -> str:
     """A digit-free label: would write this receipt: <verdict>, wrote this receipt: <verdict>, or refused: why."""
     if r["action"] == REFUSED:
         return f"refused: {r['reason']}"
+    if r["action"] == PENDING:
+        return "outcome pending: judged later"
     return f"{r['action']} this receipt: {r['receipt']['verdict']}"

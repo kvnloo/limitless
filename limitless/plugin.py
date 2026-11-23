@@ -21,6 +21,7 @@ from typing import Callable
 from . import (bedtime, capture, card, card_view, catchup, explain_back, jobs_runner, labeler, modes, schedule_cards,
                scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
+from .prediction import LAG_DAYS as _PREDICTION_LAGS
 from .state_reader import StateReader, config, state_dir
 
 TOOLSET = "limitless"
@@ -58,7 +59,8 @@ def _habit(args, now):
                                  stop_rule=args.get("stop_rule"))
     if args.get("predict") is not None:
         return tools.habit_predict(state_dir(), args.get("predict"), args.get("metric", "logged"),
-                                   args.get("direction"), today, now, confirm=confirm)
+                                   args.get("direction"), today, now, confirm=confirm,
+                                   falsifier=args.get("falsifier"), lag_days=args.get("lag_days", 0))
     if args.get("receipt") is True:
         return tools.habit_receipt(state_dir(), today, now, confirm=confirm)
     return tools.habit(_reader(), now, today)
@@ -233,6 +235,12 @@ TOOLS = {
                                    "or a named state metric."},
          "direction": {"type": "string", "description": "For logged: \"at_least k of m\"; for a state "
                                                         "metric: up or down against the week before."},
+         "falsifier": {"type": "string", "description": "With predict, optional: the person's own words for \
+what result would show the prediction is wrong. Leave it out when they stated none."},
+         "lag_days": {"type": "integer", "enum": list(_PREDICTION_LAGS),
+                      "description": "With predict and a state metric, optional: judge the outcome on the seven \
+days that many days after the habit week's start (0, the default, is the habit week itself), for effects that \
+show late; the receipt is pending until then."},
          "receipt": {"type": "boolean", "description": "true to judge the locked prediction after day seven."},
          "confirm": {"type": "boolean", "description": "true only when the person said yes to starting "
                                                       "this habit, locking this prediction or writing this "

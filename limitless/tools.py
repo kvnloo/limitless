@@ -278,31 +278,30 @@ def _predict_week(state_dir, today: date) -> date:
     return start if today < start + timedelta(days=_prediction.WEEK_DAYS) else today
 
 
-def habit_predict(state_dir, text, metric, direction, today: date, now: float, confirm: bool = False) -> dict:
+def habit_predict(state_dir, text, metric, direction, today: date, now: float, confirm: bool = False,
+                  falsifier=None, lag_days=0) -> dict:
     """Lock a prediction for the habit week (prediction.lock), writing only when ``confirm`` is True.
 
     The week is habit.json's while it runs or is set to start later, else today. An envelope whose value is
     ``{action, reason, prediction}``, with a digit-free T1 label: would lock this prediction, locked this
-    prediction or refused: <why>. Without confirm it writes nothing and says what it would do.
+    prediction or refused: <why>. Without confirm it writes nothing and says what it would do. ``falsifier``
+    (the person's words) and ``lag_days`` (prediction.LAG_DAYS) go on the prediction row.
     """
     week = _predict_week(state_dir, today)
     r = _prediction.lock(state_dir, week.isoformat(), text, metric, direction, write=confirm is True,
-                         today=today, now=now)
+                         today=today, now=now, falsifier=falsifier, lag_days=lag_days)
     return _labeled_row(r, _prediction.label(r))
 
 
 def _receipt_week(state_dir, today: date) -> Optional[str]:
-    """The newest locked prediction whose week is over and has no receipt, else the newest locked one."""
-    weeks = [r.get("week_of") for r in _prediction.rows(state_dir) if r.get("kind") == "prediction"]
-    weeks = [w for w in weeks if isinstance(w, str)]
-    for w in reversed(weeks):
-        try:
-            over = today >= date.fromisoformat(w) + timedelta(days=_prediction.WEEK_DAYS)
-        except ValueError:
-            continue
-        if over and _prediction.receipt_for(state_dir, w) is None:
-            return w
-    return weeks[-1] if weeks else None
+    """The newest locked prediction that is due (its judged span is over: prediction.due_day) and has no
+    receipt, else the newest locked one."""
+    preds = [r for r in _prediction.rows(state_dir) if r.get("kind") == "prediction" and isinstance(r.get("week_of"), str)]
+    for p in reversed(preds):
+        due = _prediction.due_day(p)
+        if due is not None and today >= due and _prediction.receipt_for(state_dir, p["week_of"]) is None:
+            return p["week_of"]
+    return preds[-1]["week_of"] if preds else None
 
 
 def habit_receipt(state_dir, today: date, now: float, confirm: bool = False) -> dict:
