@@ -6,7 +6,7 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   runs.jsonl           one row per pipeline run; only the last valid row is used
   digests.jsonl        {"date", "at", "metrics": {name: {"value", "modality"}}}
   asks-latest.json     {"at": epoch, "count", "lines"}
-  habit.json           {"week_of": date, "habit", "start", "checkins": {date: Done|No|Skipped}}
+  habit.json           {"week_of": date, "habit", "start", "at", "checkins": {date: Done|No|Skipped}}
   habit1.jsonl         one row per day from the sync: {"day", "wake", "feedMinFirstHour", "firstApp",
                        "firstCat", "minToFirstFeed", "met": bool}
   sleepmode.jsonl      {"at", "on"} phone Sleep-mode changes; sleepmode-poll.json {"at", "ok"}

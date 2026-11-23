@@ -45,7 +45,10 @@ def _window(args, now):
 
 
 def _habit(args, now):
-    return tools.habit(_reader(), now, date.fromtimestamp(now))
+    if args.get("start") is None:
+        return tools.habit(_reader(), now, date.fromtimestamp(now))
+    return tools.habit_start(state_dir(), args.get("start"), date.fromtimestamp(now), now,
+                             confirm=args.get("confirm") is True)
 
 
 def _scorecard(args, now):
@@ -93,7 +96,14 @@ TOOLS = {
         "limitless_habit",
         "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped), plus "
         "\"N of M logged days\". A 1-tap answer beats the phone sync's met/missed; a day with neither is "
-        "unlogged, never a No, and stays out of M."), _habit, "🌱"),
+        "unlogged, never a No, and stays out of M. With `start` it starts this week's one habit instead: "
+        "pass `confirm: true` only after the person said yes to that habit in this turn; without it nothing "
+        "is written and the result says what would happen. A running week is never replaced.",
+        {"start": {"type": "string", "description": "The habit to start this week, in the person's words. "
+                                                    "Only after the person asked to start a habit."},
+         "confirm": {"type": "boolean", "description": "true only when the person said yes to starting "
+                                                      "this habit in this turn; otherwise leave it out."}}),
+        _habit, "🌱"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",
         "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "
