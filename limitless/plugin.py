@@ -73,6 +73,10 @@ def _body(args, now):
     return tools.body(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _overnight(args, now):
+    return tools.overnight(_reader(), now)
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -166,6 +170,11 @@ over catchup_after_h, default a day) or not away. Read-only; nothing is sent."),
 weeks against the two weeks before, in plain words: trending down, flat or up (calibrated or uncalibrated \
 estimate), or not enough measurements. Counts and the label only; raw numbers need the person's raw opt-in. \
 A direction only: no score, no goal, no advice. Read-only; nothing is sent."), _body, "⚖️"),
+    "limitless_overnight": (_schema(
+        "limitless_overnight",
+        "The overnight work queue (config work_queue_dir): how many tasks are running and queued, and how \
+many finished (done or failed) since the latest wind-down, with a plain label (none, one, a few, many). \
+Counts only: task names never appear. Read-only; nothing is sent."), _overnight, "🌙"),
 }
 
 

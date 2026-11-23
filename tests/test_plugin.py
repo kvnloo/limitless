@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
-         "limitless_window"]
+TOOLS = ["limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_overnight", "limitless_scorecard",
+         "limitless_state", "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
 
@@ -34,6 +34,15 @@ def body_config(st: Path) -> Path:
     (st / "body.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     cfg = st / "body-config.json"
     cfg.write_text(json.dumps({"body_file": "body.jsonl"}))
+    return cfg
+
+
+def overnight_config(st: Path) -> Path:
+    """A config naming a synthetic work queue in ``st`` with one queued item."""
+    (st / "lanes" / "queue").mkdir(parents=True, exist_ok=True)
+    (st / "lanes" / "queue" / "synthetic-lane.md").write_text("synthetic\n")
+    cfg = st / "overnight-config.json"
+    cfg.write_text(json.dumps({"work_queue_dir": "lanes"}))
     return cfg
 
 
@@ -153,6 +162,8 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(owner_db(st / "owner.db"))}
             if name == "limitless_body":   # synthetic visits, three in each two-week window
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(body_config(st))}
+            if name == "limitless_overnight":   # a synthetic work queue with one queued item
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(overnight_config(st))}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))
