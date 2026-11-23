@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import habit_catalogue, idea_ledger as _idea_ledger, prediction as _prediction
-from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_ledger as _flow_ledger, \
+from . import anki as _anki, aw_reader, blocks as _blocks, body_calibration as _body_calibration, feeds_evidence, flow_ledger as _flow_ledger, \
     flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
@@ -427,12 +427,12 @@ def week_flow_metrics(state_dir, habit: Optional[dict], env: Optional[Mapping[st
 
 def week_body(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
               today: Optional[date] = None) -> str:
-    """The week review's body line (body.review_line of body.trend up to ``today``), digit-free; "" when no
+    """The week review's body line (body_calibration.review_line of its trend up to ``today``), digit-free; "" when no
     body file is configured or it has no valid row (unknown, not zero). Read-only."""
     reader = StateReader(Path(state_dir))
     try:
         rows = reader.body_rows(env, home, today=today)
-        return _body.review_line(_body.trend(rows, today, flat=_body.flat_points(env, home))) if rows else ""
+        return _body_calibration.review_line(_body_calibration.trend(rows, today, env, home)) if rows else ""
     except Exception:  # noqa: BLE001 - a broken body file must not stop the review
         return ""
 

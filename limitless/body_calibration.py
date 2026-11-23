@@ -9,16 +9,22 @@ of the nearest day within ``body_pair_days`` (config, default PAIR_DAYS) of it: 
 the nearest day; a tie takes the earlier day. Several scale rows on that day count as their median. A scale
 row is any other row whose ``calibrated`` is false (a row already calibrated outside is left alone).
 
-Tiers: every number here is T0 and stays in code. Nothing here reads the clock, writes or sends.
+Wiring: ``trend(rows, today, env, home)`` is body.trend over ``calibrated_rows`` when a fit exists (config
+``body_calibration``, on by default; "off" is body.trend exactly), and ``review_line`` is the week
+review's digit-free line. With no reference row at all nothing changes.
+
+Tiers: every number here is T0 and stays in code: never in a label, never in a prompt. Nothing here reads the clock, writes or sends.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import statistics
 from datetime import date
-from typing import Iterable, Optional
+from pathlib import Path
+from typing import Iterable, Mapping, Optional
 
 from . import body as _body
+from .state_reader import config
 
 REFERENCE_METHODS = ("dxa",)
 PAIR_DAYS = 3
@@ -73,7 +79,7 @@ def pairs(rows, methods: Optional[Iterable[str]] = None, pair_days: int = PAIR_D
 
 MIN_PAIRS = 2
 MIN_LINEAR_PAIRS = 5
-FITTED = "calibrated against reference scans"
+FITTED = _body.REFERENCE_CALIBRATED
 NO_FIT = "uncalibrated: fewer than two reference scans paired with a scale reading"
 WORDS = (FITTED, NO_FIT)
 
@@ -158,3 +164,66 @@ def calibrated_rows(rows, f) -> list:
                 r.update(bf_pct=v, calibrated=True)
         out.append(r)
     return out
+
+
+MODE_CONFIG = "body_calibration"
+METHODS_CONFIG = "body_reference_methods"
+PAIR_DAYS_CONFIG = "body_pair_days"
+MODES = ("on", "off")
+
+
+def mode(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> str:
+    """config ``body_calibration``: "off" (case-blind) is off; anything else is "on" (a fit is used when one
+    exists, else nothing changes)."""
+    v = config(env, home).get(MODE_CONFIG)
+    return "off" if isinstance(v, str) and v.strip().lower() == "off" else "on"
+
+
+def reference_methods(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
+    """config ``body_reference_methods``: a non-empty list of non-empty strings, else ["dxa"]."""
+    v = config(env, home).get(METHODS_CONFIG)
+    if isinstance(v, list) and v and all(isinstance(m, str) and m.strip() for m in v):
+        return list(v)
+    return list(REFERENCE_METHODS)
+
+
+def pair_days(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> int:
+    """config ``body_pair_days``: a whole number of days >= 0, else PAIR_DAYS."""
+    v = config(env, home).get(PAIR_DAYS_CONFIG)
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else PAIR_DAYS
+
+
+def for_trend(rows, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
+    """``(rows the trend reads, fit or None)``. None, with ``rows`` as given, when calibration is off or no
+    row is a reference scan: today's trend exactly. Else the fit, and calibrated rows when it has a model."""
+    if mode(env, home) == "off":
+        return rows, None
+    methods = reference_methods(env, home)
+    if not any(is_reference(r, methods) for r in _valid(rows)):
+        return rows, None
+    f = fit(rows, methods, pair_days(env, home))
+    return (calibrated_rows(rows, f) if f["model"] else rows), f
+
+
+def trend(rows, today: date, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """body.trend over the rows for_trend gives. With a fit the words say "(calibrated against reference
+    scans)" where the trend is measured, and ``calibration`` holds the fit's T1 words (a no-fit says why).
+    Without a fit or with calibration off: body.trend's result exactly. Never raises."""
+    rows, f = for_trend(rows, env, home)
+    t = _body.trend(rows, today, flat=_body.flat_points(env, home))
+    if f is None:
+        return t
+    t["calibration"] = dict(f["label"])
+    if f["model"] and t["direction"] and t["modality"] == "measured":
+        t["label"] = dict(t["label"], label=f"body fat trending {t['direction']} ({FITTED})")
+    return t
+
+
+def review_line(t: Optional[dict]) -> str:
+    """The week review's body line, digit-free: body.review_line, then the no-fit sentence when reference
+    scans exist but fewer than two pair with a scale reading. "" when there is no trend."""
+    line = _body.review_line(t)
+    cal = ((t or {}).get("calibration") or {}).get("label") if isinstance(t, dict) else None
+    if line and cal == NO_FIT:
+        line += f" {NO_FIT[0].upper()}{NO_FIT[1:]}."
+    return line

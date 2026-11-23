@@ -5,7 +5,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, explain_back as _explain_back,
+from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration as _body_calibration,
+               explain_back as _explain_back,
                feeds_evidence,
                habit_catalogue as _habit_catalogue, idea_ledger as _idea_ledger,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
@@ -575,11 +576,13 @@ def owner_message(reader: StateReader, now: float, env: Optional[Mapping[str, st
 
 def body(reader: StateReader, now: float, today: date, raw: bool = False, env: Optional[Mapping[str, str]] = None,
          home: Optional[Path] = None) -> dict:
-    """limitless_body: the body-fat trend (body.trend) for ``today``, read-only.
+    """limitless_body: the body-fat trend (body_calibration.trend, over body.trend) for ``today``, read-only.
 
     An envelope whose value is ``{recent_rows, prior_rows, label}`` (counts and the T1 words) with the T1
     label beside it; modality measured when every row in both windows is calibrated, else proxy; aged by the
-    body file's mtime. Raw numbers (``recent_median``, ``prior_median``, ``change``) are T0 and appear only
+    body file's mtime. With reference scans in the file (body_calibration) the trend reads the calibrated
+    rows and ``calibration`` holds the fit's T1 words; the fit's numbers never appear, raw or not.
+    Raw numbers (``recent_median``, ``prior_median``, ``change``) are T0 and appear only
     with ``raw`` (the card's LIMITLESS_RAW_IN_PROMPT opt-in). No file configured, a missing file or no valid
     row is value None with a reason (unknown, not zero); reasons never echo the path.
     """
@@ -593,14 +596,18 @@ def body(reader: StateReader, now: float, today: date, raw: bool = False, env: O
         age_h = max(0.0, now - path.stat().st_mtime) / 3600
     except OSError:
         age_h = None
-    t = _body.trend(rows, today, flat=_body.flat_points(env, home))
+    t = _body_calibration.trend(rows, today, env, home)
     value = {"recent_rows": t["recent"]["rows"], "prior_rows": t["prior"]["rows"], "label": t["label"]["label"]}
+    if "calibration" in t:
+        value["calibration"] = t["calibration"]["label"]
     if raw:
         for k, v in (("recent_median", t["recent"]["median"]), ("prior_median", t["prior"]["median"]),
                      ("change", t["change"])):
             value[k] = None if v is None else round(v, 2)
     out = envelope(value, t["modality"], age_h)
     out["label"] = t["label"]
+    if "calibration" in t:
+        out["calibration"] = t["calibration"]
     return out
 
 
