@@ -40,6 +40,12 @@ NOOP export: with config ``noop_export`` dry_run or write, one more row (noop_ex
 row says the sync copied the NOOP database and the mark ``noop-export.json`` has not seen that row, a pass that is
 not a dry run calls ``noop_export.main`` in-process and writes the mark; nothing is pushed or logged as sent, and
 no process is started. Off (the default): no row, nothing read.
+
+Apps ingest: with config ``apps_ingest`` dry_run or write, one more row (apps_ingest_row). Once per new sync row in
+runs.jsonl, a pass that is not a dry run reads the person's replies from the Hermes session DB (config
+``hermes_db``; none set: skipped) and runs apps_reply.ingest (write mode writes apps.json), then writes the mark
+``apps-ingest.json`` in words only. A write adds the row's ``line`` (jobs.APPS_LINE) for a later brief; nothing is
+pushed or logged as sent. Off (the default): no row, nothing read.
 """
 from __future__ import annotations
 
@@ -61,7 +67,8 @@ from . import anki as _anki, aw_desktop, aw_reader, blocks as _blocks, body_cali
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
     wind_down
-from . import glide_provider, mock_guard, noop_export as _noop_export
+from . import apps_reply as _apps_reply, glide_provider, habit_replies as _habit_replies, mock_guard, \
+    noop_export as _noop_export
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -842,21 +849,7 @@ def load_noop_mark(state_dir) -> dict:
 
 def _write_noop_mark(state_dir, mark: dict) -> None:
     """noop-export.json, atomic (a temp file in the state dir, then a rename) and 0600."""
-    d = Path(state_dir)
-    fd, tmp = tempfile.mkstemp(prefix="." + NOOP_MARK + ".", suffix=".tmp", dir=str(d))
-    try:
-        os.fchmod(fd, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(json.dumps(mark, sort_keys=True) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, d / NOOP_MARK)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    _write_mark(state_dir, NOOP_MARK, mark)
 
 
 def _noop_words(text: str) -> list:
@@ -912,6 +905,103 @@ def noop_export_row(state_dir, now: float, dry_run: bool = True, env: Optional[M
                 "reason": f"{v.reason}; the mark was not written ({type(e).__name__}); the next run tries again"}
     said = "; ".join(mark["said"]) or "nothing said"
     return {"job": title, "action": v.action, "reason": f"{v.reason}; ran ({mark['outcome']}): {said}"}
+
+
+APPS_MARK = "apps-ingest.json"
+APPS_ACTIONS = (_apps_reply.NOTHING, _apps_reply.WOULD_WRITE, _apps_reply.WRITE)
+
+
+def load_apps_mark(state_dir) -> dict:
+    """apps-ingest.json as ``{"row_at", "ran_at", "mode", "action"}``; {} when missing or malformed. ``row_at`` and
+    ``ran_at`` are epoch seconds or None; ``action`` is one of APPS_ACTIONS or None."""
+    try:
+        data = json.loads((Path(state_dir) / APPS_MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {"row_at": _epoch(data.get("row_at")), "ran_at": _epoch(data.get("ran_at")),
+            "mode": data.get("mode") if data.get("mode") in jobs.APPS_MODES else None,
+            "action": data.get("action") if data.get("action") in APPS_ACTIONS else None}
+
+
+def _write_mark(state_dir, name: str, mark: dict) -> None:
+    """A mark file in the state dir, atomic (a temp file there, then a rename) and 0600."""
+    d = Path(state_dir)
+    fd, tmp = tempfile.mkstemp(prefix="." + name + ".", suffix=".tmp", dir=str(d))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(mark, sort_keys=True) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, d / name)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def run_apps_ingest(state_dir, db, row_at: float, now: float, mode: str) -> dict:
+    """Read the person's replies after apps.json's ``since`` from the Hermes session DB ``db`` (read-only), run
+    apps_reply.ingest (writing apps.json only in write mode) and record the run in apps-ingest.json: the runs.jsonl
+    row it acted on (``row_at``), this run (``ran_at``), the mode and the action word (nothing, would write,
+    write). Never an app name or reply text. Returns the mark. Sends nothing."""
+    replies = _habit_replies.replies_from_hermes_db(db, _apps_reply.read_after(state_dir, now))
+    got = _apps_reply.ingest(state_dir, replies, now, dry_run=mode != jobs.APPS_WRITE)
+    action = _apps_reply.NOTHING if got["apps"] is None else \
+        _apps_reply.WRITE if mode == jobs.APPS_WRITE else _apps_reply.WOULD_WRITE
+    mark = {"row_at": row_at, "ran_at": now, "mode": mode, "action": action}
+    _write_mark(state_dir, APPS_MARK, mark)
+    return mark
+
+
+_APPS_SAID = {_apps_reply.NOTHING: "no new apps reply: the app lists stay as they are",
+              _apps_reply.WOULD_WRITE: f'would write the app lists (config {jobs.APPS_CONFIG} "{jobs.APPS_WRITE}" '
+                                       f'writes them)',
+              _apps_reply.WRITE: "wrote the app lists"}
+
+
+def apps_ingest_row(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, str]] = None,
+                    home: Optional[Path] = None) -> Optional[dict]:
+    """The apps ingest's ``{job, action, reason}`` row, or None when config ``apps_ingest`` is off (no row).
+    Due (jobs.apps_ingest_verdict) and not ``dry_run``: runs it (run_apps_ingest) and says the action in words;
+    a write adds ``line`` (jobs.APPS_LINE). ``dry_run``: the verdict only, nothing read, run or written."""
+    mode = jobs.apps_mode(config(env, home))
+    if mode == jobs.APPS_OFF:
+        return None
+    db = _habit_replies.hermes_db_path(state_dir, env, home)
+    v = jobs.apps_ingest_verdict(mode, StateReader(Path(state_dir)).last_run(),
+                                 load_apps_mark(state_dir).get("row_at"), now, db_set=db is not None)
+    title = jobs.APPS_INGEST.send_title
+    if v.action != jobs.RUN:
+        return {"job": title, "action": v.action, "reason": v.reason}
+    if dry_run:
+        return {"job": title, "action": v.action, "reason": f"{v.reason}; dry run of limitless-jobs: not run"}
+    try:
+        mark = run_apps_ingest(state_dir, db, v.trigger_at, now, mode)
+    except OSError as e:
+        return {"job": title, "action": jobs.HOLD,
+                "reason": f"{v.reason}; a file was not written ({type(e).__name__}); the next run tries again"}
+    row = {"job": title, "action": v.action, "reason": f"{v.reason}; {_APPS_SAID[mark['action']]}"}
+    if mark["action"] == _apps_reply.WRITE:
+        row["line"] = jobs.APPS_LINE
+    return row
+
+
+def apps_ingest_line(state_dir) -> str:
+    """jobs.APPS_LINE when the last apps ingest wrote the app lists (apps-ingest.json says ``write``), else "".
+    Words only: a later brief may show it as a T1 line."""
+    return jobs.APPS_LINE if load_apps_mark(state_dir).get("action") == _apps_reply.WRITE else ""
+
+
+def apps_ingest_label(state_dir) -> Optional[dict]:
+    """apps_ingest_line as a T1 label (``{"label", "tier": "T1", "modality": "derived"}``) a later wake brief may
+    show; None unless the last apps ingest run wrote the app lists. Read-only; sends nothing."""
+    line = apps_ingest_line(state_dir)
+    return {"label": line, "tier": "T1", "modality": "derived"} if line else None
 
 
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
@@ -974,6 +1064,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
     noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
+    apps = apps_ingest_row(state_dir, now, dry_run, env, home)        # sends nothing; None (no row) when off
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
-    return rows + [r for r in (noop, voice) if r is not None]
+    return rows + [r for r in (noop, apps, voice) if r is not None]

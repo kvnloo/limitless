@@ -19,6 +19,11 @@ holds until the next run.
 NOOP export: with config "noop_export" set to "dry_run" or "write", one more line. After a sync whose runs.jsonl
 row says it copied the NOOP database, --send runs the NOOP export once for that row, in-process (write mode
 merges the sleep and pre-sleep heart-rate files), and records it in noop-export.json; it pushes nothing.
+
+Apps ingest: with config "apps_ingest" set to "dry_run" or "write", one more line. Once after each new sync row in
+runs.jsonl, --send reads the "work apps: ..." / "feed apps: ..." reply from the Hermes session DB (config
+"hermes_db"; none set: skipped), in write mode writes apps.json, and records the action in apps-ingest.json; it
+pushes nothing.
 """
 import json
 import os

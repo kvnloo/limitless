@@ -153,6 +153,36 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
 
 
+APPS_INGEST_ROW = "job apps ingest"
+_APPS_DID = {"nothing": "no new apps reply", "would write": "would write the app lists",
+             "write": "wrote the app lists"}
+
+
+def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The apps ingest job (jobs.APPS_INGEST, config ``apps_ingest``) from runs.jsonl and its mark apps-ingest.json:
+    off by config; stale with no Hermes DB set, before any sync run, or while the newest sync is one it has not run
+    after; else live, with what the last run did in words. Never an app name or reply text; read-only."""
+    from . import habit_replies, jobs, jobs_runner
+    mode = jobs.apps_mode(cfg)
+    if mode == jobs.APPS_OFF:
+        return _row(APPS_INGEST_ROW, "job", OFF, f"the apps ingest job is {jobs.APPS_IS_OFF}")
+    db = habit_replies.hermes_db_from(reader.path, cfg, env)
+    mark = jobs_runner.load_apps_mark(reader.path)
+    v = jobs.apps_ingest_verdict(mode, reader.last_run(), mark.get("row_at"), now, db_set=db is not None)
+    on = f"on ({_NOOP_MODE_WORDS[mode]})"
+    if v.reason == jobs.APPS_NO_DB:
+        return _row(APPS_INGEST_ROW, "job", STALE, f"{on}, but {v.reason}")
+    if v.action == jobs.RUN:
+        return _row(APPS_INGEST_ROW, "job", STALE, "a sync ran and the apps ingest has not run after it yet "
+                                                   "(limitless-jobs --send runs it)")
+    if mark.get("ran_at") is None:
+        return _row(APPS_INGEST_ROW, "job", STALE, f"{on}, but it has not run yet: {v.reason}")
+    ago = age_words(max(0.0, now - mark["ran_at"]) / 3600)
+    did = _APPS_DID.get(mark.get("action"), "unknown")
+    return _row(APPS_INGEST_ROW, "job", LIVE,
+                f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}")
+
+
 NOOP_MCP_ROW = "NOOP MCP"
 NOOP_MCP_WORDS = {   # noop_mcp.state -> (status, reason); never the command, an env value or the server name
     noop_mcp.OFF: (OFF, "no noop_mcp set"),
@@ -436,7 +466,8 @@ def report(cfg: Mapping, now: float) -> list:
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
-    come from (apps_row), then the app-lists ask (apps_ask_row), then the voice MIQ's row (voice_miq_row) just before the context packet's.
+    come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
+    then the voice MIQ's row (voice_miq_row) just before the context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -446,7 +477,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
-             voice_miq_row(reader, cfg, now)]
+             apps_ingest_row(reader, cfg, now), voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 

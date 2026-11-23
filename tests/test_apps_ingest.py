@@ -4,7 +4,6 @@ Dry run unless written. Synthetic data only; nothing sends.
 """
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -15,11 +14,19 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from limitless import apps_reply  # noqa: E402
+from hermes_db_fixture import make_db  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "limitless-apps-ingest"
 NOW = 2_000_000_000.0
 W, F = apps_reply.WORK, apps_reply.FEED
+
+
+def MESSAGES(now):
+    """The synthetic session: a private message, the apps reply, and an assistant line that is not the person's."""
+    return [("user", "synthetic-private-words", now - 900),
+            ("user", "Work apps: editor, terminal\nfeed apps: scrollerapp", now - 600),
+            ("assistant", "work apps: not-from-the-person", now - 590)]
 
 
 def run(st, replies, dry_run=True, now=NOW):
@@ -118,18 +125,7 @@ class IngestCli(unittest.TestCase):
         self.cfg = self.home / "config.json"
         now = time.time()
         self.db = self.home / "hermes.db"
-        con = sqlite3.connect(str(self.db))
-        con.executescript("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, started_at REAL NOT NULL);"
-                          "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,"
-                          " role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL);")
-        con.execute("INSERT INTO sessions VALUES ('s1', 'telegram', ?)", (now - 7200,))
-        for role, text, t in (("user", "synthetic-private-words", now - 900),
-                              ("user", "Work apps: editor, terminal\nfeed apps: scrollerapp", now - 600),
-                              ("assistant", "work apps: not-from-the-person", now - 590)):
-            con.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES ('s1', ?, ?, ?)",
-                        (role, text, t))
-        con.commit()
-        con.close()
+        make_db(self.db, MESSAGES(now), started=now - 7200)
         self.reply_at = now - 600
         self.env = {"HOME": str(self.home), "PATH": os.environ.get("PATH", ""), "LIMITLESS_STATE": str(self.st),
                     "LIMITLESS_CONFIG": str(self.cfg)}
