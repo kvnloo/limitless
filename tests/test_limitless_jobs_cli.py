@@ -76,7 +76,7 @@ class LimitlessJobsCli(unittest.TestCase):
         r = self.run_cli()
         self.assertEqual(r.returncode, 0, r.stderr)
         lines = r.stdout.splitlines()
-        self.assertEqual(len(lines), 4, r.stdout)
+        self.assertEqual(len(lines), 5, r.stdout)   # five jobs, one line each
         self.assertTrue(any(ln.startswith("Back from nap: deliver") for ln in lines), r.stdout)
         self.assertEqual(self.push_calls(), [])
         self.assertEqual(self.sent(), [])

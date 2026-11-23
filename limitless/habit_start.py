@@ -11,8 +11,9 @@ habit_replies' atomic one (a 0600 temp file in the state dir, then a rename).
 
 One habit a week. It refuses, in plain words and writing nothing, when the habit text is empty, when a
 week is already running (``habit_week_gate`` is None for the existing file) or when one is set to start
-later. A finished week (day eight on), an undated one or an unreadable file is replaced, and the old
-file is kept next to it as ``habit-<week_of>.json`` (``habit-undated.json``), never deleted and never
+later. A finished week (day eight on, or a week with a Keep or Drop decision, which is finished as of
+today), an undated one or an unreadable file is replaced, and the old file is kept next to it as
+``habit-<week_of>.json`` (``habit-undated.json``), byte for byte with its decision, never deleted and never
 overwritten. Reasons and labels are plain words with no digits. Nothing here sends.
 Stdlib only, Python 3.9+.
 """

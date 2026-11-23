@@ -118,7 +118,8 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
     A 1-tap answer (habit.json) beats the sync's verdict (habit1.jsonl); a day with neither is unlogged.
     ``logged`` is "N of M logged days": N Done, M Done + No. Skipped and unlogged days stay out of M.
     ``phone_hint`` (seen | not seen | unknown, evidence_tier "proxy") says what the phone saw in the
-    first hour after the latest wake; it never changes a check-in.
+    first hour after the latest wake; it never changes a check-in. ``decision`` (Keep or Drop) and
+    ``decided_at`` appear once the person answered the week review; an undecided week has neither.
     """
     h = reader.habit()
     if not h or not h.get("habit"):
@@ -148,6 +149,9 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
     n, m = counts["Done"], counts["Done"] + counts["No"]
     value = {"habit": h["habit"], "start": h.get("start"), "week_of": start.isoformat(), "days": days,
              "counts": counts, "today": days[-1]["checkin"], "day": len(days), "logged": f"{n} of {m} logged days"}
+    decision = jobs.habit_decision(h)
+    if decision is not None:
+        value.update(decision=decision, decided_at=h.get("decided_at"))
     if any(d["from"] == "sync" for d in days):
         ages = [a for a in sync_ages + [age_h] if a is not None]
         out = envelope(value, "proxy", min(ages) if ages else None)

@@ -1,4 +1,5 @@
-"""Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in.
+"""Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in,
+the week review.
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no
@@ -71,7 +72,10 @@ NAP = JobSpec("nap", "sleep_mode_off", "anytime", "Back from nap", 1, "sleep_mod
 MIQ = JobSpec("miq", "wind_down", "wind_down", "MIQ for tonight?", 1, "sleep_mode_on", stale_after_s=MIQ_STALE_S)
 HABIT_CHECKIN = JobSpec("habit_checkin", "habit_cue", "anytime", "Habit check-in", 1, "sleep_mode_on",
                         answers=("Done", "No", "Skip"), stale_after_s=HABIT_STALE_S)
-SPECS = {s.name: s for s in (WAKE_BRIEF, NAP, MIQ, HABIT_CHECKIN)}
+DECISIONS = ("Keep", "Drop")
+WEEK_REVIEW = JobSpec("week_review", "habit_cue", "anytime", "Week review", 1, "sleep_mode_on",
+                      answers=DECISIONS, stale_after_s=HABIT_STALE_S)
+SPECS = {s.name: s for s in (WAKE_BRIEF, NAP, MIQ, HABIT_CHECKIN, WEEK_REVIEW)}
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
@@ -90,6 +94,15 @@ def habit_checkin(habit: Optional[dict]) -> JobSpec:
     return HABIT_CHECKIN
 
 
+def week_review(habit: Optional[dict]) -> JobSpec:
+    """The week review wakes on this week's habit cue, the same event as its check-in (habit_checkin)."""
+    cue = habit_checkin(habit).trigger_event
+    if cue != WEEK_REVIEW.trigger_event:
+        return JobSpec(WEEK_REVIEW.name, cue, "anytime", WEEK_REVIEW.send_title, 1, "sleep_mode_on",
+                       answers=WEEK_REVIEW.answers, stale_after_s=WEEK_REVIEW.stale_after_s)
+    return WEEK_REVIEW
+
+
 class Verdict(NamedTuple):
     action: str                        # deliver | hold | drop | not_triggered
     reason: str                        # one line; a held or dropped job shows it in the run log
@@ -97,6 +110,28 @@ class Verdict(NamedTuple):
 
 
 HABIT_WEEK_DAYS = 7
+NO_WEEK = "no habit week started"
+
+
+def _week_start(habit: Optional[dict]) -> Optional[date]:
+    """The week_of date of a habit.json that names a habit; None when either is missing or invalid."""
+    h = habit if isinstance(habit, dict) else {}
+    name = h.get("habit")
+    try:
+        start = date.fromisoformat(str(h.get("week_of")))
+    except ValueError:
+        return None
+    return start if isinstance(name, str) and name.strip() else None
+
+
+def habit_decision(habit: Optional[dict]) -> Optional[str]:
+    """Keep | Drop when habit.json records the week's decision; None (undecided) for anything else."""
+    v = habit.get("decision") if isinstance(habit, dict) else None
+    if isinstance(v, str):
+        for d in DECISIONS:
+            if v.strip().lower() == d.lower():
+                return d
+    return None
 
 
 def habit_week_gate(habit: Optional[dict], today: date) -> Optional[Verdict]:
@@ -104,18 +139,42 @@ def habit_week_gate(habit: Optional[dict], today: date) -> Optional[Verdict]:
 
     Started: habit.json names a habit and its ``week_of`` is today or up to six days back (days one to
     seven). No habit, no valid week_of or a week_of after today: "no habit week started". From day
-    eight on: "habit week over", so the check-in never runs past its week without a new start.
+    eight on: "habit week over", so the check-in never runs past its week without a new start. A week
+    with a Keep or Drop decision (the reply to its week review) is finished: "habit week closed".
     """
-    h = habit if isinstance(habit, dict) else {}
-    name = h.get("habit")
-    try:
-        start = date.fromisoformat(str(h.get("week_of")))
-    except ValueError:
-        start = None
-    if not (isinstance(name, str) and name.strip()) or start is None or start > today:
-        return Verdict(DROP, "no habit week started")
+    start = _week_start(habit)
+    if start is None or start > today:
+        return Verdict(DROP, NO_WEEK)
     if today >= start + timedelta(days=HABIT_WEEK_DAYS):
         return Verdict(DROP, "habit week over")
+    if habit_decision(habit) is not None:
+        return Verdict(DROP, "habit week closed")
+    return None
+
+
+def review_day(habit: Optional[dict]) -> Optional[date]:
+    """Day seven of the started week (week_of plus six days); None when no week is named."""
+    start = _week_start(habit)
+    return None if start is None else start + timedelta(days=HABIT_WEEK_DAYS - 1)
+
+
+def week_review_gate(habit: Optional[dict], cue_day: Optional[date], reviewed: Any = ()) -> Optional[Verdict]:
+    """None when a habit cue on ``cue_day`` may send the week review, else its verdict.
+
+    ``cue_day`` is the local date of the latest cue event; ``reviewed`` the local dates of week reviews
+    already sent. No started week (or one that starts after the cue): drop. A Keep or Drop already
+    recorded: drop. A cue before day seven: not triggered. A review already sent on or after this
+    week's day seven: drop, so the review goes out once per week, on the first cue from day seven on.
+    """
+    start, day7 = _week_start(habit), review_day(habit)
+    if start is None or cue_day is None or start > cue_day:
+        return Verdict(DROP, NO_WEEK)
+    if habit_decision(habit) is not None:
+        return Verdict(DROP, "this week already has a decision")
+    if cue_day < day7:
+        return Verdict(NOT_TRIGGERED, "no habit cue on or after day seven yet")
+    if any(isinstance(d, date) and d >= day7 for d in reviewed or ()):
+        return Verdict(DROP, "this week's review was already sent")
     return None
 
 
@@ -343,3 +402,24 @@ def record_checkin(habit: Optional[dict], day: str, tap: Any) -> dict:
         checkins[day] = answer
     out["checkins"] = checkins
     return out
+
+
+def week_logged(habit: Optional[dict], synced: Optional[dict] = None) -> Tuple[int, int]:
+    """(N, M) for the week's seven days: N Done, M Done + No. Skipped and unlogged days stay out of M."""
+    start = _week_start(habit)
+    if start is None:
+        return 0, 0
+    days = [habit_day(habit, (start + timedelta(days=i)).isoformat(), synced) for i in range(HABIT_WEEK_DAYS)]
+    return days.count("Done"), days.count("Done") + days.count("No")
+
+
+def week_review_text(habit: Optional[dict], synced: Optional[dict] = None) -> str:
+    """The week review's one message: the habit, "N of M logged days" and the Keep / Drop ask.
+
+    With no Done or No day it says no days were logged, never that the week failed.
+    """
+    name = (habit or {}).get("habit") if isinstance(habit, dict) else None
+    name = name.strip() if isinstance(name, str) and name.strip() else "Your habit"
+    n, m = week_logged(habit, synced)
+    what = f"{n} of {m} logged days this week" if m else "no days were logged this week"
+    return f"{name}: {what}. Reply {' or '.join(WEEK_REVIEW.answers)}."

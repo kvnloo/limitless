@@ -18,8 +18,8 @@ TIME_FIELD = re.compile(r"(?i)hour|minute|cron|clock|time_of_day|\bat\b")
 
 
 class Specs(unittest.TestCase):
-    def test_four_specs_by_name(self):
-        self.assertEqual(sorted(jobs.SPECS), ["habit_checkin", "miq", "nap", "wake_brief"])
+    def test_five_specs_by_name(self):
+        self.assertEqual(sorted(jobs.SPECS), ["habit_checkin", "miq", "nap", "wake_brief", "week_review"])
         for name, spec in jobs.SPECS.items():
             self.assertIsInstance(spec, jobs.JobSpec)
             self.assertEqual(spec.name, name)

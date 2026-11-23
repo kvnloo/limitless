@@ -1,7 +1,7 @@
 # Running `bin/limitless-jobs` with a systemd user timer
 
 `bin/limitless-jobs` makes one pass over the event-triggered jobs (wake brief, back from nap,
-the bedtime question, the habit check-in) and prints one line per job. Without `--send` it is a
+the bedtime question, the habit check-in, the week review) and prints one line per job. Without `--send` it is a
 dry run. With `--send`, a `deliver` verdict goes through `kevin-push` with `KEVIN_PUSH_STRICT=1`,
 and the job is logged as sent (`jobs-sent.jsonl` in the state dir) only on a real Telegram delivery.
 
@@ -27,6 +27,7 @@ placeholder for a job another sender owns.
 | `nap` (Back from nap) | `limitless-jobs --send` (short text) | your own re-entry sender only (e.g. a Sleep-mode poller), with `bin/limitless-once-key nap` |
 | `miq` (MIQ for tonight?) | `limitless-jobs --send` | your own wind-down sender only, with `bin/limitless-once-key miq --night` |
 | `habit_checkin` (Habit check-in) | `limitless-jobs --send` | your own sender only, with `bin/limitless-once-key habit_checkin` |
+| `week_review` (Week review) | `limitless-jobs --send`, on the first habit cue from day seven of a started week, once per week (key `week_review:<week_of>`): the habit, "N of M logged days" and "Reply Keep or Drop." A Keep or Drop reply is logged by `bin/limitless-habit-ingest`. | your own sender only, with `bin/limitless-once-key week_review` |
 
 Name the jobs another sender owns in `~/.config/limitless/config.json` as `"external_jobs": ["wake_brief", "nap"]`
 or in the env as `LIMITLESS_EXTERNAL_JOBS=wake_brief,nap` (the env wins). For those jobs `limitless-jobs`
@@ -37,8 +38,8 @@ pushes and never writes `jobs-sent.jsonl`. The default is empty: `limitless-jobs
 ## Older senders
 
 A sender outside this repo (a shell script for the wind-down question, a nap notice) can ask for
-the same event key with `bin/limitless-once-key <job>` (`wake_brief`, `nap`, `miq` or
-`habit_checkin`) and pass it to `kevin-push`:
+the same event key with `bin/limitless-once-key <job>` (`wake_brief`, `nap`, `miq`,
+`habit_checkin` or `week_review`) and pass it to `kevin-push`:
 
 ```bash
 KEVIN_PUSH_ONCE=$(bin/limitless-once-key miq) kevin-push limitless "MIQ for tonight?" "..."
