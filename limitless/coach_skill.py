@@ -1,4 +1,5 @@
-"""The plugin's own skills, ``limitless:coach`` and ``limitless:learn`` (skills/<name>/SKILL.md), offered to the host.
+"""The plugin's own skills, ``limitless:coach``, ``limitless:learn`` and ``limitless:chief`` (skills/<name>/SKILL.md),
+offered to the host.
 
 NAMES is the small tuple of skill names; each one's text is ``skills/<name>/SKILL.md`` (``path(name)``).
 
@@ -17,7 +18,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-NAMES = ("coach", "learn")
+NAMES = ("coach", "learn", "chief")
 HOST_METHOD = "register_skill"   # the host ctx method register looks for (feature detection)
 SKILLS_DIR = Path(__file__).resolve().parents[1] / "skills"
 NO_HOST = "limitless: the host has no skill registration; the plugin's skills are not registered"
