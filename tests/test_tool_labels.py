@@ -79,7 +79,7 @@ class Handlers(unittest.TestCase):
                         "limitless_propose", "limitless_loop", "limitless_presleep_hr",
                         "limitless_schedule", "limitless_habit_next", "limitless_ideas", "limitless_card_view",
                         "limitless_phase", "limitless_explain_back", "limitless_experiment",
-                        "limitless_focus_safe"):  # own T1 words; the
+                        "limitless_focus_safe", "limitless_breathing"):  # own T1 words; the
                 continue                     # fixture has no body_file, work queue, rides, sleep or AW data;
                                              # quiet: on, off, ...; anki: no collection;
                                              # propose: its action words; loop: no week decided;
@@ -89,6 +89,7 @@ class Handlers(unittest.TestCase):
                                              # card_view: a state card with <rows> (test_ui_card_tool)
                                              # phase: just woke, day, ... (test_phase_tool)
                                              # focus_safe: focus guard off, ... (test_focus_safe_tool)
+                                             # breathing: breathing link off, ... (test_breathing_tool)
             res = self.call(name, {"text": "a synthetic thought"})
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], name)

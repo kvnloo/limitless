@@ -108,6 +108,10 @@ def _presleep_hr(args, now):
     return tools.presleep_hr(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _breathing(args, now):
+    return tools.breathing(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _quiet(args, now):
     return tools.quiet(state_dir(), now)
 
@@ -361,6 +365,16 @@ and a missing night is never zero or filled in. Unknown with a plain reason when
 fewer than five earlier wearable nights, or the newest is more than a day and a half old. The label only; the \
 beats per minute need the person's raw opt-in. Observation only: no advice, no target, no score, no clock \
 time. Read-only; nothing is written or sent."), _presleep_hr, "🫀"),
+    "limitless_breathing": (_schema(
+        "limitless_breathing",
+        "Whether the wind-down line in the bedtime (MIQ) message offers slow breathing in the person's own app \
+(config wind_down_breathing_link: a URL or app deep link, off by default; one more choice inside the same line, \
+never a push of its own) and whether live heart data backs it: with live heart data only while the wearable \
+input is recording (the limitless_status rule), else without heart data. The value is {link_set, heart_data, \
+link}; link is the link itself only with the person's raw opt-in, otherwise a link is set. Modality derived, \
+age_h the wearable input's age, a digit-free T1 label. It only suggests: never a breath count, pace, heart rate \
+or heart rate variability, no clock time, no advice. Read-only; nothing is written, opened or sent."),
+        _breathing, "🌬️"),
     "limitless_quiet": (_schema(
         "limitless_quiet",
         "Whether pushes to the person's phone are muted now: mode on, off (until they reply on), quiet \
