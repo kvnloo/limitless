@@ -78,7 +78,7 @@ class Handlers(unittest.TestCase):
                         "limitless_sleep", "limitless_naps", "limitless_quiet", "limitless_blocks", "limitless_flow_metrics", "limitless_flow_ledger",
                         "limitless_propose", "limitless_loop", "limitless_presleep_hr",
                         "limitless_schedule", "limitless_habit_next", "limitless_ideas", "limitless_card_view",
-                        "limitless_phase", "limitless_explain_back"):  # own T1 words; the
+                        "limitless_phase", "limitless_explain_back", "limitless_experiment"):  # own T1 words; the
                 continue                     # fixture has no body_file, work queue, rides, sleep or AW data;
                                              # quiet: on, off, ...; anki: no collection;
                                              # propose: its action words; loop: no week decided;

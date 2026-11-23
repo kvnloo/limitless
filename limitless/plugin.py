@@ -152,6 +152,10 @@ def _loop(args, now):
     return tools.loop(state_dir(), now, date.fromtimestamp(now))
 
 
+def _experiment(args, now):
+    return tools.experiment(state_dir(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _card_view(args, now):
     kind = args.get("kind", "state")
     return card_view.view(state_dir(), now, date.fromtimestamp(now), kind if isinstance(kind, str) else "",
@@ -264,6 +268,18 @@ verdict: supports, contradicts or inconclusive, with the receipt's own modality;
 what the stop rule picked at the week's start said (keep it, drop it, your call; it only suggested) and the \
 person's decision (kept or dropped, self-reported). Words only: no score, no streak, no advice. Read-only; \
 nothing is written or sent."), _loop, "🔁"),
+    "limitless_experiment": (_schema(
+        "limitless_experiment",
+        "The N-of-1 habit experiments in the prediction ledger, in plain words. `current` is the newest locked \
+prediction with no receipt yet: running (its habit week is on), waiting with its outcome pending (judged later, \
+when a lag of a week or two weeks after the habit week was set) or ready to judge, whether the person stated a \
+falsifier (what result would show it wrong) and the lagged span; else no experiment locked or no experiment \
+running. `past` lists the other weeks newest first as {week_of, verdict (supports, contradicts, inconclusive; \
+pending or not judged without a receipt), falsifier_stated}. Modality derived; a digit-free T1 label. The \
+prediction and falsifier text are the person's own words and need the person's raw opt-in. It only suggests: \
+lock a prediction only through limitless_habit predict and write a receipt only through limitless_habit \
+receipt, each with the person's yes. Habits only; no score, no streak. Read-only; nothing is \
+written or sent."), _experiment, "🧪"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",
         "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "
