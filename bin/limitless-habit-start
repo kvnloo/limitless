@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""limitless-habit-start "<habit>" [--first-step TEXT] [--write]: start this week's one habit.
+
+Run it only after the person said yes. Without --write it is a dry run: it prints what it would start
+and writes nothing. It prints one plain line: "would start: ...", "started: ..." or "refused: <why>".
+It refuses when the habit text is empty or a habit week is already running (one habit a week); a
+finished week is kept next to the new one as habit-<week_of>.json. Exit 0 started or dry run, 3 refused.
+The state dir is $LIMITLESS_STATE, else "state" in $LIMITLESS_CONFIG (~/.config/limitless/config.json).
+Nothing here sends.
+"""
+import argparse
+import sys
+import time
+from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import habit_start  # noqa: E402
+from limitless.state_reader import state_dir  # noqa: E402
+
+REFUSED_EXIT = 3
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-habit-start", add_help=True)
+    ap.add_argument("habit", help="this week's one habit, in the person's words")
+    ap.add_argument("--first-step", help="its 2-minute first step (optional)")
+    ap.add_argument("--write", action="store_true", help="write habit.json (default: dry run)")
+    args = ap.parse_args(argv[1:])
+    now = time.time()
+    r = habit_start.start_week(state_dir(), args.habit, date.fromtimestamp(now), args.write, now=now,
+                               first_step=args.first_step)
+    print(habit_start.line(r))
+    return REFUSED_EXIT if r["action"] == habit_start.REFUSED else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
