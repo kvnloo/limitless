@@ -35,6 +35,9 @@ NO_HOST = "limitless: the host has no schedule-card registration; nothing regist
 HOST_FAILED = "limitless: the host's schedule-card registration failed; register went on"
 PLUGIN, EXTERNAL = "plugin", "external"
 SENDERS = (PLUGIN, EXTERNAL)
+OWN_SENDER = "; sent by its own sender, not by limitless-jobs"   # jobs_runner.OWN_SENDER, as a clause
+HOOK = "tool:limitless_schedule"
+MODALITY = "derived"          # computed from the job specs and config, not measured (as propose.MODALITY)
 # Keys that are not one per trigger event (jobs_runner._key): one per night, per habit week, per focus block.
 _ONCE = {jobs.MIQ.name: f"{jobs.MIQ.name}:<night date>",
          jobs.WEEK_REVIEW.name: f"{jobs.WEEK_REVIEW.name}:<habit week start date>",
@@ -50,13 +53,13 @@ def card_for(spec: jobs.JobSpec, external: Iterable[str] = ()) -> dict:
     """One schedule card for ``spec``: a new plain dict (JSON data), digit-free except ``stale_after_s``,
     ``budget`` and ``per_window``."""
     words = jobs.to_schedule_card(spec)
+    sender = EXTERNAL if spec.name in set(external or ()) else PLUGIN
     desc = f'Schedule "{words["name"]}" ({words["speaks"]}; {words["window"]}): ends {words["ends"]}; ' \
-           f'{words["delivery"]}'
+           f'{words["delivery"]}' + (OWN_SENDER if sender == EXTERNAL else "")
     return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": spec.stale_after_s, "once_key": once_key(spec), "budget": send_gate.DAILY_CAP,
-            "per_window": spec.max_per_window, "sender": EXTERNAL if spec.name in set(external or ()) else PLUGIN,
-            "words": words}
+            "per_window": spec.max_per_window, "sender": sender, "words": words}
 
 
 def specs(habit: Optional[dict] = None) -> list:
@@ -70,3 +73,9 @@ def cards(external: Iterable[str] = (), habit: Optional[dict] = None) -> list:
     (jobs_runner.external_jobs); ``habit``: habit.json, whose ``cue`` moves the two habit cards."""
     ext = set(external or ())
     return [card_for(s, ext) for s in specs(habit)]
+
+
+def label(n: int) -> str:
+    """The T1 label for ``n`` cards, digit-free."""
+    count = jobs._NUM[n] if 0 <= n < len(jobs._NUM) else "several"
+    return f"{count} schedule card{'' if n == 1 else 's'}, each on an event, none on a clock"

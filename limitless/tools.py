@@ -10,8 +10,9 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, f
                naps as _naps,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction, propose as _propose,
-               quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
-               sleep as _sleep, stop_rule as _stop_rule, weekly_target as _weekly_target)
+               quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
+               scorecard as _scorecard, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
+               weekly_target as _weekly_target)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
@@ -784,3 +785,25 @@ def propose(reader: StateReader, now: float, today: date, bands: Optional[Mappin
     only suggests; nothing is written, sent, scheduled or started."""
     state, tiers = propose_state(reader, now, today, bands, env, home)
     return _propose.derived(_propose.propose(state), tiers)
+
+
+def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None) -> dict:
+    """limitless_schedule: every job's schedule card (schedule_cards.cards), read-only.
+
+    ``value: {cards}`` holds the raw cards (ids, event names, stale_after_s, budget). Outside it only plain
+    words: ``lines`` (one card description each) and the T1 ``label``, both through tier_audit.gate (hook
+    tool:limitless_schedule, never opted in); a digit there drops both and says why. The habit cards follow
+    habit.json's cue; ``external_jobs`` marks jobs another sender owns. Modality derived, age_h None.
+    Nothing is written, sent, scheduled or registered.
+    """
+    cards = _schedule_cards.cards(external=jobs_runner.external_jobs(env, home), habit=reader.habit())
+    lines = [c["description"] for c in cards]
+    word = _schedule_cards.label(len(cards))
+    out = {"value": {"cards": cards}, "modality": _schedule_cards.MODALITY, "age_h": None, "evidence_tier": "direct"}
+    if _tier_audit.gate(_schedule_cards.HOOK, "\n".join([word, *lines]), False, env=env, home=home, now=now) is None:
+        out["reason"] = "the plain words held a digit, so they were left out; the cards are in value"
+        return out
+    out["lines"] = lines
+    out["label"] = {"label": word, "tier": "T1", "modality": _schedule_cards.MODALITY}
+    return out

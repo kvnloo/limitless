@@ -115,6 +115,10 @@ def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
 
+def _schedule(args, now):
+    return tools.schedule(_reader(), now)
+
+
 def _loop(args, now):
     return tools.loop(state_dir(), now, date.fromtimestamp(now))
 
@@ -305,6 +309,14 @@ never trigger a rule; no rule uses a clock time. The value is {action, because, 
 names used), note}, digit-free; modality derived, evidence_tier the weakest of the labels used. It only \
 suggests: the agent must ask the person before doing anything. Read-only; nothing is written, sent, \
 scheduled or started."), _propose, "🪶"),
+    "limitless_schedule": (_schema(
+        "limitless_schedule",
+        "Every recurring Limitless job (wake brief, back from nap, the bedtime question, the habit check-in, \
+the week review, the break nudge) as one Hermes schedule card: the event that wakes it (never a clock time), \
+the event that ends it, its decision window, how late its trigger may be (stale_after_s), its once-per-event \
+key in words, the send gate's daily cap and whether limitless-jobs or another sender sends it. `lines` and the \
+label are plain words; the raw fields are only in value. Read-only: nothing is written, sent, scheduled or \
+registered."), _schedule, "🗓️"),
 }
 
 
