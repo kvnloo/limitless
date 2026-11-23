@@ -73,10 +73,11 @@ OWN_SENDER = "sent by its own sender, not by limitless-jobs"
 NIGHT_JOBS = (jobs.MIQ.name,)    # one message per night, keyed by the night's date, not by its event
 DELIVERED = "telegram"
 QUIET_DROP = f"({_quiet.PREFIX}"   # how kevin-push reports a push quiet dropped: "log (quiet: ...)"
+MIQ_QUESTION = "Do you know the one thing that matters most tomorrow?"   # the MIQ itself (voice_miq, call_brief)
 _BODY = {
     jobs.WAKE_BRIEF.name: "You are up. Your brief comes next.",
     jobs.NAP.name: "Welcome back from your nap. Anything held while you slept is in your brief.",
-    jobs.MIQ.name: "Your wind-down has started. Do you know the one thing that matters most tomorrow?",
+    jobs.MIQ.name: "Your wind-down has started. " + MIQ_QUESTION,
 }
 # L14: an ask is one tap or one spoken word. The MIQ asks Yes / No / Later instead of a typed answer.
 MIQ_ANSWERS = one_tap.YES_NO_LATER
@@ -862,4 +863,6 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
     noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
-    return rows + ([noop] if noop is not None else [])
+    from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
+    voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
+    return rows + [r for r in (noop, voice) if r is not None]

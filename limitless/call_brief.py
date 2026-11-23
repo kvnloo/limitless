@@ -19,6 +19,9 @@ card's "messages:" recency label and its asks line are left out (the TLDR carrie
 through tier_audit.gate (hook "call_brief", never opted in): a digit refuses the write. The ``generated``
 stamp (UTC) is outside the gated body so a reader can ignore a stale brief.
 
+When config ``voice_miq`` is on and tonight's MIQ is open (voice_miq.open_miq), the body ends with one more
+line, MIQ_LINE (``Ask once: <the MIQ question>``), so the call can ask it and voice_miq can read the answer.
+
 The reader in mind is z0live's voice-adapter/call_brief.py ``written()``: it reads ``<chat>.md`` or
 ``latest.md`` from its brief dir as plain text when the file's mtime is under three hours old. See
 docs/call-brief.md. Nothing here sends. Stdlib only, Python 3.9+.
@@ -34,10 +37,12 @@ from typing import Mapping, Optional
 
 from . import asks as _asks
 from . import card, tier_audit, tools
+from . import jobs_runner as _jobs_runner
 from . import labeler as _labeler
 from .state_reader import StateReader, config, state_dir
 
 HOOK = "call_brief"
+MIQ_LINE = "Ask once: " + _jobs_runner.MIQ_QUESTION
 CONFIG_KEY = "call_brief_file"
 MAX_BODY = 3
 LINE_MAX = 100
@@ -77,7 +82,19 @@ def render(reader: StateReader, now: float, today: date, *, env: Optional[Mappin
         tldr.append(asks)
     rest = [ln for ln in c["lines"] if not ln.startswith(_SKIP)]
     lines = [_short("TLDR: " + "; ".join(tldr))] + [_short(ln) for ln in rest if _short(ln)][:MAX_BODY]
+    ask = miq_line(reader, now, env)
+    if ask:
+        lines.append(ask)
     return {"body": "\n".join(lines), "lines": lines}
+
+
+def miq_line(reader: StateReader, now: float, env: Mapping[str, str]) -> str:
+    """MIQ_LINE when config ``voice_miq`` is on (dry_run or write) and tonight's MIQ is open (voice_miq.open_miq:
+    sent, not stale, not yet captured from a call); else "". The only words the call brief adds for the MIQ."""
+    from . import voice_miq   # voice_miq imports this module (write_atomic)
+    if voice_miq.mode(config(env)) == voice_miq.OFF or voice_miq.open_miq(reader.path, now) is None:
+        return ""
+    return MIQ_LINE
 
 
 def _iso(now: float) -> str:

@@ -25,6 +25,10 @@ not recording: anki, bike, scale
 - The body goes through `tier_audit.gate` under hook `call_brief`, never with the opt-in: a digit refuses
   the write (exit 2, nothing written, an existing brief left as it is). The stamp is outside the gated body.
 
+When config `voice_miq` is on and tonight's MIQ is open, the brief ends with one more line,
+`Ask once: Do you know the one thing that matters most tomorrow?`, so the call can ask it. The answer is
+read back from the call's transcript and captured; see [voice-miq.md](voice-miq.md).
+
 ## Where it goes
 
 `--out PATH`, else config `call_brief_file` (a relative path is in the state dir). With neither it exits 0
