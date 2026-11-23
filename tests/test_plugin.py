@@ -22,7 +22,7 @@ CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_metrics",
          "limitless_habit", "limitless_loop", "limitless_naps", "limitless_overnight",
-         "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_scorecard", "limitless_sleep", "limitless_state",
+         "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
@@ -55,6 +55,18 @@ def sleep_config(st: Path) -> Path:
     (st / "sleep.jsonl").write_text(json.dumps({"night": night, "asleep_s": 25200, "source": "synthetic-ring"}) + "\n")
     cfg = st / "sleep-config.json"
     cfg.write_text(json.dumps({"sleep_file": "sleep.jsonl"}))
+    return cfg
+
+
+def presleep_hr_config(st: Path) -> Path:
+    """A config naming a synthetic pre-sleep heart-rate file in ``st``: fifteen wearable nights before NOW."""
+    from datetime import date, timedelta
+    today = date.fromtimestamp(NOW)
+    rows = [{"night": (today - timedelta(days=b)).isoformat(), "bpm": 60.0, "modality": "measured"}
+            for b in range(15, 0, -1)]
+    (st / "presleep-hr.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    cfg = st / "presleep-config.json"
+    cfg.write_text(json.dumps({"presleep_hr_file": "presleep-hr.jsonl"}))
     return cfg
 
 
@@ -215,6 +227,8 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_ANKI": str(anki_collection(st))}
             if name == "limitless_sleep":   # one synthetic wearable night before NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(sleep_config(st))}
+            if name == "limitless_presleep_hr":   # fifteen synthetic wearable nights before NOW
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(presleep_hr_config(st))}
             if name == "limitless_blocks":   # one synthetic long block up to NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(blocks_config(st))}
             if name == "limitless_flow_metrics":   # the same synthetic block, in its own state dir

@@ -41,6 +41,11 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
                        state dir; none by default), one row per night and source: {"night": "YYYY-MM-DD" (the
                        evening the night began), "asleep_s": int, "source"[, "start", "end"]}; read only through
                        sleep_rows
+  pre-sleep HR file    optional JSONL of the wearable's pre-sleep heart rate, config "presleep_hr_file"
+                       (relative to the state dir; none by default), one row per night: {"night": "YYYY-MM-DD"
+                       (the evening the night began), "bpm", "modality": "measured" for the wearable}; read only
+                       through presleep_hr_rows (tier T0: raw numbers stay in code; presleep_hr.py reads only
+                       measured rows)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -67,6 +72,7 @@ RIDES_CONFIG = "rides_file"
 RIDE_KINDS_CONFIG = "ride_kinds"
 RIDE_KINDS = ("biking_stationary", "rehit")
 SLEEP_CONFIG = "sleep_file"
+PRESLEEP_HR_CONFIG = "presleep_hr_file"
 MAX_ASLEEP_S = 24 * 3600   # a nightly summary longer than a day is not a night
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -474,6 +480,27 @@ class StateReader:
                 row["span"] = (a, b)
             out.append(row)
         return sorted(out, key=lambda x: x["night"])
+
+    def presleep_hr_file(self, env: Optional[Mapping[str, str]] = None,
+                         home: Optional[Path] = None) -> Optional[Path]:
+        """The wearable's pre-sleep heart-rate file: config ``presleep_hr_file``; a relative path is in the
+        state dir. None when it is not set (there is no default file name)."""
+        v = config(env, home).get(PRESLEEP_HR_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def presleep_hr_rows(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
+        """The pre-sleep heart-rate file's object rows as ``{"night", "bpm", "modality"}`` (other fields are never
+        read), in file order; presleep_hr.py validates them and keeps only the wearable's. [] when no file is
+        configured, it is missing or unreadable; never raises."""
+        try:
+            p = self.presleep_hr_file(env, home)
+            rows = [] if p is None else _rows(p.read_text(errors="replace"))
+        except Exception:  # noqa: BLE001 - unreadable data is no rows, never a traceback
+            return []
+        return [{k: r.get(k) for k in ("night", "bpm", "modality")} for r in rows]
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")
