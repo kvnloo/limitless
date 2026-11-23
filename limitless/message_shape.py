@@ -12,6 +12,10 @@ one plain line, "and four more lines in the plugin", the count said in words. An
 ``max_line_chars`` is cut at a word boundary and ends with an ellipsis. Nothing is reworded and nothing is
 asked that was not asked; no digit is ever added. A message that already fits comes back byte for byte.
 
+Used in one place: bin/kevin-push, on the text it hands to the transport (after send_gate.outgoing added the
+why-now line), so every job and every older sender gets it. When anything was folded or cut it writes one
+tier_audit.shape_event row (the two counts only). The dedupe key stays the message as it was sent to kevin-push.
+
 Defaults: max_lines 6, max_line_chars 160; config ``message_max_lines`` (a whole number, at least
 MIN_LINES) and ``message_max_line_chars`` (a whole number, at least MIN_LINE_CHARS); anything else is the
 default. ``title`` is the push's subject: it is never changed and never counted. Pure: no clock, no file, no
@@ -23,6 +27,7 @@ from typing import Mapping, Optional, Tuple
 
 from . import one_tap
 from .send_gate import WHY_PREFIX
+from .tier_audit import SHAPE_HOOK as AUDIT_HOOK  # noqa: F401 - the hook of the one row kevin-push writes
 
 DEFAULT_MAX_LINES, DEFAULT_MAX_LINE_CHARS = 6, 160
 MIN_LINES = 4            # the TLDR, the folded line, the Reply line and the Why-now line

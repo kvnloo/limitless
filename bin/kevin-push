@@ -19,6 +19,10 @@ Every delivered message ends with one plain "Why now: ..." line (send_gate.outgo
 (or $KEVIN_PUSH_WHY, e.g. the decision-window reason), else the event of an always-sent message, else the
 decision window's reason for the class. Digits and card ids are left out of it; the dedupe key is the
 message without it.
+Every delivered message is then held to its shape (limitless/message_shape.py): the TLDR first line, at most
+config message_max_lines lines (default 6) and message_max_line_chars characters a line (default 160), extra
+middle lines folded into one "and N more lines in the plugin" line in words, the Reply and Why-now lines kept.
+When anything was folded or cut, one content-free tier_audit row (counts only) is written.
 """
 import json
 import os
@@ -30,8 +34,11 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import message_shape  # noqa: E402
 from limitless import quiet as q  # noqa: E402
 from limitless import send_gate as g  # noqa: E402
+from limitless import tier_audit  # noqa: E402
+from limitless.state_reader import config  # noqa: E402
 
 ST = Path.home() / ".local/state/kevin-push"
 LOG, SENT = ST / "log.jsonl", ST / "sent.json"
@@ -124,6 +131,9 @@ def main(argv):
     elif verdict == "send":
         reason = why if why is not None else os.environ.get("KEVIN_PUSH_WHY", "")
         text = g.outgoing(body, g.why_line(reason if reason.strip() else g.why_reason(cls, title)))
+        text, folded, cut = message_shape.fit(title, text, message_shape.limits(config()))
+        if folded or cut:
+            tier_audit.record(tier_audit.shape_event(folded, cut, now))   # counts only, never the text
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
             f.write(text)
         r = subprocess.run(["hermes", "-p", PUSH_PROFILE, "send", "--to", PUSH_TO, "--subject", title,
