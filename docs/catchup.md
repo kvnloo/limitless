@@ -4,9 +4,10 @@ After time away you want a roadmap of what happened, not a wall of text, and at 
 `limitless/catchup.py` builds it; the `pre_llm_call` hook adds it to the first turn after the absence.
 
 - **When**: the gap between this turn and your previous message to any agent (the owner session DBs,
-  `LIMITLESS_OWNER_DBS` or config `owner_dbs`) is over `catchup_after_h` hours in config.json
+  `LIMITLESS_OWNER_DBS` or config `owner_dbs`, and beacons from other machines,
+  [docs/owner-beacon.md](owner-beacon.md)) is over `catchup_after_h` hours in config.json
   (default 24). This turn's own message (the last two minutes) does not count as "last seen". With no
-  owner DB configured the gap is unknown and nothing is added.
+  owner DB or beacon configured the gap is unknown and nothing is added.
 - **What**: at most 5 lines, every digit masked (T1), through `tier_audit.gate` (hook `catchup`):
 
 ```
