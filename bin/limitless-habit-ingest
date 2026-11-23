@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""limitless-habit-ingest [--db PATH] [--write]: log a Done / No / Skip reply to the habit check-in.
+"""limitless-habit-ingest [--db PATH] [--write]: log a Done / No / Skip reply to the habit check-in,
+and a Keep / Drop reply to the week review.
 
 Reads the person's Telegram messages from the Hermes session DB (read-only) after the latest habit
 check-in in jobs-sent.jsonl, and logs the first Done, No or Skip into habit.json's checkins for the
 check-in's local date. Anything else stays unlogged; a day that already has an answer is kept.
+After this week's week review it also logs the first Keep or Drop as habit.json's decision (with
+decided_at); anything else leaves the week undecided, and a decision already there is kept.
 Without --write it is a dry run: it prints what it would write and writes nothing.
 The DB is --db, else $LIMITLESS_HERMES_DB, else "hermes_db" in $LIMITLESS_CONFIG
 (~/.config/limitless/config.json; a relative path is in the state dir). There is no default: with none
@@ -32,11 +35,18 @@ def main(argv):
         print(f"limitless-habit-ingest: no Hermes DB set (--db, {habit_replies.ENV_KEY} or config "
               f"\"{habit_replies.CONFIG_KEY}\"): nothing read, nothing written")
         return 0
-    sent = habit_replies.latest_checkin(StateReader(state).jobs_sent(), now)
+    sent_log = StateReader(state).jobs_sent()
+    sent = habit_replies.latest_checkin(sent_log, now)
     replies = [] if sent is None else habit_replies.replies_from_hermes_db(db, sent)
     for r in habit_replies.ingest(state, replies, now, dry_run=not args.write):
         word = f"{r['answer']}: " if r["answer"] else ""
         print(f"{r['day'] or 'no day'}: {r['action']}: {word}{r['reason']}")
+    review = habit_replies.latest_review(sent_log, now)
+    if review is not None:                      # a Keep / Drop only ever answers a week review
+        for r in habit_replies.decide(state, habit_replies.replies_from_hermes_db(db, review), now,
+                                      dry_run=not args.write):
+            word = f"{r['answer']}: " if r["answer"] else ""
+            print(f"week of {r['week_of'] or 'no week'}: {r['action']}: {word}{r['reason']}")
     if not args.write:
         print("dry run: nothing written (--write writes habit.json)")
     return 0
