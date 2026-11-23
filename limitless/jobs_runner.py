@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
-    rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
+    presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
     wind_down
 from . import glide_provider
 from .glide_provider import GlideProvider
@@ -78,7 +78,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
          anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "",
-         wind_down_line: str = "", rule_line: str = "") -> str:
+         wind_down_line: str = "", rule_line: str = "", presleep_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -90,7 +90,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
     ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
-    proxy, in words), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
+    proxy, in words), then ``presleep_line`` (week_presleep_hr: the wearable's pre-sleep heart rate against the
+    usual, in words, next to the night), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
     ``anki_line`` (week_anki: this week's Anki reviews in words), then ``rule_line`` (week_rule: what the stop
     rule picked at the week's start says, "Your rule says: keep it"), each as one more line
     when given, then ``Reply: Keep / Drop``: the rule only suggests, the reply decides. The first line's number
@@ -108,7 +109,7 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
                                       passive, flow, fragment, body_line,
-                                      rides_line, sleep_line, naps_line, anki_line, rule_line,
+                                      rides_line, sleep_line, presleep_line, naps_line, anki_line, rule_line,
                                       one_tap.choices_line(spec.answers))
                          if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
@@ -436,6 +437,23 @@ def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
         return ""
 
 
+def week_presleep_hr(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                     today: Optional[date] = None) -> str:
+    """The week review's pre-sleep heart-rate line (presleep_hr.review_line of presleep_hr.week over the seven
+    nights before ``today``: "Pre-sleep heart rate: about usual most nights (wearable)."), wearable rows only,
+    digit-free, through tier_audit.gate (hook ``week_review:presleep_hr``); "" when no ``today`` is given, no
+    file is configured, or the week is unknown (phone rows only, too few compared nights). It rides in the
+    week review: never a push or a job of its own. Read-only."""
+    if not isinstance(today, date):
+        return ""
+    try:
+        rows = StateReader(Path(state_dir)).presleep_hr_rows(env, home)
+        line = _presleep_hr.review_line(_presleep_hr.week(rows, today)) if rows else ""
+        return _gated("week_review:presleep_hr", line, env, home)
+    except Exception:  # noqa: BLE001 - a broken file must not stop the review
+        return ""
+
+
 RAW_ENV = "LIMITLESS_RAW_IN_PROMPT"     # card.raw_in_prompt's opt-in (card is not imported: it imports this module)
 
 
@@ -578,6 +596,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 wind = miq_wind_down(p.evs, v.trigger_at, env, home, tz) if miq else ""
                 rides_line = week_rides(state_dir, env, home, today) if review else ""
                 sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
+                presleep_line = week_presleep_hr(state_dir, env, home, today) if review else ""
                 fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
                 anki_line = week_anki(state_dir, p.habit, env, home, tz, today) if review else ""
                 naps_line = week_naps(state_dir, env, home, today, tz) if review else ""
@@ -585,7 +604,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
                             body_line, plan, rides_line, sleep_line, fragment, anki_line,
                             target_days=weekly_target.target_days(env, home), naps_line=naps_line,
-                            wind_down_line=wind, rule_line=rule_line)
+                            wind_down_line=wind, rule_line=rule_line, presleep_line=presleep_line)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
