@@ -21,6 +21,17 @@ This module is the adapter between that queue and the decision window; it never 
 - ``peak`` delivers in a peak window, at most ONE per window, oldest first, and only when
   ``sent_this_window`` is zero; every other peak ask holds for the next peak window.
 
+Each reason starts with the ask's ``title`` in plain words: internal card ids (``t_510c250d``) are
+removed with the send gate's ``scrub``.
+
+The queue is JSONL, one ask per line, at ``$LIMITLESS_ASKS`` or config ``asks_path``:
+
+    {"id", "kind": decision|approval|fyi, "effort": deep|light, "title", "at", "urgent": bool,
+     "delivered_at": epoch | iso}   # set by the host once the ask really reached the person
+
+This module only reads it. A missing, unreadable or malformed file is an empty plan; a bad line
+is skipped. A row with ``delivered_at`` is done and is not planned again.
+
 The window comes from the decision-window chain (``window_chain.first_known``), a
 ``decision_window.WindowState`` or a ``window.py`` envelope; nothing here reads a clock.
 
@@ -28,10 +39,17 @@ Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, List, Optional, Tuple
+import json
+import os
+from pathlib import Path
+from typing import Any, Iterable, List, Mapping, Optional, Tuple
 
 from . import decision_window, jobs
-from .state_reader import parse_ts
+from .send_gate import scrub
+from .state_reader import config, parse_ts
+
+ENV_KEY, CONFIG_KEY = "LIMITLESS_ASKS", "asks_path"
+TITLE_MAX = 80
 
 PEAK, TROUGH, ANYTIME = "peak", "trough", "anytime"
 DELIVER, HOLD, FOLD = "deliver", "hold", "fold"
@@ -116,5 +134,49 @@ def plan(asks: Optional[Iterable], window: Any, sent_this_window: Any = 0) -> Li
         action, why = _decide(ask, cls, state, asleep, peak_free)
         if action == DELIVER and cls == PEAK and not (isinstance(ask, dict) and ask.get("urgent") is True):
             peak_free = False
-        out[i] = (ask.get("id") if isinstance(ask, dict) else None, action, why)
+        out[i] = (ask.get("id") if isinstance(ask, dict) else None, action, _reason(ask, why))
     return [out[i] for i in range(len(rows))]
+
+
+def _reason(ask: Any, why: str) -> str:
+    title = ask.get("title") if isinstance(ask, dict) else None
+    title = " ".join(scrub(title).split()).strip(" :")[:TITLE_MAX] if isinstance(title, str) else ""
+    return scrub(f"{title}: {why}" if title else why)
+
+
+def queue_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[str]:
+    """$LIMITLESS_ASKS, else ``asks_path`` in config.json; None when neither names a path."""
+    env = os.environ if env is None else env
+    path = env.get(ENV_KEY) or config(env, home).get(CONFIG_KEY)
+    return path if isinstance(path, str) and path else None
+
+
+def read(path: Optional[str]) -> list:
+    """The dict rows of the JSONL queue at ``path``; [] when it is missing or unreadable. Never writes."""
+    if not path:
+        return []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except (OSError, ValueError):
+        return []
+    rows = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def pending(rows: Iterable) -> list:
+    """The asks still waiting: rows without ``delivered_at``."""
+    return [r for r in rows if isinstance(r, dict) and r.get("delivered_at") in (None, "")]
+
+
+def plan_queue(window: Any, sent_this_window: Any = 0, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None) -> List[Row]:
+    """plan() over the pending asks of the configured queue; [] when there is no readable queue."""
+    return plan(pending(read(queue_path(env, home))), window, sent_this_window)

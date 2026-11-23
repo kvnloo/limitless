@@ -1,7 +1,10 @@
 """asks: every needs-the-person ask carries a window class; at most one decision per peak window."""
+import json
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -124,6 +127,77 @@ class Plan(unittest.TestCase):
     def test_empty_queue_is_an_empty_plan(self):
         self.assertEqual(asks.plan([], PEAK, 0), [])
         self.assertEqual(asks.plan(None, PEAK, 0), [])
+
+
+class Queue(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.q = self.dir / "asks.jsonl"
+        self.q.write_text("".join(json.dumps(a) + "\n" for a in QUEUE))
+
+    def env(self, **kw):
+        return dict({"LIMITLESS_CONFIG": str(self.dir / "no-config.json")}, **kw)
+
+    def test_path_from_env_then_config(self):
+        self.assertEqual(asks.queue_path(self.env(LIMITLESS_ASKS=str(self.q))), str(self.q))
+        cfg = self.dir / "config.json"
+        cfg.write_text(json.dumps({"asks_path": str(self.q)}))
+        self.assertEqual(asks.queue_path({"LIMITLESS_CONFIG": str(cfg)}), str(self.q))
+        self.assertEqual(asks.queue_path({"LIMITLESS_CONFIG": str(cfg), "LIMITLESS_ASKS": "other.jsonl"}),
+                         "other.jsonl")
+        self.assertIsNone(asks.queue_path(self.env()))
+        cfg.write_text(json.dumps({"asks_path": 7}))
+        self.assertIsNone(asks.queue_path({"LIMITLESS_CONFIG": str(cfg)}))
+
+    def test_reads_the_queue_and_plans_it(self):
+        got = asks.plan_queue(PEAK, 0, self.env(LIMITLESS_ASKS=str(self.q)))
+        self.assertEqual(got, asks.plan(QUEUE, PEAK, 0))
+
+    def test_missing_or_broken_file_is_an_empty_plan(self):
+        bad = self.dir / "bad.jsonl"
+        for content in (None, b"", b"not json at all\n", b"\xff\xfe\x00garbage", b"[1, 2]\n\"str\"\n"):
+            if content is None:
+                path = str(self.dir / "absent.jsonl")
+            else:
+                bad.write_bytes(content)
+                path = str(bad)
+            self.assertEqual(asks.plan_queue(PEAK, 0, self.env(LIMITLESS_ASKS=path)), [], content)
+        self.assertEqual(asks.plan_queue(PEAK, 0, self.env(LIMITLESS_ASKS=str(self.dir))), [])
+        self.assertEqual(asks.plan_queue(PEAK, 0, self.env()), [])
+
+    def test_bad_lines_are_skipped_good_ones_kept(self):
+        self.q.write_text(json.dumps(QUEUE[1]) + "\n{oops\n" + json.dumps(QUEUE[3]) + "\n")
+        got = asks.plan_queue(PEAK, 0, self.env(LIMITLESS_ASKS=str(self.q)))
+        self.assertEqual([(i, a) for i, a, _ in got], [("a", "deliver"), ("d", "deliver")])
+
+    def test_delivered_rows_are_not_planned_again(self):
+        rows = [ask("a", "decision", 100, delivered_at=150), ask("b", "decision", 200)]
+        self.assertEqual([r["id"] for r in asks.pending(rows)], ["b"])
+
+    def test_read_only_the_queue_bytes_never_change(self):
+        before, mtime = self.q.read_bytes(), self.q.stat().st_mtime_ns
+        for state in (PEAK, FOCUS, TROUGH, None):
+            asks.plan_queue(state, 0, self.env(LIMITLESS_ASKS=str(self.q)))
+        self.assertEqual(self.q.read_bytes(), before)
+        self.assertEqual(self.q.stat().st_mtime_ns, mtime)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["asks.jsonl"])
+
+    def test_reasons_are_plain_words_without_card_ids(self):
+        q = [ask("t_510c250d", "decision", 1, title="t_510c250d: pick the plan for the week"),
+             ask("t_0a1b2c3d", "decision", 2, title="approve t_0a1b2c3d the draft"),
+             ask("t_99887766", "fyi", 3, title="t_99887766 build finished")]
+        for state in (PEAK, FOCUS, TROUGH):
+            for _, _, why in asks.plan(q, state, 0):
+                self.assertNotRegex(why, r"\bt_[0-9a-f]{6,12}\b", why)
+        why = [w for _, _, w in asks.plan(q, PEAK, 0)]
+        self.assertTrue(why[0].startswith("pick the plan for the week: "), why[0])
+        self.assertTrue(why[1].startswith("approve the draft: "), why[1])
+
+    def test_reason_reuses_the_send_gate_scrub(self):
+        from limitless import send_gate
+        self.assertIs(asks.scrub, send_gate.scrub)
 
 
 if __name__ == "__main__":
