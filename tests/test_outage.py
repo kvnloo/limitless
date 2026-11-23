@@ -169,6 +169,16 @@ class Line(OutageCase):
         self.assertIn("Open it.", text)
         self.assertNotIn("Charge", text)          # a hint with a digit is dropped, never rewritten
 
+    def test_camel_case_input_names_read_as_plain_words(self):
+        # sync writers name inputs in camelCase; the line Kevin reads splits them, keeping an acronym whole
+        self.assertEqual(outage.name_words("ownerMessages"), "owner messages")
+        self.assertEqual(outage.name_words("desktopAW"), "desktop AW")
+        self.assertEqual(outage.name_words("phoneUnlocks"), "phone unlocks")
+        self.assertEqual(outage.name_words("HRVBand"), "HRV band")
+        self.assertEqual(outage.name_words("phone_screen"), "phone screen")
+        self.inputs(NOW, {"phoneApps": 50.0})
+        self.assertEqual(self.poll(NOW), "Not recording: phone apps (since about two days ago).")
+
     def test_nothing_new_is_no_line(self):
         self.assertEqual(outage.line([], {}, NOW), "")
 

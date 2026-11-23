@@ -121,6 +121,24 @@ class Sleep(Base):
         self.assertEqual(got["sleep"], [])
         self.assertEqual(got["skipped"]["not_wearable"], 2)
 
+    def test_a_strap_id_with_no_paired_row_is_still_the_wearable(self):
+        # NOOP names strap ids in a "whoop-"/"oura-" namespace (WhoopSerialIdentity.ID_PREFIX), and the legacy
+        # single-WHOOP seed is "my-whoop". A re-pair can orphan a strap's history from its pairedDevice row
+        # (NOOP #1193), so with no row the id's own namespace says it is a strap; a paired row always wins.
+        nights = [at(self.D + timedelta(days=i), 23) for i in range(5)]
+        ids = ["whoop-SYNTH0001", "oura-SYNTH0002", "my-whoop", PHONE, "whoopish-0003"]
+        got = self.sleep([(dev, on, on + 8 * H, 0.9, stages(on, 7 * H)) for dev, on in zip(ids, nights)])
+        self.assertEqual([r["night"] for r in got["sleep"]], ["2030-01-10", "2030-01-11", "2030-01-12"])
+        self.assertEqual(got["skipped"]["not_wearable"], 2)
+
+    def test_a_paired_row_that_is_not_a_wearable_wins_over_the_id(self):
+        on = at(self.D, 23)
+        dev = {"id": "whoop-SYNTH0004", "brand": "Import", "model": "CSV", "nickname": None, "peripheralId": None,
+               "sourceKind": "fileImport", "capabilities": "sleep", "status": "paired", "addedAt": 0, "lastSeenAt": 0}
+        got = self.sleep([("whoop-SYNTH0004", on, on + 8 * H, 0.9, stages(on, 7 * H))], devices=[dev])
+        self.assertEqual(got["sleep"], [])
+        self.assertEqual(got["skipped"]["not_wearable"], 1)
+
     def test_the_longest_wearable_session_of_a_night_is_the_night(self):
         nap = at(self.D, 19)
         on = at(self.D, 23)

@@ -38,6 +38,7 @@ NONE_DOWN = "every input is recording"
 OFF_WORDS = ("off", "false", "no")
 _SPLIT = re.compile(r"[_\-\s]+")
 _DIGIT_EDGE = re.compile(r"(?<=\D)(?=\d)|(?<=\d)(?=\D)")
+_CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 def enabled(cfg: Mapping) -> bool:
@@ -171,8 +172,10 @@ def tell(state_dir, names: Iterable[str], now: float) -> bool:
 # --- words ------------------------------------------------------------------------------------------------
 
 def name_words(name: str) -> str:
-    """An input name as words: separators become spaces, a number becomes "a number"."""
-    return doctor.words(" ".join(_SPLIT.split(_DIGIT_EDGE.sub(" ", name))).strip())
+    """An input name as words: separators and camelCase humps become spaces (an acronym stays whole, a
+    capitalized word is lowered), a number becomes "a number"."""
+    parts = _SPLIT.split(_CAMEL.sub(" ", _DIGIT_EDGE.sub(" ", name)))
+    return doctor.words(" ".join(p if p.isupper() else p.lower() for p in parts if p))
 
 
 def _and(parts: list) -> str:

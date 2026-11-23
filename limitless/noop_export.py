@@ -32,6 +32,17 @@ from .state_reader import MAX_ASLEEP_S, PRESLEEP_HR_CONFIG, SLEEP_CONFIG, StateR
 
 SOURCE = "noop"              # the one source name the sleep rows carry: never a device, model or id
 WEARABLE_KINDS = ("liveBLE", "historyBLE", "oura", "huami")   # pairedDevice.sourceKind read straight off a strap
+# With no pairedDevice row (a re-pair can orphan a strap's history, NOOP #1193) the id's own namespace decides:
+# NOOP mints strap ids as "whoop-..."/"oura-..." (WhoopSerialIdentity.ID_PREFIX); "my-whoop" is the legacy seed.
+STRAP_ID_PREFIXES = ("whoop-", "oura-")
+STRAP_IDS = ("my-whoop",)
+
+
+def is_wearable(device, kind) -> bool:
+    """A strap session: its paired row's sourceKind when there is one, else the strap id namespace."""
+    if kind is not None:
+        return kind in WEARABLE_KINDS
+    return isinstance(device, str) and (device in STRAP_IDS or device.startswith(STRAP_ID_PREFIXES))
 ASLEEP_STAGES = ("light", "deep", "rem")
 WINDOW_S = 30 * 60           # pre-sleep window: the half hour right before the night's onset, [onset - WINDOW_S, onset)
 MIN_SAMPLES = 10             # fewer plausible heart-rate samples in that window: no row for the night
@@ -149,7 +160,7 @@ def sleep_nights(sessions, tz=None) -> tuple:
     sleep wins (an evening nap never stands for the night), the earlier onset on a tie."""
     best, skipped = {}, {"not_wearable": 0, "no_asleep_time": 0, "not_a_night": 0}
     for device, onset, end, eff, stages_json, kind in sessions:
-        if kind not in WEARABLE_KINDS:
+        if not is_wearable(device, kind):
             skipped["not_wearable"] += 1
             continue
         onset, end = _int(onset), _int(end)

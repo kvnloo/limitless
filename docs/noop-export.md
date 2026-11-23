@@ -29,7 +29,10 @@ know. A missing or unreadable file is one plain line too.
 
 - **Wearable only.** A session counts only when its `deviceId` is a paired device whose `sourceKind` is read
   straight off a strap or ring (`liveBLE`, `historyBLE`, `oura`, `huami`). The phone's health-store bucket, a
-  file or cloud import, a fitness machine and an activity file are not the wearable and are skipped.
+  file or cloud import, a fitness machine and an activity file are not the wearable and are skipped. A session
+  whose `deviceId` has no `pairedDevice` row (a re-pair can orphan a strap's history, NOOP #1193) counts when
+  the id is in NOOP's strap namespace (`whoop-...`, `oura-...`, or the legacy `my-whoop` seed); a paired row's
+  `sourceKind` always wins over the id.
 - **One sleep row per night** (`sleep_file`): `{"night", "asleep_s", "source": "noop", "start", "end"}`, the
   shape `StateReader.sleep_rows` reads. `night` is the evening the night began (the rule `sleep.py` uses: a sleep
   that began after midnight belongs to the date before). Of several wearable sessions in one night, the one with
