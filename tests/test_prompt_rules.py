@@ -1,9 +1,14 @@
 """limitless/prompt_rules.py: the plugin's standing rules as one short, static, data-free system prompt
 section (``limitless.rules``): no digit, no clock time, no dosing word, the same bytes every session."""
+import json
+import logging
+import os
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -62,6 +67,61 @@ class Content(unittest.TestCase):
         for banned in ("import time", "import datetime", "from datetime", "StateReader", "state_dir",
                        "open(", "read_text", "environ"):
             self.assertNotIn(banned, src)
+
+
+class SectionCtx:
+    """A host with register_system_prompt_section(id, content, *, position, max_chars) and its checks."""
+
+    def __init__(self):
+        self.sections = []
+
+    def register_system_prompt_section(self, id, content, *, position="after_memory", max_chars=None):
+        if not isinstance(id, str) or not ID_RE.match(id):
+            raise ValueError(f"invalid section id {id!r}")
+        if any(s["id"] == id for s in self.sections):
+            raise ValueError(f"duplicate section id {id!r}")
+        if not (isinstance(content, str) or callable(content)):
+            raise TypeError("content must be a str or a callable")
+        self.sections.append({"id": id, "content": content, "position": position, "max_chars": max_chars})
+
+
+def _ours(cm):
+    return [r for r in cm.records if r.name.endswith("limitless.prompt_rules")]
+
+
+class Config(unittest.TestCase):
+    def run_register(self, ctx, cfg):
+        with self.assertLogs(level="DEBUG") as cm:
+            logging.getLogger("limitless-prompt-rules-test").debug("anchor")   # assertLogs needs one record
+            prompt_rules.register(ctx, cfg)
+        return [r.getMessage() for r in _ours(cm)]
+
+    def test_on_by_default(self):
+        for cfg in ({}, {"prompt_rules": True}, {"other": False}):
+            with self.subTest(cfg=cfg):
+                self.assertTrue(prompt_rules.enabled(cfg))
+                ctx = SectionCtx()
+                self.assertEqual(self.run_register(ctx, cfg), [])
+                self.assertEqual([s["id"] for s in ctx.sections], [prompt_rules.SECTION_ID])
+
+    def test_false_turns_it_off_with_one_content_free_line(self):
+        for cfg in ({"prompt_rules": False}, {"prompt_rules": "off"}):
+            with self.subTest(cfg=cfg):
+                self.assertFalse(prompt_rules.enabled(cfg))
+                ctx = SectionCtx()
+                self.assertEqual(self.run_register(ctx, cfg), [prompt_rules.DISABLED])
+                self.assertEqual(ctx.sections, [])
+        self.assertFalse(any(c.isdigit() for c in prompt_rules.DISABLED))
+
+    def test_no_config_reads_the_host_config(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "config.json"
+        path.write_text(json.dumps({"prompt_rules": False}))
+        ctx = SectionCtx()
+        with mock.patch.dict(os.environ, {"LIMITLESS_CONFIG": str(path)}, clear=True):
+            self.assertEqual(self.run_register(ctx, None), [prompt_rules.DISABLED])
+        self.assertEqual(ctx.sections, [])
 
 
 if __name__ == "__main__":

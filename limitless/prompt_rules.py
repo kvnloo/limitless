@@ -11,8 +11,18 @@ friendly). The state card stays the only data path. Every rule line has a matchi
 """
 from __future__ import annotations
 
+import logging
+from typing import Optional
+
+from .state_reader import config
+
+logger = logging.getLogger(__name__)
+
 SECTION_ID = "limitless.rules"
 MAX_CHARS = 800   # the host's cap for the section; CONTENT stays well under it
+POSITION = "after_memory"
+CONFIG_KEY = "prompt_rules"   # default on; false (or "off") registers nothing
+DISABLED = "limitless: prompt_rules is off in config; the rules section is not registered"
 
 CONTENT = "\n".join((
     "Limitless plugin rules (they hold in every turn):",
@@ -30,3 +40,17 @@ CONTENT = "\n".join((
 def content() -> str:
     """The section text: always the same constant object."""
     return CONTENT
+
+
+def enabled(cfg: dict) -> bool:
+    """On unless config ``prompt_rules`` is false or \"off\"."""
+    v = cfg.get(CONFIG_KEY, True) if isinstance(cfg, dict) else True
+    return not (v is False or (isinstance(v, str) and v.strip().lower() in ("off", "false")))
+
+
+def register(ctx, cfg: Optional[dict] = None) -> None:
+    """Offer the rules section to the host, unless config turns it off."""
+    if not enabled(config() if cfg is None else cfg):
+        logger.info(DISABLED)
+        return
+    ctx.register_system_prompt_section(SECTION_ID, CONTENT, position=POSITION, max_chars=MAX_CHARS)
