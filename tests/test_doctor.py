@@ -72,5 +72,44 @@ class StateDirRow(DoctorCase):
             self.assertNotIn(str(self.home), r["reason"])
 
 
+class InputRows(DoctorCase):
+    def setUp(self):
+        super().setUp()
+        # inputs.json snapshot taken half an hour before NOW: ages grow by that much
+        self.write("inputs.json", {"at": "2030-01-15T11:30:00Z",
+                                   "ageHours": {"wearable": 3.7, "scale": 51.3, "bike": "down", "anki": None,
+                                                "phone": 23.6}})
+
+    def test_a_fresh_input_is_live(self):
+        r = self.row("input wearable")
+        self.assertEqual((r["kind"], r["status"]), ("input", "live"))
+        self.assertEqual(r["reason"], "recording: updated within the last day")
+
+    def test_an_input_over_the_stale_threshold_is_stale(self):
+        # under the threshold in the snapshot, over it once the snapshot's own age is added (limitless_status)
+        for name in ("input scale", "input phone"):
+            r = self.row(name)
+            self.assertEqual((r["status"], r["reason"]), ("stale", "not recording: no update for over a day"))
+
+    def test_a_down_input_is_stale(self):
+        r = self.row("input bike")
+        self.assertEqual((r["status"], r["reason"]), ("stale", "not recording: the sync reports it down"))
+
+    def test_an_input_with_no_age_is_missing(self):
+        r = self.row("input anki")
+        self.assertEqual((r["status"], r["reason"]), ("missing", "no age for this input in inputs.json"))
+
+    def test_inputs_come_in_name_order_after_the_state_dir(self):
+        names = [r["name"] for r in self.rows() if r["kind"] in ("state", "input")]
+        self.assertEqual(names, ["state dir", "input anki", "input bike", "input phone", "input scale",
+                                 "input wearable"])
+
+    def test_no_inputs_file_is_one_missing_row_with_the_status_tools_reason(self):
+        (self.st / "inputs.json").unlink()
+        r = self.row("inputs")
+        self.assertEqual((r["kind"], r["status"]), ("input", "missing"))
+        self.assertEqual(r["reason"], "no inputs.json (with ageHours) in the state dir")
+
+
 if __name__ == "__main__":
     unittest.main()

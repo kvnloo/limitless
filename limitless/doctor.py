@@ -14,6 +14,9 @@ import os
 from pathlib import Path
 from typing import Mapping, Optional
 
+from . import tools
+from .state_reader import StateReader
+
 LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
 STATUSES = (LIVE, STALE, MISSING, OFF)
 
@@ -42,6 +45,29 @@ def state_row(path: Path) -> dict:
     return _row("state dir", "state", LIVE, "the state dir exists and is readable")
 
 
+INPUT_WORDS = {   # limitless_status's state per input -> (status, reason)
+    "recording": (LIVE, "recording: updated within the last day"),
+    "not recording": (STALE, "not recording: no update for over a day"),
+    "down": (STALE, "not recording: the sync reports it down"),
+    "unknown": (MISSING, "no age for this input in inputs.json"),
+}
+
+
+def input_rows(status_env: dict) -> list:
+    """One row per input named in inputs.json, from limitless_status (tools.status): the same STALE_H
+    threshold, the same snapshot-age rule. No inputs file is one missing row with that tool's reason."""
+    if not isinstance(status_env, dict) or status_env.get("value") is None:
+        reason = (status_env or {}).get("reason") or "no inputs.json in the state dir"
+        return [_row("inputs", "input", MISSING, reason)]
+    out = []
+    for name, got in sorted(status_env["value"]["inputs"].items()):
+        status, reason = INPUT_WORDS.get(got.get("state"), INPUT_WORDS["unknown"])
+        out.append(_row(f"input {name}", "input", status, reason))
+    return out
+
+
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, then each plugin tool."""
-    return [state_row(state_path(cfg))]
+    path = state_path(cfg)
+    reader = StateReader(path)
+    return [state_row(path)] + input_rows(tools.status(reader, now))
