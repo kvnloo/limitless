@@ -26,6 +26,7 @@ or sends. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
@@ -136,21 +137,28 @@ def _cfg_num(cfg: Mapping, key: str, default, ok) -> float:
     return v if v is not None and ok(v) else default
 
 
-def gap_s(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> float:
-    """Config ``feed_reflex_gap_s`` (a positive number of seconds, a duration; default REFLEX_GAP_S)."""
-    return float(_cfg_num(config(env, home), GAP_CONFIG, REFLEX_GAP_S, lambda v: v > 0))
+def _gap_of(cfg: Mapping) -> float:
+    return float(_cfg_num(cfg, GAP_CONFIG, REFLEX_GAP_S, lambda v: v > 0))
 
 
-def thresholds(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
-    """``{often, rarely, min_unlocks}`` from config (shares in (0, 1], a whole count of at least one); a bad
-    value, or rarely above often, falls back to the defaults. Wording only."""
-    cfg = config(env, home)
+def _thresholds_of(cfg: Mapping) -> dict:
     often = _cfg_num(cfg, OFTEN_CONFIG, OFTEN_SHARE, lambda v: 0 < v <= 1)
     rarely = _cfg_num(cfg, RARELY_CONFIG, RARELY_SHARE, lambda v: 0 < v <= 1)
     if rarely > often:
         often, rarely = OFTEN_SHARE, RARELY_SHARE
     least = _cfg_num(cfg, MIN_CONFIG, MIN_UNLOCKS, lambda v: v >= 1 and float(v).is_integer())
     return {"often": often, "rarely": rarely, "min_unlocks": int(least)}
+
+
+def gap_s(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> float:
+    """Config ``feed_reflex_gap_s`` (a positive number of seconds, a duration; default REFLEX_GAP_S)."""
+    return _gap_of(config(env, home))
+
+
+def thresholds(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """``{often, rarely, min_unlocks}`` from config (shares in (0, 1], a whole count of at least one); a bad
+    value, or rarely above often, falls back to the defaults. Wording only."""
+    return _thresholds_of(config(env, home))
 
 
 _DEFAULT_TH = {"often": OFTEN_SHARE, "rarely": RARELY_SHARE, "min_unlocks": MIN_UNLOCKS}
@@ -189,14 +197,26 @@ def review_line(word) -> str:
     return f"Phone: {word} this week." if word in WORDS else ""
 
 
-def read_for(reader, lo: float, hi: float, env: Optional[Mapping[str, str]] = None,
-             home: Optional[Path] = None, tz=None) -> dict:
-    """reflex over [lo, hi) from config: the feed list (feeds_evidence.feed_apps), the phone ActivityWatch DB
-    (unlocks from aw_reader.person_rows, app rows from blocks.read_rows, phone only), ``feed_reflex_gap_s``
-    and the thresholds; plus ``gap_s``, ``thresholds`` and ``label``. Read-only (the DB is opened mode=ro)."""
-    gap, th = gap_s(env, home), thresholds(env, home)
-    feeds = feeds_evidence.feed_apps(env, home)
-    db = reader.aw_db_path(env, home)
+def from_settings(cfg: Mapping, state_dir, lo: float, hi: float, env: Optional[Mapping[str, str]] = None,
+                  tz=None) -> dict:
+    """reflex over [lo, hi) from a config mapping ``cfg`` (the doctor's): the feed list ($LIMITLESS_FEED_APPS,
+    else ``feed_apps``), the phone ActivityWatch DB ($LIMITLESS_AW_DB, else ``aw_db``; relative to
+    ``state_dir``), ``feed_reflex_gap_s`` and the thresholds; plus ``gap_s``, ``thresholds`` and ``label``.
+    Unlocks come from aw_reader.person_rows and app rows from blocks.read_rows: the phone DB only, never the
+    desktop's ActivityWatch. Read-only (the DB is opened mode=ro)."""
+    env = os.environ if env is None else env
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    gap, th = _gap_of(cfg), _thresholds_of(cfg)
+    feeds = env.get(feeds_evidence.ENV_KEY)
+    if not (isinstance(feeds, str) and feeds.strip()):
+        feeds = cfg.get(feeds_evidence.CONFIG_KEY)
+    if isinstance(feeds, str):
+        feeds = feeds.split(",")
+    feeds = feeds_evidence._clean(feeds) if isinstance(feeds, (list, tuple)) else ()
+    db = env.get("LIMITLESS_AW_DB") or cfg.get("aw_db")
+    db = Path(db).expanduser() if isinstance(db, str) and db else None
+    if db is not None and not db.is_absolute():
+        db = Path(state_dir) / db
     if not feeds:
         got = _unknown(NO_FEEDS)
     elif db is None:
@@ -209,3 +229,9 @@ def read_for(reader, lo: float, hi: float, env: Optional[Mapping[str, str]] = No
             unlocks = [r for r in aw_reader.person_rows(db, since_s=lo) if r.get("ts", hi) < hi]
             got = reflex(unlocks, [dict(r, source=PHONE) for r in rows], feeds, gap, tz)
     return dict(got, gap_s=gap, thresholds=th, label=label(got, th))
+
+
+def read_for(reader, lo: float, hi: float, env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None, tz=None) -> dict:
+    """from_settings with the host config (state_reader.config) and the reader's state dir. Read-only."""
+    return from_settings(config(env, home), reader.path, lo, hi, env, tz)

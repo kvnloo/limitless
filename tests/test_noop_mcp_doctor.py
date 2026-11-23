@@ -90,8 +90,9 @@ class Report(unittest.TestCase):
         self.assertEqual(names.count(doctor.NOOP_MCP_ROW), 1)
         at = names.index(doctor.NOOP_MCP_ROW)
         self.assertEqual(names[at - 1], "tool " + doctor.manifest_tools()[-1])
-        self.assertEqual(names[at + 1], doctor.DESKTOP_AW_ROW)   # then the desktop AW row, then voice MIQ
-        self.assertEqual(names[at + 2], doctor.VOICE_MIQ_ROW)
+        self.assertEqual(names[at + 1], doctor.DESKTOP_AW_ROW)   # then the desktop AW row, the feed reflex,
+        self.assertEqual(names[at + 2], doctor.FEED_REFLEX_ROW)  # then voice MIQ
+        self.assertEqual(names[at + 3], doctor.VOICE_MIQ_ROW)
         self.assertEqual(rows[at]["status"], doctor.MISSING)
         self.assertNotIn("mcp", doctor.STRICT_KINDS)
         for r in rows:
