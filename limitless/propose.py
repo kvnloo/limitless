@@ -30,6 +30,12 @@ STATE_KEYS = {
     "quiet": ("on", "off", "quiet tonight", "snoozed"),
     "focus_block": ("in a block", "between blocks"),
     "mode": ("none", "brainstorm", "pm", "copilot", "focused"),
+    "post_wake_peak": ("open", "in use", "closed"),
+    "peak_ask": ("waiting", "spent", "none"),
+    "window": ("peak", "trough", "anytime", "wind_down"),
+    "anki": ("set", "not set"),
+    "habit_week": ("running", "not running"),
+    "habit_today": ("Done", "No", "Skipped", "unlogged"),
 }
 
 # The rule table, in order. ``when``: label name -> the values that satisfy it (all must hold).
@@ -42,6 +48,14 @@ RULES = (
      "because": "focus block: nothing is suggested until the block ends"},
     {"id": "focused-mode", "when": {"mode": ("focused",)}, "action": NO_SUGGESTION,
      "because": "focused mode: nothing is suggested while the person is focused"},
+    {"id": "peak-ask", "when": {"post_wake_peak": ("open",), "peak_ask": ("waiting",)},
+     "action": "decide the one waiting ask",
+     "because": "post-wake peak is open and a peak ask is waiting: one decision fits this stretch"},
+    {"id": "anki-trough", "when": {"window": ("trough",), "anki": ("set",)}, "action": "a short Anki review",
+     "because": "a trough window is open and an Anki collection is set: a light review fits a lighter moment"},
+    {"id": "habit-checkin", "when": {"habit_week": ("running",), "habit_today": ("unlogged",)},
+     "action": "answer today's habit check-in",
+     "because": "a habit week is running and today has no answer yet: one tap answers it"},
 )
 
 
