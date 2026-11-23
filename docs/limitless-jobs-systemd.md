@@ -16,6 +16,24 @@ The older wake-up brief sender, `bin/limitless-brief send`, now passes the same 
 `limitless-jobs` uses) to `kevin-push`, so on one wake whichever sender gets there first is the only
 brief that goes out.
 
+## Who sends what
+
+Each job has one owner that builds its real message. `limitless-jobs --send` never pushes a one-line
+placeholder for a job another sender owns.
+
+| Job | Sent by | With `external_jobs` naming it |
+| --- | --- | --- |
+| `wake_brief` (Wake-up brief) | `limitless-jobs --send` runs `bin/limitless-brief send` (the whole brief, same `wake_brief:<event time>` key). If it is missing or fails, the failure goes to stderr, nothing is sent and the job holds. | `bin/limitless-brief send` on its own schedule only |
+| `nap` (Back from nap) | `limitless-jobs --send` (short text) | your own re-entry sender only (e.g. a Sleep-mode poller), with `bin/limitless-once-key nap` |
+| `miq` (MIQ for tonight?) | `limitless-jobs --send` | your own wind-down sender only, with `bin/limitless-once-key miq --night` |
+| `habit_checkin` (Habit check-in) | `limitless-jobs --send` | your own sender only, with `bin/limitless-once-key habit_checkin` |
+
+Name the jobs another sender owns in `~/.config/limitless/config.json` as `"external_jobs": ["wake_brief", "nap"]`
+or in the env as `LIMITLESS_EXTERNAL_JOBS=wake_brief,nap` (the env wins). For those jobs `limitless-jobs`
+still prints the verdict, with `sent by its own sender, not by limitless-jobs` in the reason, but never
+pushes and never writes `jobs-sent.jsonl`. The default is empty: `limitless-jobs` sends every job.
+`limitless-brief` is `$LIMITLESS_BRIEF_BIN`, else `limitless-brief` on `PATH`, else the repo's `bin/limitless-brief`.
+
 ## Older senders
 
 A sender outside this repo (a shell script for the wind-down question, a nap notice) can ask for
