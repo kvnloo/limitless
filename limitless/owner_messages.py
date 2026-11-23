@@ -8,7 +8,8 @@ a day old while they are active. Every store is read; the newest role ``user`` m
 source wins. Only the timestamp is read: message content is never selected or returned. Each store is
 opened read-only (``mode=ro``) with a short busy timeout; a missing, locked or malformed store counts in
 ``sources_failed`` and never raises. A message stamped more than SKEW_S after ``now`` (a machine whose clock
-is wrong) is ignored; a smaller skew reads as age 0. Nothing here writes or sends. Stdlib only, Python 3.9+.
+is wrong) is ignored; a smaller skew reads as age 0. Paths: ``StateReader.owner_db_paths`` ($LIMITLESS_OWNER_DBS or config ``owner_dbs``; none by default).
+Nothing here writes or sends. Stdlib only, Python 3.9+.
 
 Schema, as in NousResearch/hermes-agent ``persistence/sqlite/_schema_ddl.py`` (0f602c5):
 ``sessions(id, source)``, ``messages(session_id, role, content, timestamp REAL NOT NULL)`` (epoch seconds)
@@ -27,6 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 from urllib.parse import quote
+
+from .state_reader import OWNER_DBS_CONFIG as CONFIG_KEY, OWNER_DBS_ENV as ENV_KEY  # noqa: F401
 
 BUSY_TIMEOUT_S = 0.5   # a store Hermes holds locked counts as failed rather than holding up the turn
 SKEW_S = 300.0         # clock skew between machines tolerated before a timestamp counts as wrong
