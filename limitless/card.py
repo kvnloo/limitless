@@ -188,8 +188,11 @@ def anki_offer(reader: StateReader, now: float, win: dict, env: Optional[Mapping
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
-          owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None) -> dict:
+          owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
+          mask: bool = True) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
+    ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
+    ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
     labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
     tools.owner_message envelope (read from ``env`` when not given)."""
     win = win or window(reader, now, bands)
@@ -242,7 +245,7 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
         else:
             lines[1] += f"; {word}"
     lines = lines[:MAX_LINES]
-    if not raw and MASK_DIGITS:
+    if not raw and MASK_DIGITS and mask:
         lines = [re.sub(r"\d+", "#", ln) for ln in lines]
     return {"text": "\n".join(lines), "lines": lines, "items": items, "age_h": digest_age}
 

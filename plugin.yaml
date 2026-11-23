@@ -1,6 +1,6 @@
 name: limitless
 version: 0.1.0
-description: Limitless Protocol state for the agent - input freshness, today's coarse state card, decision window, this week's habit, the north-star scorecard block, quick capture, a short catch-up after an absence, the body fat trend, the weekly ride count and this week's Anki reviews in words, sleep (the wearable beside a labelled phone proxy), yesterday's naps from phone Sleep mode in words, the wearable's pre-sleep heart rate against the usual in words, the overnight work queue in counts, whether pushes are muted (quiet, snoozed or off), focus blocks from app activity (in a long block, between blocks or unknown), and how broken up the work was over the last week from observed app activity (long blocks, broken up, mixed or unknown), yesterday's long focus blocks with any feed leak and the work items that landed, in words, and the one small next action that fits now from a readable rule table (NO_SUGGESTION by default; it only suggests), and every recurring job as a schedule card on an event trigger, and the next habit to offer from a short ordered catalogue (it only suggests). Read-only except captures and the opt-in tier audit log.
+description: Limitless Protocol state for the agent - input freshness, today's coarse state card, decision window, this week's habit, the north-star scorecard block, quick capture, a short catch-up after an absence, the body fat trend, the weekly ride count and this week's Anki reviews in words, sleep (the wearable beside a labelled phone proxy), yesterday's naps from phone Sleep mode in words, the wearable's pre-sleep heart rate against the usual in words, the overnight work queue in counts, whether pushes are muted (quiet, snoozed or off), focus blocks from app activity (in a long block, between blocks or unknown), and how broken up the work was over the last week from observed app activity (long blocks, broken up, mixed or unknown), yesterday's long focus blocks with any feed leak and the work items that landed, in words, and the one small next action that fits now from a readable rule table (NO_SUGGESTION by default; it only suggests), and every recurring job as a schedule card on an event trigger, and the next habit to offer from a short ordered catalogue (it only suggests), and the state card or the week review as one small self-contained HTML card (digit-free rows, written only when a card dir is set). Read-only except captures, the opt-in tier audit log and the opt-in card file.
 provides_tools:
   - limitless_status
   - limitless_state
@@ -24,6 +24,7 @@ provides_tools:
   - limitless_flow_ledger
   - limitless_propose
   - limitless_schedule
+  - limitless_card_view
 provides_hooks:
   - pre_llm_call
   - post_gateway_admission

@@ -122,6 +122,22 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     return _BODY.get(spec.name, spec.send_title)
 
 
+def week_review_body(state_dir, habit: Optional[dict], synced: Optional[dict] = None,
+                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                     tz: Optional[tzinfo] = None, today: Optional[date] = None) -> str:
+    """The week review's whole message (body for jobs.week_review(habit)) with every review line read from
+    ``state_dir``: the one text run_once sends and limitless_card_view shows. Read-only; never sends."""
+    return body(jobs.week_review(habit), habit, None, synced, week_flow(state_dir, habit, env, home, tz),
+                week_passive(state_dir, habit, env, home), week_body(state_dir, env, home, today),
+                rides_line=week_rides(state_dir, env, home, today),
+                sleep_line=week_sleep(state_dir, env, home, today, tz),
+                fragment=week_flow_metrics(state_dir, habit, env, home, tz),
+                anki_line=week_anki(state_dir, habit, env, home, tz, today),
+                target_days=weekly_target.target_days(env, home),
+                naps_line=week_naps(state_dir, env, home, today, tz), rule_line=week_rule(habit, synced, env, home),
+                presleep_line=week_presleep_hr(state_dir, env, home, today))
+
+
 def delivered(result: object) -> bool:
     """True only for a real Telegram delivery as push reported it."""
     return result is True or result == DELIVERED
@@ -622,25 +638,15 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
         elif action == jobs.DELIVER and not dry_run and (push is not None or own):
             if own:
                 ok, how = _send_brief(brief)       # the whole brief, same event key; never the placeholder
+            elif spec.name == jobs.WEEK_REVIEW.name:
+                text = week_review_body(state_dir, p.habit, p.synced, env, home, tz, today)
+                ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             else:
-                flow = week_flow(state_dir, p.habit, env, home, tz) if spec.name == jobs.WEEK_REVIEW.name else ""
-                review = spec.name == jobs.WEEK_REVIEW.name
-                passive = week_passive(state_dir, p.habit, env, home) if review else ""
-                body_line = week_body(state_dir, env, home, today) if review else ""
                 miq = spec.name == jobs.MIQ.name
                 plan = _overnight.plan_for(state_dir, now, env, home) if miq else ""
                 wind = miq_wind_down(p.evs, v.trigger_at, env, home, tz) if miq else ""
-                rides_line = week_rides(state_dir, env, home, today) if review else ""
-                sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
-                presleep_line = week_presleep_hr(state_dir, env, home, today) if review else ""
-                fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
-                anki_line = week_anki(state_dir, p.habit, env, home, tz, today) if review else ""
-                naps_line = week_naps(state_dir, env, home, today, tz) if review else ""
-                rule_line = week_rule(p.habit, p.synced, env, home) if review else ""
-                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
-                            body_line, plan, rides_line, sleep_line, fragment, anki_line,
-                            target_days=weekly_target.target_days(env, home), naps_line=naps_line,
-                            wind_down_line=wind, rule_line=rule_line, presleep_line=presleep_line)
+                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, overnight=plan,
+                            target_days=weekly_target.target_days(env, home), wind_down_line=wind)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
