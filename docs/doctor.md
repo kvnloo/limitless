@@ -21,6 +21,7 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `input <name>`, one per name in `inputs.json` | input | recording: within `STALE_H` (the `limitless_status` rule: the snapshot's age plus the input's age) | over the threshold, or reported `down` | no age for it; no `inputs.json` at all is one `inputs` row | |
 | `last sync run` | run | the last valid row of `runs.jsonl` is at most `STALE_H` old and did not fail | older, or it failed | no timestamped row | |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
+| `export Open Wearables`, before the NOOP job | export | config `open_wearables_export` is `dry_run` or `write` and the last `limitless-ow-export` run read the server within `STALE_H` (`open-wearables.json`) | on but it has not run yet; its last good run is older; or `failing:` its last run could not read the server or write the sleep file (the plain reason) | | `open_wearables_export` is `off` (the default) ([open-wearables.md](open-wearables.md)) |
 | `job NOOP export`, last | job | config `noop_export` is `dry_run` or `write` and the export ran after the newest sync that copied the NOOP database, and exported (`noop-export.json`) | a sync copied the NOOP database and it has not run after it yet; no sync has copied it yet; or its last run found nothing to export (the plain reason) or could not write a file | | `noop_export` is `off` (the default) ([noop-export.md](noop-export.md)) |
 
 The thresholds are the plugin's own (`envelope.STALE_H`, the one `limitless_status` and the labeler use); the
@@ -89,6 +90,7 @@ tool limitless_schedule: live: answers from direct evidence
 tool limitless_card_view: off: no card dir set (config card_dir): the card is rendered only
 tool limitless_focus_safe: off: the focus guard is off (config focus_safe)
 tool limitless_result_tier: off: no health tools listed (config t0_tools)
+export Open Wearables: off: the Open Wearables export is off (config open_wearables_export)
 job NOOP export: off: the NOOP export job is off (config noop_export)
 $ limitless-doctor --strict > /dev/null; echo $?
 1
