@@ -2,6 +2,7 @@
 
     stop_rule.rule("most_done")           -> "most_done" (a listed id), else None
     stop_rule.verdict(habit, "most_done", synced)   -> keep | drop | your call | unknown
+    stop_rule.review_line("keep")         -> "Your rule says: keep it" (the week review's line; "" for unknown)
     habit_start.start_week(..., stop_rule="most_done", write=True)   # stored in habit.json as "stop_rule"
 
 The weekly review keeps the one habit or drops it by a rule the person set before the week began, not by
@@ -68,3 +69,14 @@ def verdict(habit_week: Optional[dict], rule_id: Any, synced: Optional[dict] = N
     if rid == "not_a_chore":
         return KEEP                                    # whether it felt like a chore is the person's reply
     return YOUR_CALL
+
+
+REVIEW_PREFIX = "Your rule says: "
+_REVIEW_WORDS = {KEEP: "keep it", DROP: "drop it", YOUR_CALL: "your call"}
+
+
+def review_line(v: Any) -> str:
+    """The week review's line for a verdict: "Your rule says: keep it" / "drop it" / "your call"; "" for
+    unknown or anything else (no line: the review is as it was). Digit-free; the reply still decides."""
+    w = _REVIEW_WORDS.get(v) if isinstance(v, str) else None
+    return REVIEW_PREFIX + w if w else ""
