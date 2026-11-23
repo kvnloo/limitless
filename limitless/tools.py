@@ -20,6 +20,7 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body_calibration
                stop_rule as _stop_rule,
                strength as _strength, tier_audit as _tier_audit,
                weekly_target as _weekly_target, wind_down)
+from . import mock_guard as _mock_guard
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            PRESLEEP_HR_CONFIG, RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
@@ -76,15 +77,20 @@ def labeled(env: dict) -> dict:
     return with_label(env, _labeler.label("age_h", env.get("age_h"), env.get("modality")))
 
 
-def status(reader: StateReader, now: float) -> dict:
-    """Each input's current age, which inputs are not recording (> STALE_H old or down), the last run."""
+def status(reader: StateReader, now: float, cfg: Optional[Mapping] = None) -> dict:
+    """Each input's current age, which inputs are not recording (> STALE_H old or down), the last run. An input
+    named for a demo or sample device (mock_guard, with ``cfg``'s mock_device_patterns) is state "demo": no age,
+    listed as unknown, never recording."""
     inp = reader.inputs()
     if not inp or not isinstance(inp.get("ageHours"), dict):
         return missing("no inputs.json (with ageHours) in the state dir")
     snap_h = _age_h(inp.get("at"), now)
     inputs, not_recording, unknown = {}, [], []
     for name, age in sorted(inp["ageHours"].items()):
-        if age == "down":
+        if _mock_guard.is_mock(name, cfg):
+            inputs[name] = {"age_h": None, "state": "demo"}
+            unknown.append(name)
+        elif age == "down":
             inputs[name] = {"age_h": None, "state": "down"}
             not_recording.append(name)
         elif isinstance(age, (int, float)) and not isinstance(age, bool) and snap_h is not None:

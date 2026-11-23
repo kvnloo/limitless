@@ -34,6 +34,7 @@ from __future__ import annotations
 import re
 from typing import Mapping, Optional
 
+from . import mock_guard
 from .envelope import STALE_H
 from .state_reader import parse_ts
 
@@ -91,7 +92,9 @@ def wearable_inputs(cfg: Optional[Mapping]) -> tuple:
     whose sync names each device's input), else WEARABLE_INPUTS. Blank and non-text names are ignored."""
     v = cfg.get(WEARABLE_INPUTS_KEY) if isinstance(cfg, Mapping) else None
     names = tuple(n.strip() for n in v if isinstance(n, str) and n.strip()) if isinstance(v, list) else ()
-    return names or WEARABLE_INPUTS
+    if not names:
+        return WEARABLE_INPUTS
+    return tuple(n for n in names if not mock_guard.is_mock(n, cfg))   # demo inputs never count: () when all are
 
 
 def wearable_age_h(inputs, now: float, names=WEARABLE_INPUTS) -> Optional[float]:
@@ -101,7 +104,7 @@ def wearable_age_h(inputs, now: float, names=WEARABLE_INPUTS) -> Optional[float]
     hours = inputs.get("ageHours") if isinstance(inputs, Mapping) else None
     if not isinstance(hours, Mapping):
         return None
-    ages = [a for a in (hours.get(n) for n in names or ())
+    ages = [a for a in (hours.get(n) for n in names or () if not mock_guard.is_mock(n))
             if not isinstance(a, bool) and isinstance(a, (int, float))]
     if not ages:
         return None

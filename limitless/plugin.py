@@ -46,7 +46,7 @@ def _reader() -> StateReader:
 
 
 def _status(args, now):
-    return tools.status(_reader(), now)
+    return tools.status(_reader(), now, config())
 
 
 def _state(args, now):
