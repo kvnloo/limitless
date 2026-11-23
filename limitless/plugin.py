@@ -15,7 +15,6 @@ from typing import Callable
 from . import capture, card, labeler, scorecard, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
-from .window import window
 
 TOOLSET = "limitless"
 _ENVELOPE = ("Returns an evidence envelope {value, modality (measured|imported|proxy|self_report|messages), age_h, "
@@ -41,7 +40,7 @@ def _state(args, now):
 
 
 def _window(args, now):
-    return window(_reader(), now, _bands())
+    return tools.window(_reader(), now, _bands())
 
 
 def _habit(args, now):
@@ -96,7 +95,10 @@ TOOLS = {
         "limitless_window",
         "The current decision window: peak, trough, anytime, asleep or unknown, inferred from state "
         "events (phone Sleep mode, the wake event, the last unlock), never from the clock. Ask for "
-        "decisions in peak, reviews in trough; capture works anytime."), _window, "🪟"),
+        "decisions in peak, reviews in trough; capture works anytime. `asks` plans the queue of asks waiting on "
+        "the person (LIMITLESS_ASKS or config asks_path): deliver, hold and fold counts and a plain label "
+        "(one decision ready, decisions waiting, nothing waiting); at most one decision per peak window, a "
+        "focus block holds all but urgent asks. It only reads the queue: nothing is sent."), _window, "🪟"),
     "limitless_habit": (_schema(
         "limitless_habit",
         "This week's one habit, its 2-minute start and the check-ins so far (Done, No, Skipped), plus "

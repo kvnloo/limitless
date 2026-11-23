@@ -40,6 +40,16 @@ def _band(hours: float, bands: Mapping) -> str:
     return "anytime"
 
 
+def wake_at(sleep_rows: list) -> Optional[float]:
+    """The wake event: the last Sleep-mode off that follows an on, or None."""
+    rows = sorted((r for r in sleep_rows if parse_ts(r.get("at")) is not None), key=lambda r: parse_ts(r["at"]))
+    wake = None
+    for prev, cur in zip(rows, rows[1:]):
+        if prev.get("on") and not cur.get("on"):
+            wake = parse_ts(cur["at"])
+    return wake
+
+
 def classify(sleep_rows: list, poll: Optional[dict], last_unlock: Optional[dict], *, now: float,
              bands: Optional[Mapping] = None) -> dict:
     bands = bands or DEFAULT_BANDS
@@ -58,13 +68,10 @@ def classify(sleep_rows: list, poll: Optional[dict], last_unlock: Optional[dict]
     if not (poll_fresh or unlock_recent):
         return _unknown("no live Sleep-mode poll and no recent unlock")
     evidence_s = now - poll_at if poll_fresh else now - unlock_at
-    wake_at = None
-    for prev, cur in zip(rows, rows[1:]):
-        if prev.get("on") and not cur.get("on"):
-            wake_at = parse_ts(cur["at"])
-    if wake_at is None:
+    wake = wake_at(rows)
+    if wake is None:
         return _unknown("awake, but no wake event (Sleep mode off after on)", evidence_s / 3600)
-    since_h = (now - wake_at) / 3600
+    since_h = (now - wake) / 3600
     if since_h < 0:
         return _unknown("the wake event is in the future (clock skew)", evidence_s / 3600)
     if since_h > MAX_AWAKE_H:

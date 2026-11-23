@@ -176,6 +176,38 @@ def pending(rows: Iterable) -> list:
     return [r for r in rows if isinstance(r, dict) and r.get("delivered_at") in (None, "")]
 
 
+def delivered_since(rows: Iterable, since: Optional[float]) -> int:
+    """Peak asks (not urgent) the host delivered at or after ``since`` (the event that opened the window)."""
+    if since is None:
+        return 0
+    n = 0
+    for r in rows:
+        if not isinstance(r, dict) or r.get("urgent") is True or classify(r) != PEAK:
+            continue
+        t = parse_ts(r.get("delivered_at"))
+        if t is not None and t >= since:
+            n += 1
+    return n
+
+
+READY, WAITING, NOTHING = "one decision ready", "decisions waiting", "nothing waiting"
+
+
+def summary(asks: Iterable, planned: List[Row]) -> dict:
+    """``{deliver, hold, fold}`` counts and a digit-free T1 label: one decision ready (a peak or urgent
+    ask delivers now), decisions waiting (an ask holds), else nothing waiting. Anytime asks go through the
+    send gate and FYIs into the brief, so they alone are nothing waiting. No titles, no ids."""
+    rows = list(asks or ())
+    counts = {a: 0 for a in ACTIONS}
+    ready = False
+    for ask, (_, action, _) in zip(rows, planned):
+        counts[action] += 1
+        urgent = isinstance(ask, dict) and ask.get("urgent") is True
+        ready = ready or (action == DELIVER and (urgent or classify(ask) == PEAK))
+    word = READY if ready else WAITING if counts[HOLD] else NOTHING
+    return dict(counts, label={"label": word, "tier": "T1", "modality": None})
+
+
 def plan_queue(window: Any, sent_this_window: Any = 0, env: Optional[Mapping[str, str]] = None,
                home: Optional[Path] = None) -> List[Row]:
     """plan() over the pending asks of the configured queue; [] when there is no readable queue."""

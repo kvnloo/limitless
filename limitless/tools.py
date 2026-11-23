@@ -5,16 +5,41 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import (feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
+from . import (asks as _asks, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
                owner_messages as _owner, prediction as _prediction, scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
-from .window import MAX_AWAKE_H
+from .glide_provider import GlideProvider
+from .window import MAX_AWAKE_H, wake_at
+from .window import window as _window
+from .window_chain import EventProvider, first_known
 
 
 def _age_h(at, now: float):
     t = parse_ts(at)
     return None if t is None else max(0.0, now - t) / 3600
+
+
+def asks_view(reader: StateReader, now: float, bands: Optional[Mapping] = None,
+              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """The asks queue (asks.queue_path) planned against the window chain (Glide, then Sleep mode and unlocks):
+    ``{deliver, hold, fold}`` counts and a digit-free T1 label. Peak asks delivered since the wake event
+    count against the one decision per peak window. Read-only; nothing sends."""
+    rows = _asks.read(_asks.queue_path(env, home))
+    events = EventProvider.from_reader(reader, now, bands)
+    state = {"value": "asleep"} if events.asleep else first_known(GlideProvider.from_config(env, home, now=now),
+                                                                 events)
+    sent = _asks.delivered_since(rows, wake_at(reader.sleepmode()))
+    todo = _asks.pending(rows)
+    return _asks.summary(todo, _asks.plan(todo, state, sent))
+
+
+def window(reader: StateReader, now: float, bands: Optional[Mapping] = None,
+           env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """limitless_window: the window.py envelope plus ``asks`` (asks_view)."""
+    out = _window(reader, now, bands)
+    out["asks"] = asks_view(reader, now, bands, env, home)
+    return out
 
 
 def labeled(env: dict) -> dict:

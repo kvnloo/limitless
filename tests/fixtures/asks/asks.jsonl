@@ -1,0 +1,5 @@
+{"id": "t_0000aaaa", "kind": "decision", "title": "t_0000aaaa: yesterday's synthetic choice", "at": "2030-01-14T19:00:00Z", "delivered_at": "2030-01-14T20:00:00Z"}
+{"id": "t_1111bbbb", "kind": "decision", "title": "choose the synthetic plan", "at": "2030-01-15T08:00:00Z"}
+{"id": "t_2222cccc", "kind": "approval", "effort": "deep", "title": "approve the synthetic draft", "at": "2030-01-15T09:00:00Z"}
+{"id": "t_3333dddd", "kind": "approval", "effort": "light", "title": "ok the synthetic rename", "at": "2030-01-15T09:30:00Z"}
+{"id": "t_4444eeee", "kind": "fyi", "title": "the synthetic build finished", "at": "2030-01-15T10:00:00Z"}
