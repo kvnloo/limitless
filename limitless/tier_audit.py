@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Optional
 
-from .state_reader import config
+from .state_reader import config, parse_ts
 
 ENV_KEY = "LIMITLESS_AUDIT"
 CONFIG_KEY = "audit_path"
@@ -136,3 +136,43 @@ def audit_result(hook: str, result, opt_in: bool, env: Optional[Mapping[str, str
     if gate(hook, "\n".join(words), opt_in, env, home, now) is None:
         return _without_digit_labels(result)
     return result
+
+
+def _zero() -> dict:
+    return {"injections": 0, "t0_with_opt_in": 0, "t0_without_opt_in": 0, "blocked": 0}
+
+
+def check(path, since=None) -> dict:
+    """Counts of the audit rows at or after ``since`` (epoch seconds or ISO time; None = all). Never raises."""
+    out = _zero()
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except (OSError, TypeError, ValueError):
+        return out
+    floor = parse_ts(since) if since is not None else None
+    for ln in text.splitlines():
+        try:
+            row = json.loads(ln)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or row.get("tier") not in (T0, T1):
+            continue
+        at = parse_ts(row.get("at")) if isinstance(row.get("at"), str) else None
+        if at is None or (floor is not None and at < floor):
+            continue
+        if row.get("blocked") is True:
+            out["blocked"] += 1
+            continue
+        out["injections"] += 1
+        if row["tier"] == T0:
+            out["t0_with_opt_in" if row.get("opt_in") is True else "t0_without_opt_in"] += 1
+    return out
+
+
+def words(counts: Mapping) -> list:
+    """The counts as plain lines for a person (bin/limitless-tier-audit)."""
+    n = counts.get("injections", 0)
+    return [f"{n} injection" + ("" if n == 1 else "s"),
+            f"{counts.get('t0_with_opt_in', 0)} with raw numbers under the opt-in",
+            f"{counts.get('t0_without_opt_in', 0)} with raw numbers without the opt-in",
+            f"{counts.get('blocked', 0)} blocked (dropped, not sent)"]

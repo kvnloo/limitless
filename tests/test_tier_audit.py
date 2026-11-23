@@ -83,5 +83,99 @@ class Record(Base):
         self.assertFalse(tier_audit.record({"tier": object()}, env=self.env, home=self.home))
 
 
+class Check(Base):
+    def write(self, *lines):
+        self.log.write_text("".join(ln + "\n" for ln in lines))
+
+    def row(self, at, tier="T1", opt_in=False, blocked=False):
+        return json.dumps({"at": at, "hook": "pre_llm_call", "tier": tier, "lines": 3,
+                           "digits": 0 if tier == "T1" else 2, "opt_in": opt_in, "sha256": "0" * 64,
+                           "blocked": blocked})
+
+    def test_counts(self):
+        self.write(self.row("2030-01-14T07:00:00Z"), self.row("2030-01-15T07:00:00Z"),
+                   self.row("2030-01-15T08:00:00Z", "T0", opt_in=True),
+                   self.row("2030-01-15T09:00:00Z", "T0", blocked=True),
+                   self.row("2030-01-15T10:00:00Z", "T0"))
+        self.assertEqual(tier_audit.check(self.log), {"injections": 4, "t0_with_opt_in": 1,
+                                                      "t0_without_opt_in": 1, "blocked": 1})
+
+    def test_since(self):
+        self.write(self.row("2030-01-14T07:00:00Z", "T0"), self.row("2030-01-15T07:00:00Z"))
+        got = tier_audit.check(self.log, since="2030-01-15T00:00:00Z")
+        self.assertEqual(got, {"injections": 1, "t0_with_opt_in": 0, "t0_without_opt_in": 0, "blocked": 0})
+        self.assertEqual(tier_audit.check(self.log, since=1894665600.0)["injections"], 1)
+
+    def test_bad_lines_are_skipped(self):
+        self.write("not json", "[1, 2]", "{}", json.dumps({"tier": "T9", "at": "2030-01-15T07:00:00Z"}),
+                   json.dumps({"tier": "T0", "at": "never"}), self.row("2030-01-15T07:00:00Z"), "{\"at\": ")
+        self.assertEqual(tier_audit.check(self.log), {"injections": 1, "t0_with_opt_in": 0,
+                                                      "t0_without_opt_in": 0, "blocked": 0})
+
+    def test_missing_or_broken_file_is_zero_counts(self):
+        zero = {"injections": 0, "t0_with_opt_in": 0, "t0_without_opt_in": 0, "blocked": 0}
+        self.assertEqual(tier_audit.check(Path(self.tmp.name) / "nope.jsonl"), zero)
+        self.assertEqual(tier_audit.check(Path(self.tmp.name)), zero)  # a directory
+        self.log.write_bytes(b"\xff\xfe\x00garbage")
+        self.assertEqual(tier_audit.check(self.log), zero)
+        self.assertEqual(tier_audit.check(None), zero)
+
+    def test_what_record_writes_check_reads(self):
+        for text, opt in ((CARD_T1, False), (CARD_DIGITS, True), (CARD_DIGITS, False)):
+            tier_audit.gate("pre_llm_call", text, opt, env=self.env, home=self.home, now=NOW)
+        self.assertEqual(tier_audit.check(self.log), {"injections": 2, "t0_with_opt_in": 1,
+                                                      "t0_without_opt_in": 0, "blocked": 1})
+
+
+class Cli(Base):
+    BIN = ROOT / "bin" / "limitless-tier-audit"
+
+    def run_cli(self, *args, env=None):
+        import subprocess
+        e = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.home)}
+        e.update(env or {})
+        return subprocess.run([sys.executable, "-I", str(self.BIN), *args], capture_output=True, text=True,
+                              env=e, timeout=30)
+
+    def test_plain_words_and_exit_zero(self):
+        tier_audit.gate("pre_llm_call", CARD_T1, False, env=self.env, home=self.home, now=NOW)
+        tier_audit.gate("pre_llm_call", CARD_DIGITS, False, env=self.env, home=self.home, now=NOW)
+        p = self.run_cli(str(self.log))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines(), [
+            "1 injection", "0 with raw numbers under the opt-in", "0 with raw numbers without the opt-in",
+            "1 blocked (dropped, not sent)"])
+        self.assertNotIn(MARKER, p.stdout)
+
+    def test_exit_one_on_a_leak(self):
+        self.log.write_text(json.dumps({"at": "2030-01-15T07:00:00Z", "tier": "T0", "opt_in": False,
+                                        "blocked": False, "sha256": "0" * 64}) + "\n")
+        p = self.run_cli(env=self.env)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("1 with raw numbers without the opt-in", p.stdout)
+
+    def test_since_and_days(self):
+        self.log.write_text(json.dumps({"at": "2030-01-14T07:00:00Z", "tier": "T0", "opt_in": False,
+                                        "blocked": False, "sha256": "0" * 64}) + "\n")
+        p = self.run_cli(str(self.log), "--since", "2030-01-15T00:00:00Z")
+        self.assertEqual((p.returncode, p.stdout.splitlines()[0]), (0, "0 injections"))
+        p = self.run_cli(str(self.log), "--days", "7")  # the row is from 2030: still inside "since 7 days ago"
+        self.assertEqual(p.returncode, 1)
+
+    def test_missing_file_or_no_path_is_zero_never_a_traceback(self):
+        for args, env in (((str(Path(self.tmp.name) / "nope.jsonl"),), {}), ((), {}),
+                          (("--since", "not a date"), self.env), (("--days", "x"), self.env)):
+            p = self.run_cli(*args, env=env)
+            self.assertNotIn("Traceback", p.stderr)
+            self.assertIn(p.returncode, (0, 2))
+        p = self.run_cli()
+        self.assertEqual((p.returncode, p.stdout.splitlines()[0]), (0, "0 injections"))
+
+    def test_writes_nothing(self):
+        self.run_cli(env=self.env)
+        self.assertFalse(self.log.exists())
+        self.assertFalse((ROOT / "bin" / "__pycache__").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""limitless-tier-audit [path] [--since ISO | --days N]: count what the tier audit log says a model saw.
+
+The path is the argument, else $LIMITLESS_AUDIT, else "audit_path" in config.json. Prints four plain lines:
+injections sent, those with raw numbers under the opt-in, those with raw numbers without it, and cards
+blocked (dropped, not sent). Exit 1 when any injection had raw numbers without the opt-in, else 0. A missing
+or broken file, or no configured path, counts zero. Read-only: it never writes a file and never sends.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+import argparse  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import tier_audit  # noqa: E402
+from limitless.state_reader import parse_ts  # noqa: E402
+
+
+def _since(v):
+    if parse_ts(v) is None and not v.replace(".", "", 1).isdigit():
+        raise argparse.ArgumentTypeError("not an ISO time or epoch seconds")
+    return float(v) if v.replace(".", "", 1).isdigit() else v
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-tier-audit", description="Count the tier audit log.")
+    ap.add_argument("path", nargs="?", help="the audit log (default: $LIMITLESS_AUDIT or config audit_path)")
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--since", type=_since, help="only rows at or after this ISO time or epoch")
+    g.add_argument("--days", type=float, help="only rows from the last N days (the weekly check: 7)")
+    a = ap.parse_args(argv[1:])
+    path = Path(a.path) if a.path else tier_audit.audit_path()
+    since = a.since if a.days is None else time.time() - a.days * 86400
+    counts = tier_audit.check(path, since) if path is not None else tier_audit.check(None)
+    print("\n".join(tier_audit.words(counts)))
+    return 1 if counts["t0_without_opt_in"] > 0 else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
