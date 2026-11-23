@@ -12,6 +12,8 @@ While the post-wake peak applies (peak.read_for: from the wake event, never a cl
 window line's words when the card is full; nothing when the peak is closed or unknown.
 The habit line gains the passive habit days' T1 words (tools.habit ``passive``, a proxy) when there are any,
 e.g. "habit: none set this week; phone data shows the first hour mostly feed-free"; never a count.
+An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
+MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
 opt-in is dropped, not sent.
 """
@@ -23,7 +25,7 @@ import time
 from datetime import date, timedelta
 from typing import Any, Callable, Mapping, Optional
 
-from . import bedtime, flow_week, peak as _peak
+from . import bedtime, flow_week, modes, peak as _peak
 from . import labeler as _labeler
 from . import tier_audit, tools
 from .envelope import STALE_H, envelope, missing
@@ -255,6 +257,9 @@ def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[
             return None
         now, raw = clock(), raw_in_prompt(e)
         text = cache.get(reader, now, today(), raw=raw, bands=bands, labeler=_labeler.from_config(e), env=e)
+        mode_line = modes.line(modes.load(reader.path))   # attention mode: presentation only; none adds nothing
+        if mode_line:
+            text = f"{text}\n{mode_line}"
         text = tier_audit.gate("pre_llm_call", text, raw, env=e, now=now)  # a digit without the opt-in: drop
         return None if text is None else {"context": text}
 

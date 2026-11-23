@@ -1,7 +1,9 @@
 """Plugin wiring: tool schemas -> handlers, hooks. Uses only the published ctx API (hermes_cli/plugins_context.py):
 ctx.register_tool(name, toolset, schema, handler, check_fn=None, requires_env=None, is_async=False,
-description="", emoji="", override=False) and ctx.register_hook(hook_name, callback). Hooks: pre_llm_call (the
-state card) and post_gateway_admission (bedtime capture, bedtime.py).
+description="", emoji="", override=False), ctx.register_hook(hook_name, callback) and, when the host has it,
+ctx.register_command(name, handler, description="", args_hint="") for the ``/limitless mode`` slash command
+(attention modes, modes.py). Hooks: pre_llm_call (the state card) and post_gateway_admission (bedtime capture,
+bedtime.py).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
 result is recorded by tier_audit (content-free).
@@ -14,7 +16,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import bedtime, capture, card, catchup, labeler, scorecard, tier_audit, tools
+from . import bedtime, capture, card, catchup, labeler, modes, scorecard, tier_audit, tools
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
 
@@ -241,10 +243,22 @@ is unknown, never zero. Read-only; nothing is written or sent."), _flow_metrics,
 }
 
 
+def _mode_command(raw_args: str) -> str:
+    """/limitless mode [...]: the host's slash-command handler contract, fn(raw_args) -> str; never raises."""
+    try:
+        return modes.command(raw_args, state_dir())
+    except Exception:  # noqa: BLE001 - a slash command must never raise into the session
+        return modes.NOT_SET
+
+
 def register(ctx) -> None:
     for name, (schema, fn, emoji) in TOOLS.items():
         ctx.register_tool(name=name, toolset=TOOLSET, schema=schema, handler=_handler(fn, name),
                           description=schema["description"], emoji=emoji)
+    # /limitless mode brainstorm|pm|copilot|focused|off (attention modes: presentation only, modes.py);
+    # a host without the slash-command API gets everything else
+    if callable(getattr(ctx, "register_command", None)):
+        ctx.register_command("limitless", _mode_command, description=modes.DESCRIPTION, args_hint=modes.ARGS_HINT)
     ctx.register_hook("pre_llm_call", card.make_pre_llm_call(
         clock=lambda: time.time(), today=lambda: date.fromtimestamp(time.time()), bands=_bands()))
     # after an absence over catchup_after_h, the first turn also gets a short catch-up (once per absence)

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (asks as _asks, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics,
-               habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
+               habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
@@ -29,11 +29,13 @@ def asks_view(reader: StateReader, now: float, bands: Optional[Mapping] = None,
               env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
     """The asks queue (asks.queue_path) planned against the window chain (Glide, then Sleep mode and unlocks):
     ``{deliver, hold, fold}`` counts and a digit-free T1 label. Peak asks delivered since the wake event
-    count against the one decision per peak window. Read-only; nothing sends."""
+    count against the one decision per peak window; focused mode (modes.py) holds them like a focus block.
+    Read-only; nothing sends."""
     rows = _asks.read(_asks.queue_path(env, home))
     events = EventProvider.from_reader(reader, now, bands)
     state = {"value": "asleep"} if events.asleep else first_known(GlideProvider.from_config(env, home, now=now),
                                                                  events)
+    state = _modes.apply(state, _modes.load(reader.path))   # focused holds non-urgent asks like a focus block
     sent = _asks.delivered_since(rows, wake_at(reader.sleepmode()))
     todo = _asks.pending(rows)
     return _asks.summary(todo, _asks.plan(todo, state, sent))
