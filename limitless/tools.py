@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (asks as _asks, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
-               owner_messages as _owner, prediction as _prediction, scorecard as _scorecard)
+               owner_messages as _owner, passive_habit, prediction as _prediction, scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
 from .glide_provider import GlideProvider
@@ -145,17 +145,23 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
     ``phone_hint`` (seen | not seen | unknown, evidence_tier "proxy") says what the phone saw in the
     first hour after the latest wake; it never changes a check-in. ``decision`` (Keep or Drop) and
     ``decided_at`` appear once the person answered the week review; an undecided week has neither.
+    ``passive`` (passive_habit.summary: days_measured, days_met, modality proxy, a T1 label) is what the
+    configured passive habit file measured for this week's days so far; it never changes a check-in,
+    ``counts`` or ``logged``, and is absent when there is no such row (unknown, not zero).
+    With no confirmed week, see _no_week.
     """
     h = reader.habit()
     if not h or not h.get("habit"):
-        return missing("no habit.json with a habit: no habit set this week")
+        return _no_week(reader, now, today, missing("no habit.json with a habit: no habit set this week"), env, home)
     age_h = _age_h(h.get("at"), now)
     try:
         start = date.fromisoformat(str(h.get("week_of")))
     except ValueError:
-        return envelope(None, "self_report", age_h, reason="habit.json has no valid week_of date")
+        return _no_week(reader, now, today,
+                        envelope(None, "self_report", age_h, reason="habit.json has no valid week_of date"), env, home)
     if not start <= today < start + timedelta(days=7):
-        return envelope(None, "self_report", age_h, reason=f"habit.json is for the week of {start}, not this week")
+        why = f"habit.json is for the week of {start}, not this week"
+        return _no_week(reader, now, today, envelope(None, "self_report", age_h, reason=why), env, home)
     synced = reader.habit_days()
     wakes = {r.get("day"): _age_h(r.get("wake"), now) for r in reader.habit1() if isinstance(r.get("day"), str)}
     tapped = {d for d in (h.get("checkins") or {}) if _checkin(h["checkins"][d]) != "unlogged"} \
@@ -177,6 +183,9 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
     decision = jobs.habit_decision(h)
     if decision is not None:
         value.update(decision=decision, decided_at=h.get("decided_at"))
+    passive = passive_habit.view(reader, start, today, env, home)
+    if passive is not None:
+        value["passive"] = passive   # beside the check-ins, never merged into them
     if any(d["from"] == "sync" for d in days):
         ages = [a for a in sync_ages + [age_h] if a is not None]
         out = envelope(value, "proxy", min(ages) if ages else None)
@@ -184,6 +193,31 @@ def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapp
         out = envelope(value, "self_report", age_h)
     out["phone_hint"] = phone_hint(reader, now, env, home)
     return out
+
+
+def _no_week(reader: StateReader, now: float, today: date, out: dict, env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None) -> dict:
+    """``out`` (no confirmed habit week) as it is, unless the passive habit file has rows for today and the
+    six days before. Then a proxy envelope whose value is ``{habit: None, week_of: None, started: False,
+    reason, passive}`` with the T1 label "habit not started; <what phone data shows>". Measured evidence
+    only: nothing is written, no day is Done and no week starts (habit_start is the one place that does)."""
+    first = today - timedelta(days=passive_habit.WINDOW_DAYS - 1)
+    passive = passive_habit.view(reader, first, today, env, home)
+    if passive is None:
+        return out
+    value = {"habit": None, "week_of": None, "started": False, "reason": out.get("reason"), "passive": passive}
+    res = envelope(value, passive_habit.MODALITY, _passive_age_h(reader, now, env, home))
+    res["label"] = passive_habit.not_started_label(passive)
+    return res
+
+
+def _passive_age_h(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> Optional[float]:
+    p = reader.passive_habit_file(env, home)
+    try:
+        return None if p is None else max(0.0, now - p.stat().st_mtime) / 3600
+    except OSError:
+        return None
 
 
 def habit_start(state_dir, habit, today: date, now: float, confirm: bool = False) -> dict:

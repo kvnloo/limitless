@@ -7,6 +7,8 @@ opts in to raw numbers. Labels describe one imported or proxy value; nothing her
 The hook's card is cached until the window class, a card input file's mtime, the date, the raw flag or the
 owner-message label (tools.owner_message: one short read-only probe of each owner session DB per turn) changes.
 A bedtime capture last night (bedtime.saved_last_night) adds the digit-free line "ideas saved last night".
+The habit line gains the passive habit days' T1 words (tools.habit ``passive``, a proxy) when there are any,
+e.g. "habit: none set this week; phone data shows the first hour mostly feed-free"; never a count.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
 opt-in is dropped, not sent.
 """
@@ -107,6 +109,20 @@ def flow_label(reader: StateReader, today: date, env: Optional[Mapping[str, str]
     return flow_week.t1_label(this, last)
 
 
+def _passive_word(hv: Optional[dict]) -> Optional[str]:
+    """The passive habit days' digit-free T1 words (tools.habit value ``passive``), else None."""
+    word = (((hv or {}).get("passive") or {}).get("label") or {}).get("label")
+    return word if isinstance(word, str) and not any(ch.isdigit() for ch in word) else None
+
+
+def _passive_mtime(reader: StateReader, env: Optional[Mapping[str, str]]) -> Optional[int]:
+    p = reader.passive_habit_file(env)
+    try:
+        return None if p is None else p.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
 def _aw_mtime(reader: StateReader, env: Optional[Mapping[str, str]]) -> Optional[int]:
     p = reader.aw_db_path(env)
     try:
@@ -138,12 +154,17 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
              f"window: {win['value']}" + (f" ({win['modality']})" if win["value"] != "unknown" else "")
              + _owner_text(owner),
              "; ".join(_metric_text(n, items[n], u) for n, _, u in METRICS)]
-    h = tools.habit(reader, now, today)
-    items["habit_today"] = h if h["value"] is None else envelope(h["value"]["today"], "self_report", h["age_h"])
-    if h["value"] is None:
-        lines.append("habit: none set this week")
+    h = tools.habit(reader, now, today, env)
+    hv = h["value"] if isinstance(h.get("value"), dict) else None
+    if hv is not None and hv.get("habit"):
+        items["habit_today"] = envelope(hv["today"], "self_report", h["age_h"])
+        lines.append(f"habit this week: {hv['habit']}; today {hv['today']}")
     else:
-        lines.append(f"habit this week: {h['value']['habit']}; today {h['value']['today']}")
+        items["habit_today"] = h if hv is None else missing(hv.get("reason") or "no habit set this week")
+        lines.append("habit: none set this week")
+    passive = _passive_word(hv)
+    if passive:
+        lines[-1] += f"; {passive}"
     flow = flow_label(reader, today, env)
     if flow is not None:
         lines[-1] += f"; flow: {flow}"
@@ -189,7 +210,8 @@ class CardCache:
         win = window(reader, now, bands)
         owner = tools.owner_message(reader, now, env)
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
-               tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env))
+               tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
+               _passive_mtime(reader, env))
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env)["text"]

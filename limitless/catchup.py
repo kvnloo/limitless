@@ -9,7 +9,8 @@ The catch-up is used only when ``now - last_seen`` is over ``catchup_after_h`` h
 
     [limitless] catch-up: away for a day or two; next: look at the asks waiting
     inputs not recording: bike, scale        (tools.status)
-    habit week: running, today Done         (habit.json, jobs.habit_week_gate)
+    habit week: running, today Done         (habit.json, jobs.habit_week_gate; then the passive habit
+                                             days' T1 words when there are any: tools.habit ``passive``)
     while away: messages sent: a few; captures saved: one   (jobs-sent.jsonl, captures.jsonl since last_seen)
     asks waiting: one                        (asks.py: pending rows of the configured queue)
 
@@ -113,8 +114,18 @@ def _inputs(reader: StateReader, now: float):
     return ("inputs: some unknown" if v["unknown"] else "inputs: all recording"), False
 
 
-def _habit(reader: StateReader, now: float, today: date):
-    """(line, keep-or-drop open?)"""
+def _habit(reader: StateReader, now: float, today: date, env: Optional[Mapping[str, str]] = None,
+           home: Optional[Path] = None):
+    """(line, keep-or-drop open?); the passive habit days' T1 words follow when there are any."""
+    line, open_ = _habit_week(reader, now, today, env, home)
+    t = tools.habit(reader, now, today, env, home)
+    v = t.get("value") if isinstance(t, dict) and isinstance(t.get("value"), dict) else {}
+    word = ((v.get("passive") or {}).get("label") or {}).get("label")
+    return (f"{line}; {word}" if isinstance(word, str) and word else line), open_
+
+
+def _habit_week(reader: StateReader, now: float, today: date, env: Optional[Mapping[str, str]] = None,
+                home: Optional[Path] = None):
     h = reader.habit()
     if h is None:
         return "habit week: unknown", False
@@ -122,7 +133,7 @@ def _habit(reader: StateReader, now: float, today: date):
         return f"habit week: closed ({jobs.habit_decision(h)})", False
     gate = jobs.habit_week_gate(h, today)
     if gate is None:
-        t = tools.habit(reader, now, today)
+        t = tools.habit(reader, now, today, env, home)
         day = (t.get("value") or {}).get("today") if isinstance(t, dict) else None
         return "habit week: running" + (f", today {day}" if day else ""), False
     if gate.reason == jobs.NO_WEEK:
@@ -135,7 +146,7 @@ def build(reader: StateReader, now: float, last_seen: float, *, env: Optional[Ma
     """{"text", "lines"}: the catch-up since ``last_seen``; at most MAX_LINES digit-free lines."""
     today = today or date.fromtimestamp(now)
     inputs, inputs_down = _inputs(reader, now)
-    habit, habit_open = _habit(reader, now, today)
+    habit, habit_open = _habit(reader, now, today, env, home)
     sent = _count_file(reader, jobs_runner.SENT_LOG, "t", last_seen, now)
     caps = _count_file(reader, CAPTURES, "at", last_seen, now)
     waiting = _asks_waiting(env, home)
