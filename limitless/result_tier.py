@@ -24,14 +24,23 @@ and null stay.
 None (the result is left alone) for: a tool no glob matches, config ``raw_numbers_opt_in`` true (only the JSON
 true), an error result (``status`` error, or a JSON object with an ``error``), a result that is not a string,
 or a result with no number. Nothing here raises: any exception is None, the same fail-open the host applies.
+
+The hook (make_transform_tool_result, registered for Hermes ``transform_tool_result``) reads host config on
+each call and, for each result it replaces, records one content-free tier_audit row (``result_event``: hook
+``transform_tool_result:result_tier``, the glob that matched and the count of numbers replaced; never a
+value, the text or a hash; nothing when the audit is off). A failed audit write never stops the replacement.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import json
 import re
+import time
 from fnmatch import fnmatchcase
-from typing import Mapping, Optional, Tuple
+from typing import Callable, Mapping, Optional, Tuple
+
+from . import tier_audit
+from .state_reader import config
 
 T0_KEY, OPT_IN_KEY = "t0_tools", "raw_numbers_opt_in"
 PLACEHOLDER = "a number"
@@ -137,3 +146,21 @@ def transform(tool_name, result, status=None, cfg=None) -> Optional[str]:
     """The replacement result string, or None to leave the result alone. Never raises."""
     got = apply(tool_name, result, status, cfg)
     return got[0] if got else None
+
+
+def make_transform_tool_result(clock: Callable[[], float] = time.time) -> Callable:
+    """The Hermes ``transform_tool_result`` callback: the replacement string or None; never raises."""
+    def transform_tool_result(tool_name: str = "", args=None, result=None, status=None, **kwargs) -> Optional[str]:
+        try:
+            got = apply(tool_name, result, status, config())
+        except Exception:  # noqa: BLE001 - fail open: the result goes on unchanged
+            return None
+        if got is None:
+            return None
+        text, glob, n = got
+        try:
+            tier_audit.record(tier_audit.result_event(glob, n, clock()))
+        except Exception:  # noqa: BLE001 - the audit must never put a raw result back in
+            pass
+        return text
+    return transform_tool_result
