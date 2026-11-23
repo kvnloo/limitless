@@ -61,7 +61,7 @@ ul{list-style:none;margin:0;padding:0}
 animation:rise .5s ease-out both}
 .row:first-child{border-top:0}
 .text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
-.chip{flex:0 0 auto;margin-top:.2rem;padding:.15rem .6rem;border-radius:99rem;font-size:.85rem;
+.chip{flex:0 0 5.2rem;margin-top:.2rem;padding:.15rem .3rem;text-align:center;border-radius:99rem;font-size:.85rem;
 font-weight:600;letter-spacing:.02em}
 .known .chip{background:var(--known-bg);color:var(--known-ink)}
 .unknown .chip{background:var(--unknown-bg);color:var(--unknown-ink)}
