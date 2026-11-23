@@ -2,6 +2,7 @@
 
     p = post_wake_peak(wake_at, now, peak_h=PEAK_H, blocks=None, long_s=..., gap_s=...)
     # {"open": bool, "in_use": bool, "why": str, "label": str | None}
+    p = read_for(reader, now, env)                    # the same, from the state dir and config (read-only)
 
 Open from the wake event (``wake_at``, epoch seconds: a long Sleep-mode on then off, or a screen-event wake;
 jobs.wake_times) until ``peak_h`` hours after it. ``peak_h`` is config ``post_wake_peak_h`` (default 2): it
@@ -21,9 +22,12 @@ after ``now`` are not read; unknown blocks (None) leave the peak open. Unknown a
 from __future__ import annotations
 
 import math
-from typing import Optional
+from pathlib import Path
+from typing import Mapping, Optional
 
 from . import blocks as _blocks
+from . import jobs, jobs_runner
+from .state_reader import config
 from .window import MAX_AWAKE_H
 
 PEAK_H, PEAK_CONFIG = 2.0, "post_wake_peak_h"
@@ -77,3 +81,22 @@ def post_wake_peak(wake_at, now: float, peak_h=PEAK_H, blocks=None, long_s: floa
     if _used(blocks, wake, now, long_s, gap_s):
         return _out(True, "in use: a focus block started inside the peak", IN_USE, in_use=True)
     return _out(True, "open since the wake event: the pre-planned task fits now", OPEN)
+
+
+def read_for(reader, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """post_wake_peak from the state dir: the latest wake event at or before ``now`` (jobs.wake_times over
+    jobs_runner.events: Sleep mode, else screen-event wakes), config ``post_wake_peak_h``, and the focus
+    blocks and break_after_min / block_gap_min of blocks.read_for. Unreadable events are unknown. Read-only."""
+    try:
+        wakes = jobs.wake_times(jobs_runner.events(reader, env, home), now)
+    except Exception:  # noqa: BLE001 - unreadable state is unknown, never a traceback
+        wakes = []
+    wake = wakes[-1] if wakes else None
+    if wake is None:
+        return _out(False, NO_WAKE)
+    try:
+        got = _blocks.read_for(reader, now, env, home)
+    except Exception:  # noqa: BLE001 - no block data leaves the peak open, as unknown blocks do
+        got = {"blocks": None, "break_after_s": LONG_S, "gap_s": _blocks.GAP_S}
+    return post_wake_peak(wake, now, config(env, home).get(PEAK_CONFIG), blocks=got["blocks"],
+                          long_s=got["break_after_s"], gap_s=got["gap_s"])

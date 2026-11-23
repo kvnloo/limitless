@@ -7,6 +7,9 @@ opts in to raw numbers. Labels describe one imported or proxy value; nothing her
 The hook's card is cached until the window class, a card input file's mtime, the date, the raw flag or the
 owner-message label (tools.owner_message: one short read-only probe of each owner session DB per turn) changes.
 A bedtime capture last night (bedtime.saved_last_night) adds the digit-free line "ideas saved last night".
+While the post-wake peak applies (peak.read_for: from the wake event, never a clock time) the card says
+"post-wake peak: open" or "post-wake peak: in use" on a line of its own under the window line, or after the
+window line's words when the card is full; nothing when the peak is closed or unknown.
 The habit line gains the passive habit days' T1 words (tools.habit ``passive``, a proxy) when there are any,
 e.g. "habit: none set this week; phone data shows the first hour mostly feed-free"; never a count.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -18,9 +21,9 @@ import os
 import re
 import time
 from datetime import date, timedelta
-from typing import Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from . import bedtime, flow_week
+from . import bedtime, flow_week, peak as _peak
 from . import labeler as _labeler
 from . import tier_audit, tools
 from .envelope import STALE_H, envelope, missing
@@ -34,6 +37,7 @@ CARD_FILES = ("inputs.json", "digests.jsonl", "habit.json", "asks-latest.json", 
 SAVED_LABEL = "ideas saved last night"  # digit-free: the count is in the wake brief
 _WEAKEST_LAST = ("measured", "messages", "imported", "self_report", "proxy")
 MASK_DIGITS = True  # the second guard: lines are built from T1 labels first
+_UNSET = object()
 
 
 def sleep_label(hours: float) -> str:
@@ -138,10 +142,19 @@ def _saved_last_night(reader: StateReader, now: float, env: Optional[Mapping[str
         return 0
 
 
+def peak_label(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """The post-wake peak's digit-free words while it applies (peak.read_for), else None. Never raises."""
+    try:
+        word = _peak.read_for(reader, now, env).get("label")
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+    return word if isinstance(word, str) and not any(c.isdigit() for c in word) else None
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
-          owner: Optional[dict] = None) -> dict:
+          owner: Optional[dict] = None, peak: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
     tools.owner_message envelope (read from ``env`` when not given)."""
@@ -180,6 +193,12 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
             lines.append(SAVED_LABEL)
         else:
             lines[-1] += f"; {SAVED_LABEL}"
+    word = peak_label(reader, now, env) if peak is _UNSET else peak
+    if word:
+        if len(lines) < MAX_LINES:
+            lines.insert(2, word)
+        else:
+            lines[1] += f"; {word}"
     lines = lines[:MAX_LINES]
     if not raw and MASK_DIGITS:
         lines = [re.sub(r"\d+", "#", ln) for ln in lines]
@@ -209,12 +228,13 @@ class CardCache:
             env: Optional[Mapping[str, str]] = None) -> str:
         win = window(reader, now, bands)
         owner = tools.owner_message(reader, now, env)
+        word = peak_label(reader, now, env)   # the peak closes with time, not a file change: part of the key
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env))
+               _passive_mtime(reader, env), word)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
-                               owner=owner, env=env)["text"]
+                               owner=owner, env=env, peak=word)["text"]
             self._key = key
             self.builds += 1
         return self._text
