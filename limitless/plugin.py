@@ -21,7 +21,8 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs_runner,
+from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs,
+               jobs_runner,
                labeler, modes, prompt_rules, schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .prediction import LAG_DAYS as _PREDICTION_LAGS
@@ -546,7 +547,8 @@ def _register_cards(ctx) -> None:
         return
     try:
         ledger = _reader().idea_ledger_path() is not None
-        for c in schedule_cards.cards(external=jobs_runner.external_jobs(), ledger=ledger):
+        noop = jobs.noop_mode(config()) != jobs.NOOP_OFF
+        for c in schedule_cards.cards(external=jobs_runner.external_jobs(), ledger=ledger, noop=noop):
             method(c)
     except Exception:  # noqa: BLE001 - a host's card API must never break plugin registration
         logger.warning(schedule_cards.HOST_FAILED)

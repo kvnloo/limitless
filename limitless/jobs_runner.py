@@ -35,12 +35,21 @@ Break nudge: the ActivityWatch DB's focus blocks (blocks.read_for: config ``flow
 ``break:<block start>`` (break_key), so one block gets one nudge whoever polls; jobs.break_verdict drops it
 once the block ended a while ago. Unknown blocks (no DB, no work apps) say so in the row; they are never "no
 block".
+
+NOOP export: with config ``noop_export`` dry_run or write, one more row (noop_export_row). When the newest runs.jsonl
+row says the sync copied the NOOP database and the mark ``noop-export.json`` has not seen that row, a pass that is
+not a dry run calls ``noop_export.main`` in-process and writes the mark; nothing is pushed or logged as sent, and
+no process is started. Off (the default): no row, nothing read.
 """
 from __future__ import annotations
 
 import inspect
+import io
 import json
+import math
 import os
+import re
+import tempfile
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
@@ -51,7 +60,7 @@ from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
     wind_down
-from . import glide_provider
+from . import glide_provider, noop_export as _noop_export
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -689,6 +698,110 @@ def _break(v: jobs.Verdict, p: _Pass, now: float) -> jobs.Verdict:
     return jobs.break_verdict(v, p.evs, now, blk.get("gap_s", _blocks.GAP_S))
 
 
+NOOP_MARK = "noop-export.json"
+NOOP_DONE, NOOP_NOTHING, NOOP_NOT_WRITTEN, NOOP_FAILED = "done", "nothing to export", "a file was not written", \
+    "failed"
+_NOOP_NOTHING = (_noop_export.NO_DB, _noop_export.NO_FILE, _noop_export.NOT_NOOP)
+_DIGITS = re.compile(r"\d+(?:[.,:]\d+)*")
+# the CLI's dry-run hint, said the way the job is switched to writing
+_NOOP_CLI_HINT = "(run with --write to write them)"
+_NOOP_JOB_HINT = f'(config {jobs.NOOP_CONFIG} "{jobs.NOOP_WRITE}" writes them)'
+
+
+def _epoch(v) -> Optional[float]:
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
+
+
+def load_noop_mark(state_dir) -> dict:
+    """noop-export.json as ``{"row_at", "ran_at", "mode", "outcome", "said"}``; {} when missing or malformed.
+    ``row_at`` and ``ran_at`` are epoch seconds or None."""
+    try:
+        data = json.loads((Path(state_dir) / NOOP_MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    said = data.get("said")
+    return {"row_at": _epoch(data.get("row_at")), "ran_at": _epoch(data.get("ran_at")),
+            "mode": data.get("mode") if data.get("mode") in jobs.NOOP_MODES else None,
+            "outcome": data.get("outcome") if isinstance(data.get("outcome"), str) else None,
+            "said": [s for s in said if isinstance(s, str)] if isinstance(said, list) else []}
+
+
+def _write_noop_mark(state_dir, mark: dict) -> None:
+    """noop-export.json, atomic (a temp file in the state dir, then a rename) and 0600."""
+    d = Path(state_dir)
+    fd, tmp = tempfile.mkstemp(prefix="." + NOOP_MARK + ".", suffix=".tmp", dir=str(d))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(mark, sort_keys=True) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, d / NOOP_MARK)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _noop_words(text: str) -> list:
+    """noop_export.main's printed lines, digit-free (it prints counts in words and never a path, a device or a
+    reading; a number from anywhere else becomes "a number")."""
+    return [_DIGITS.sub("a number", ln.replace(_NOOP_CLI_HINT, _NOOP_JOB_HINT)).strip()
+            for ln in text.splitlines() if ln.strip()]
+
+
+def run_noop_export(state_dir, row_at: float, now: float, mode: str, env: Optional[Mapping[str, str]] = None,
+                    home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
+    """Call noop_export.main in-process (``--write`` only in write mode) and record the run in noop-export.json:
+    the epoch seconds of the runs.jsonl row it acted on (``row_at``) and of this run (``ran_at``), the mode, the
+    outcome and what it said, in words only. A plain reason (no ``noop_db``, no file, not a NOOP DB) is the
+    outcome "nothing to export", recorded like any run, so the same copy is never retried: never an error loop.
+    Returns the mark. Starts, stops and sends nothing."""
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        code = _noop_export.main(["--write"] if mode == jobs.NOOP_WRITE else [], env=env, home=home, tz=tz,
+                                 out=out, err=err)
+    except Exception as e:  # noqa: BLE001 - a broken export must not stop the other jobs or loop
+        code, said = None, [f"the export failed ({type(e).__name__})"]
+    else:
+        said = _noop_words(out.getvalue()) + _noop_words(err.getvalue())
+    first = said[0] if said else ""
+    outcome = (NOOP_FAILED if code is None else NOOP_NOT_WRITTEN if code != 0
+               else NOOP_NOTHING if first in _NOOP_NOTHING or first.startswith(_noop_export.SCHEMA_PREFIX)
+               else NOOP_DONE)
+    mark = {"row_at": row_at, "ran_at": now, "mode": mode, "outcome": outcome, "said": said}
+    _write_noop_mark(state_dir, mark)
+    return mark
+
+
+def noop_export_row(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, str]] = None,
+                    home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[dict]:
+    """The NOOP export's ``{job, action, reason}`` row, or None when config ``noop_export`` is off (no row: the
+    pass is as before). Due (jobs.noop_export_verdict) and not ``dry_run``: runs it (run_noop_export) and says
+    what it found in words; ``dry_run``: the verdict only, nothing read, run or written."""
+    mode = jobs.noop_mode(config(env, home))
+    if mode == jobs.NOOP_OFF:
+        return None
+    v = jobs.noop_export_verdict(mode, StateReader(Path(state_dir)).last_run(),
+                                 load_noop_mark(state_dir).get("row_at"), now)
+    title = jobs.NOOP_EXPORT.send_title
+    if v.action != jobs.RUN:
+        return {"job": title, "action": v.action, "reason": v.reason}
+    if dry_run:
+        return {"job": title, "action": v.action, "reason": f"{v.reason}; dry run of limitless-jobs: not run"}
+    try:
+        mark = run_noop_export(state_dir, v.trigger_at, now, mode, env, home, tz)
+    except OSError as e:
+        return {"job": title, "action": jobs.HOLD,
+                "reason": f"{v.reason}; the mark was not written ({type(e).__name__}); the next run tries again"}
+    said = "; ".join(mark["said"]) or "nothing said"
+    return {"job": title, "action": v.action, "reason": f"{v.reason}; ran ({mark['outcome']}): {said}"}
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -748,4 +861,5 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             else:
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
-    return rows
+    noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
+    return rows + ([noop] if noop is not None else [])

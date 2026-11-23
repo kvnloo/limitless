@@ -4,8 +4,9 @@
 
 status is one of STATUSES: live, stale, missing or off. The rows are the state dir (exists, readable), each
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
-last sync run's age in words from runs.jsonl, and one row per tool in plugin.yaml, from that tool's own
-envelope for an empty call. Reasons are words only: a digit is never printed, and neither is a tool's value.
+last sync run's age in words from runs.jsonl, one row per tool in plugin.yaml, from that tool's own
+envelope for an empty call, and the NOOP export job's row (config noop_export, its mark noop-export.json).
+Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
 from __future__ import annotations
@@ -25,6 +26,7 @@ from .state_reader import StateReader, config, parse_ts
 
 LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
 STATUSES = (LIVE, STALE, MISSING, OFF)
+STRICT_KINDS = ("state", "input", "run")   # the rows --strict counts
 
 
 def _row(name: str, kind: str, status: str, reason: str) -> dict:
@@ -105,6 +107,38 @@ def run_row(reader: StateReader, now: float) -> dict:
     tail = " and failed" if ok is False else " and finished ok" if ok is True else ""
     status = LIVE if age_h <= STALE_H and ok is not False else STALE
     return _row("last sync run", "run", status, f"the last sync run was {age_words(age_h)}{tail}")
+
+
+NOOP_ROW = "job NOOP export"
+_NOOP_MODE_WORDS = {"dry_run": "dry run mode (counts only, no file written)", "write": "write mode"}
+
+
+def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
+    """The NOOP export job (jobs.NOOP_EXPORT, config ``noop_export``) from runs.jsonl and its mark noop-export.json:
+    off by config; stale while the newest sync copied the NOOP database and the export has not run after it, when
+    no sync has copied it yet, or when the last run exported nothing or could not write; else live. Words only."""
+    from . import jobs, jobs_runner   # jobs_runner -> noop_export; card imports jobs_runner too
+    mode = jobs.noop_mode(cfg)
+    if mode == jobs.NOOP_OFF:
+        return _row(NOOP_ROW, "job", OFF, f"the NOOP export job is {jobs.NOOP_IS_OFF}")
+    mark = jobs_runner.load_noop_mark(reader.path)
+    v = jobs.noop_export_verdict(mode, reader.last_run(), mark.get("row_at"), now)
+    if v.action == jobs.RUN:
+        return _row(NOOP_ROW, "job", STALE, "a sync copied the NOOP database and the export has not run after it "
+                                            "yet (limitless-jobs --send runs it)")
+    if mark.get("ran_at") is None:
+        return _row(NOOP_ROW, "job", STALE, f"on ({_NOOP_MODE_WORDS[mode]}), but no sync run has copied the NOOP "
+                                            "database yet")
+    ago = age_words(max(0.0, now - mark["ran_at"]) / 3600)
+    said = mark["said"][0] if mark.get("said") else "nothing said"
+    outcome = mark.get("outcome") or "unknown"
+    ran = f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync that copied the NOOP " \
+          f"database"
+    if outcome == jobs_runner.NOOP_DONE:
+        return _row(NOOP_ROW, "job", LIVE, f"{ran}: {outcome}")
+    if outcome == jobs_runner.NOOP_NOTHING:
+        return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}: {said}")
+    return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
 
 
 MANIFEST = Path(__file__).resolve().parents[1] / "plugin.yaml"
@@ -212,7 +246,8 @@ def tool_row(name: str, now: float) -> dict:
 
 
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, then each tool in plugin.yaml.
+    """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, then the NOOP export
+    job (noop_export_row).
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -220,6 +255,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
+    rows += [noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
 
@@ -234,8 +270,9 @@ def as_json(rows: list) -> str:
 
 
 def strict_failed(rows: list) -> bool:
-    """--strict: true when the state dir, an input or the last sync run is not live (tool rows never count)."""
-    return any(r["kind"] != "tool" and r["status"] != LIVE for r in rows)
+    """--strict: true when the state dir, an input or the last sync run is not live (tool and job rows never
+    count)."""
+    return any(r["kind"] in STRICT_KINDS and r["status"] != LIVE for r in rows)
 
 
 def main(argv=None, now: Optional[float] = None) -> int:

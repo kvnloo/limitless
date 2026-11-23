@@ -1107,12 +1107,14 @@ def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] =
     ``value: {cards}`` holds the raw cards (ids, event names, stale_after_s, budget). Outside it only plain
     words: ``lines`` (one card description each) and the T1 ``label``, both through tier_audit.gate (hook
     tool:limitless_schedule, never opted in); a digit there drops both and says why. The habit cards follow
-    habit.json's cue; ``external_jobs`` marks jobs another sender owns; a configured idea ledger adds its card.
+    habit.json's cue; ``external_jobs`` marks jobs another sender owns; a configured idea ledger adds its card,
+    and config ``noop_export`` (dry_run or write) adds the NOOP export's.
     Modality derived, age_h None.
     Nothing is written, sent, scheduled or registered.
     """
     cards = _schedule_cards.cards(external=jobs_runner.external_jobs(env, home), habit=reader.habit(),
-                                  ledger=reader.idea_ledger_path(env, home) is not None)
+                                  ledger=reader.idea_ledger_path(env, home) is not None,
+                                  noop=jobs.noop_mode(config(env, home)) != jobs.NOOP_OFF)
     lines = [c["description"] for c in cards]
     word = _schedule_cards.label(len(cards))
     out = {"value": {"cards": cards}, "modality": _schedule_cards.MODALITY, "age_h": None, "evidence_tier": "direct"}

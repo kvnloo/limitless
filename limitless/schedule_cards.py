@@ -71,12 +71,15 @@ def specs(habit: Optional[dict] = None) -> list:
     return [per_habit[n](habit) if n in per_habit else s for n, s in jobs.SPECS.items()]
 
 
-def cards(external: Iterable[str] = (), habit: Optional[dict] = None, ledger: bool = False) -> list:
+def cards(external: Iterable[str] = (), habit: Optional[dict] = None, ledger: bool = False,
+          noop: bool = False) -> list:
     """One card per job spec, in jobs.SPECS order. ``external``: job names another sender owns
     (jobs_runner.external_jobs); ``habit``: habit.json, whose ``cue`` moves the two habit cards; ``ledger``
-    (an idea ledger is configured) adds ledger_card() last."""
+    (an idea ledger is configured) adds ledger_card(); ``noop`` (config ``noop_export`` is not off) adds
+    noop_export_card() last."""
     ext = set(external or ())
-    return [card_for(s, ext) for s in specs(habit)] + ([ledger_card()] if ledger else [])
+    return [card_for(s, ext) for s in specs(habit)] + ([ledger_card()] if ledger else []) + \
+        ([noop_export_card()] if noop else [])
 
 
 LEDGER_ID = "idea_ledger"
@@ -96,6 +99,26 @@ def ledger_card() -> dict:
             "trigger": LEDGER_SPEC.trigger_event, "ends": LEDGER_SPEC.expires, "window": LEDGER_SPEC.window_class,
             "stale_after_s": None, "once_key": f"{LEDGER_ID}:<night date>", "budget": 0,
             "per_window": LEDGER_SPEC.max_per_window, "sender": LOCAL, "words": w}
+
+
+NOOP_RUNS = "limitless-jobs --send"
+NOOP_DOES = ("nothing is sent; it reads the NOOP copy and, in write mode, merges the sleep file and the pre-sleep "
+             "heart-rate file")
+NOOP_WINDOW = "asleep or awake: it sends nothing, so no window holds it"
+
+
+def noop_export_card() -> dict:
+    """The NOOP export's one card (jobs.NOOP_EXPORT): limitless-jobs runs noop_export.main once per sync that
+    copied the NOOP database (a runs.jsonl row whose ``noop`` says so). Not a jobs.SPECS job: it pushes nothing
+    (budget zero), no decision window holds it and it has no clock time."""
+    spec = jobs.NOOP_EXPORT
+    w = jobs.to_schedule_card(spec)
+    w.update(window=NOOP_WINDOW, delivery=NOOP_DOES, runs=NOOP_RUNS)
+    desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {NOOP_DOES}'
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+            "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
+            "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
+            "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
 
 
 def label(n: int) -> str:
