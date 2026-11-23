@@ -94,5 +94,85 @@ class Schema(Base):
         self.assertIsNone(nx.read(self.db, tz=UTC)["reason"])
 
 
+class Sleep(Base):
+    D = date(2030, 1, 10)
+
+    def sleep(self, sessions, **kw):
+        make_db(self.db, sessions=sessions, **kw)
+        got = nx.read(self.db, tz=UTC)
+        self.assertIsNone(got["reason"])
+        return got
+
+    def test_one_row_per_night_named_by_the_evening_it_began(self):
+        on = at(self.D, 23)
+        late = at(self.D + timedelta(days=2), 1, 30)     # began after midnight: still the evening before's night
+        got = self.sleep([(RING, on, on + 8 * H, 0.9, stages(on, 7 * H, H)),
+                          (RING, late, late + 6 * H, 0.9, stages(late, 6 * H))])
+        self.assertEqual(got["sleep"], [
+            {"night": "2030-01-10", "asleep_s": 7 * H, "source": nx.SOURCE,
+             "start": "2030-01-10T23:00:00Z", "end": "2030-01-11T07:00:00Z"},
+            {"night": "2030-01-11", "asleep_s": 6 * H, "source": nx.SOURCE,
+             "start": "2030-01-12T01:30:00Z", "end": "2030-01-12T07:30:00Z"}])
+
+    def test_only_a_wearable_source_is_read(self):
+        on = at(self.D, 23)
+        got = self.sleep([(PHONE, on, on + 8 * H, 0.9, stages(on, 8 * H)),
+                          (IMPORT, on + 60, on + 8 * H, 0.9, stages(on + 60, 7 * H))])
+        self.assertEqual(got["sleep"], [])
+        self.assertEqual(got["skipped"]["not_wearable"], 2)
+
+    def test_the_longest_wearable_session_of_a_night_is_the_night(self):
+        nap = at(self.D, 19)
+        on = at(self.D, 23)
+        got = self.sleep([(RING, nap, nap + H, 0.9, stages(nap, H)),
+                          (RING, on, on + 8 * H, 0.9, stages(on, 7 * H, H))])
+        self.assertEqual([(r["night"], r["asleep_s"]) for r in got["sleep"]], [("2030-01-10", 7 * H)])
+
+    def test_asleep_time_comes_from_the_stages_else_the_efficiency_else_no_row(self):
+        on = at(self.D, 23)
+        on2, on3 = on + 86400, on + 2 * 86400
+        got = self.sleep([(RING, on, on + 8 * H, 0.5, stages(on, 7 * H, H)),   # stages win over efficiency
+                          (RING, on2, on2 + 8 * H, 0.75, None),
+                          (RING, on3, on3 + 8 * H, None, None)])               # in bed is not asleep: no row
+        self.assertEqual([(r["night"], r["asleep_s"]) for r in got["sleep"]],
+                         [("2030-01-10", 7 * H), ("2030-01-11", 6 * H)])
+        self.assertEqual(got["skipped"]["no_asleep_time"], 1)
+
+    def test_imported_stage_shapes_are_read(self):
+        on = at(self.D, 23)
+        on2 = on + 86400
+        got = self.sleep([(RING, on, on + 8 * H, None,
+                           '[{"stage":"awake","min":60},{"stage":"light","min":240},{"stage":"deep","min":60},'
+                           '{"stage":"rem","min":120}]'),
+                          (RING, on2, on2 + 8 * H, None, '{"awake":30,"light":300,"deep":60,"rem":90}')])
+        self.assertEqual([r["asleep_s"] for r in got["sleep"]], [7 * H, 7 * H + 30 * 60])
+
+    def test_a_hand_set_onset_is_the_onset(self):
+        on = at(self.D, 23)
+        got = self.sleep([(RING, on, on + 8 * H, 0.9, stages(on, 7 * H, H), on + 30 * 60)])
+        self.assertEqual(got["sleep"][0]["start"], "2030-01-10T23:30:00Z")
+
+    def test_a_dismissed_or_impossible_session_is_skipped(self):
+        on = at(self.D, 23)
+        on2 = on + 86400
+        on3 = on + 2 * 86400
+        got = self.sleep([(RING, on, on + 8 * H, 0.9, stages(on, 7 * H, H)),
+                          (RING, on2, on2 + 30 * H, 0.9, None),          # longer than a day: not a night
+                          (RING, on3, on3, 0.9, None)],                  # no span
+                         dismissed=[(RING, on, on + 8 * H)])
+        self.assertEqual(got["sleep"], [])
+
+    def test_a_bad_stages_text_falls_back_to_the_efficiency(self):
+        on = at(self.D, 23)
+        got = self.sleep([(RING, on, on + 8 * H, 0.75, "not json")])
+        self.assertEqual(got["sleep"][0]["asleep_s"], 6 * H)
+
+    def test_a_missing_hand_set_onset_column_reads_the_detected_onset(self):
+        on = at(self.D, 23)
+        got = self.sleep([(RING, on, on + 8 * H, 0.9, stages(on, 7 * H, H))],
+                         drop_column=("sleepSession", "startTsAdjusted"))
+        self.assertEqual(len(got["sleep"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

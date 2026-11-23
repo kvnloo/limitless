@@ -15,11 +15,20 @@ missing) and no rows: never a guess from a schema this module does not know.
 """
 from __future__ import annotations
 
+import json
+import math
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
+from .sleep import EVENING_FROM_H
+from .state_reader import MAX_ASLEEP_S
+
+SOURCE = "noop"              # the one source name the sleep rows carry: never a device, model or id
+WEARABLE_KINDS = ("liveBLE", "historyBLE", "oura", "huami")   # pairedDevice.sourceKind read straight off a strap
+ASLEEP_STAGES = ("light", "deep", "rem")
 NO_FILE = "no NOOP database at the configured path"
 NOT_NOOP = "the configured file is not a readable SQLite database"
 SCHEMA_PREFIX = "not a NOOP database this exporter knows: "
@@ -58,6 +67,110 @@ def _empty(reason) -> dict:
     return {"sleep": [], "presleep": [], "reason": reason, "skipped": {}}
 
 
+def _int(v) -> Optional[int]:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return int(v)
+
+
+def _stage_seconds(seg) -> tuple:
+    """(stage name, seconds) for one stage entry of either NOOP list shape; (None, 0) when unreadable."""
+    if not isinstance(seg, dict) or not isinstance(seg.get("stage"), str):
+        return None, 0
+    a, b, m = _int(seg.get("start")), _int(seg.get("end")), seg.get("min")
+    if a is not None and b is not None:
+        return seg["stage"], max(0, b - a)
+    if not isinstance(m, bool) and isinstance(m, (int, float)) and math.isfinite(m) and m > 0:
+        return seg["stage"], m * 60
+    return seg["stage"], 0
+
+
+def stages_asleep(text) -> Optional[int]:
+    """Seconds asleep (light + deep + rem) from a NOOP ``stagesJSON``: a list of ``{start, end, stage}`` second
+    spans, a list of ``{stage, min}`` minute totals, or one ``{awake, light, deep, rem}`` object of minutes.
+    None when it is absent, unreadable or names no stage at all (so the efficiency, or nothing, is used)."""
+    if not isinstance(text, str):
+        return None
+    try:
+        got = json.loads(text)
+    except ValueError:
+        return None
+    if isinstance(got, dict):
+        got = [{"stage": k, "min": v} for k, v in got.items()]
+    if not isinstance(got, list):
+        return None
+    total, any_stage = 0.0, False
+    for seg in got:
+        name, secs = _stage_seconds(seg)
+        if name is None or secs <= 0:
+            continue
+        any_stage = True
+        total += secs if name in ASLEEP_STAGES else 0
+    return int(round(total)) if any_stage else None
+
+
+def night_of(onset: float, tz=None) -> Optional[str]:
+    """The night a sleep that began at ``onset`` belongs to: the evening it began (sleep.py's rule, so a sleep
+    that began after midnight belongs to the date before)."""
+    try:
+        dt = datetime.fromtimestamp(onset, tz)
+    except (OverflowError, OSError, ValueError):
+        return None
+    d = dt.date() if dt.hour >= EVENING_FROM_H else dt.date() - timedelta(days=1)
+    return d.isoformat()
+
+
+def _iso(t: int) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sessions(con, parts) -> list:
+    onset = "COALESCE(s.startTsAdjusted, s.startTs)" if parts.get("adjusted") else "s.startTs"
+    sql = (f"SELECT s.deviceId, {onset}, s.endTs, s.efficiency, s.stagesJSON, p.sourceKind "
+           "FROM sleepSession s LEFT JOIN pairedDevice p ON p.id = s.deviceId")
+    if parts.get("dismissed"):
+        sql += (" WHERE NOT EXISTS (SELECT 1 FROM dismissedSleep d WHERE d.deviceId = s.deviceId "
+                "AND d.startTs = s.startTs)")
+    return con.execute(sql).fetchall()
+
+
+def sleep_nights(sessions, tz=None) -> tuple:
+    """(night -> the night's session dict, skipped counts) over ``(deviceId, onset, end, efficiency, stagesJSON,
+    sourceKind)`` rows. Only a wearable source (WEARABLE_KINDS) counts; per night the session with the most
+    sleep wins (an evening nap never stands for the night), the earlier onset on a tie."""
+    best, skipped = {}, {"not_wearable": 0, "no_asleep_time": 0, "not_a_night": 0}
+    for device, onset, end, eff, stages_json, kind in sessions:
+        if kind not in WEARABLE_KINDS:
+            skipped["not_wearable"] += 1
+            continue
+        onset, end = _int(onset), _int(end)
+        if onset is None or end is None or not 0 < end - onset <= MAX_ASLEEP_S:
+            skipped["not_a_night"] += 1
+            continue
+        asleep = stages_asleep(stages_json)
+        if asleep is None:
+            e = eff if not isinstance(eff, bool) and isinstance(eff, (int, float)) else None
+            asleep = int(round((end - onset) * e)) if e is not None and math.isfinite(e) and 0 < e <= 1 else None
+        if asleep is None:
+            skipped["no_asleep_time"] += 1
+            continue
+        night = night_of(onset, tz)
+        if night is None or not 0 < asleep <= MAX_ASLEEP_S:
+            skipped["not_a_night"] += 1
+            continue
+        s = {"night": night, "device": device, "onset": onset, "end": end, "asleep_s": asleep}
+        old = best.get(night)
+        if old is None or (asleep, -onset) > (old["asleep_s"], -old["onset"]):
+            best[night] = s
+    return {n: best[n] for n in sorted(best)}, skipped
+
+
+def sleep_row(s: dict) -> dict:
+    """The sleep_file row for one night: only the fields StateReader.sleep_rows reads."""
+    return {"night": s["night"], "asleep_s": s["asleep_s"], "source": SOURCE, "start": _iso(s["onset"]),
+            "end": _iso(s["end"])}
+
+
 def read(db_path, tz=None) -> dict:
     """The nightly rows from the NOOP DB at ``db_path``; never raises, never writes."""
     try:
@@ -69,7 +182,10 @@ def read(db_path, tz=None) -> dict:
             reason, parts = schema(con)
             if reason is not None:
                 return _empty(reason)
-            return _empty(None)
+            nights, skipped = sleep_nights(_sessions(con, parts), tz)
+            out = _empty(None)
+            out.update(sleep=[sleep_row(s) for s in nights.values()], skipped=skipped)
+            return out
         finally:
             con.close()
     except (sqlite3.Error, OSError, ValueError, TypeError):
