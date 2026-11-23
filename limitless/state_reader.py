@@ -33,6 +33,10 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   work queue dir       optional overnight lane queue, config "work_queue_dir" (relative to the state dir; none
                        by default): subdirs queue/, running/, done/, failed/ with one <name>.md per item; read
                        only through work_items, which reads file names and mtimes, never the content
+  rides file           optional JSONL exercise-session export, config "rides_file" (relative to the state dir;
+                       none by default), one row per session: {"start": ISO-8601 with offset, "duration_s",
+                       "kind", "source"}; only kinds in config "ride_kinds" are rides; read only through
+                       ride_rows (any HR or power field is T0 and is never read)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -55,6 +59,9 @@ BODY_CONFIG = "body_file"
 WORK_QUEUE_CONFIG = "work_queue_dir"
 WORK_STATUS = {"queue": "queued", "running": "running", "done": "done", "failed": "failed"}  # subdir -> status
 _ID_NAME = re.compile(r"t_[0-9a-f]+")   # a card id as a file name means nothing to the person: skipped
+RIDES_CONFIG = "rides_file"
+RIDE_KINDS_CONFIG = "ride_kinds"
+RIDE_KINDS = ("biking_stationary", "rehit")
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -357,6 +364,64 @@ class StateReader:
             return out
         except Exception:  # noqa: BLE001 - an unreadable queue is no items, never a traceback
             return []
+
+    def rides_file(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+        """The exercise-session export: config ``rides_file``; a relative path is in the state dir. None when it
+        is not set (there is no default file name)."""
+        v = config(env, home).get(RIDES_CONFIG)
+        if not isinstance(v, str) or not v.strip():
+            return None
+        p = Path(v).expanduser()
+        return p if p.is_absolute() else self.path / p
+
+    def ride_rows(self, today: Optional[date] = None, env: Optional[Mapping[str, str]] = None,
+                  home: Optional[Path] = None) -> list:
+        """The rides file's valid rides ``{"start", "duration_s": int, "kind", "source"}``, oldest first.
+
+        A ride is a row whose ``kind`` is in config ``ride_kinds`` (a list of strings; default RIDE_KINDS),
+        with ``start`` an ISO-8601 time with an offset (or Z), a finite ``duration_s`` > 0 (rounded to whole
+        seconds) and a non-empty ``source``. A start whose own-offset date is after ``today`` (default: the
+        local date) is skipped, and so is a second row with the same start instant and source (the first
+        in file order is kept). Other fields (heart rate, power, ...) are never read. [] when no file is
+        configured, it is missing or unreadable; never raises."""
+        try:
+            today = date.today() if today is None else today
+            if not isinstance(today, date):
+                return []
+            cfg = config(env, home)
+            kinds = cfg.get(RIDE_KINDS_CONFIG)
+            kinds = {k for k in kinds if isinstance(k, str) and k.strip()} if isinstance(kinds, list) else set()
+            kinds = kinds or set(RIDE_KINDS)
+            p = self.rides_file(env, home)
+            if p is None:
+                return []
+            rows = _rows(p.read_text(errors="replace"))
+        except Exception:  # noqa: BLE001 - unreadable ride data is no rows, never a traceback
+            return []
+        out, seen = [], set()
+        for r in rows:
+            try:
+                start, dur, kind, source = r.get("start"), r.get("duration_s"), r.get("kind"), r.get("source")
+                if not isinstance(kind, str) or kind not in kinds:
+                    continue
+                if not isinstance(source, str) or not source.strip() or not isinstance(start, str):
+                    continue
+                if isinstance(dur, bool) or not isinstance(dur, (int, float)) or not math.isfinite(dur) \
+                        or round(dur) <= 0:
+                    continue
+                if "T" not in start:
+                    continue
+                dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                if dt.tzinfo is None or dt.utcoffset() is None or dt.date() > today:
+                    continue
+                at = dt.timestamp()
+            except (ValueError, OverflowError, OSError, TypeError):
+                continue
+            if (at, source) in seen:
+                continue
+            seen.add((at, source))
+            out.append((at, {"start": start, "duration_s": int(round(dur)), "kind": kind, "source": source}))
+        return [row for _, row in sorted(out, key=lambda x: x[0])]
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")

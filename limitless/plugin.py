@@ -77,6 +77,10 @@ def _overnight(args, now):
     return tools.overnight(_reader(), now)
 
 
+def _rides(args, now):
+    return tools.rides(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -175,6 +179,13 @@ A direction only: no score, no goal, no advice. Read-only; nothing is sent."), _
         "The overnight work queue (config work_queue_dir): how many tasks are running and queued, and how \
 many finished (done or failed) since the latest wind-down, with a plain label (none, one, a few, many). \
 Counts only: task names never appear. Read-only; nothing is sent."), _overnight, "🌙"),
+    "limitless_rides": (_schema(
+        "limitless_rides",
+        "Bike rides from the exercise-session export (config rides_file; kinds in ride_kinds): rides in the \
+last seven days against the seven before, in plain words: rides this week none, one, two or a few, and the \
+same as, more than or fewer than last week. Counts and the label only; total minutes need the person's raw \
+opt-in; heart rate and power are never read. A week with no ride is none, never missed: no target, no streak, \
+no score, no advice. Read-only; nothing is sent."), _rides, "🚲"),
 }
 
 
