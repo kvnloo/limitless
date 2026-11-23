@@ -10,18 +10,34 @@ peak, asleep, an unknown window, a focus block or focused mode, which callers ap
 not been offered yet this wake day. The wake day is keyed on the wake event, never a clock time: an unknown
 ``already_offered_today`` counts as offered.
 
+On the card (card.py): ``for_turn`` gives the line for this pre_llm_call turn and the hook adds it on a line of
+its own after the card (outside MAX_LINES, like the mode line, so its Reply choices stay whole), before
+tier_audit.gate. Landed = done items in the work queue (overnight.counts: file names and mtimes only) whose mtime
+is after the last offer, or after overnight.since (last night's wind-down) when there was none. Once the gate let
+the card through, ``mark`` writes ``explain-back.json`` in the state dir, ``{"wake_at", "offered_at"}`` (epoch
+seconds, mode 0600, never any text): the wake event it was offered for, so the rest of that wake day carries
+nothing. No wake seen (or one older than window.MAX_AWAKE_H) is unknown: no offer.
+
 It is a suggestion: no score, no streak, no XP, no push of its own and no job. A skipped or Later offer is not
-logged. Pure: nothing here reads a clock, a file or sends. Stdlib only, Python 3.9+.
+logged. ``offer`` is pure; only ``mark`` writes. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
+import tempfile
+from pathlib import Path
+from typing import Mapping, Optional
 
 from . import decision_window, jobs, one_tap
+from . import overnight as _overnight
+from .window import MAX_AWAKE_H
 
 CHOICES = ("Voice", "Later")
 ASK = "Explain back: say what landed in one breath."
 OFFER = f"{ASK} {one_tap.choices_line(CHOICES)}"
+MARK_FILE = "explain-back.json"
 
 
 def _count(n) -> int:
@@ -41,3 +57,69 @@ def offer(landed_count, window, already_offered_today) -> str:
     state, asleep = jobs._window(window)
     d = decision_window.decide("trough", state, budget_left=1, asleep=asleep)
     return OFFER if d.action == decision_window.DELIVER else ""
+
+
+# --- this turn, from the state dir ----------------------------------------------------------------------------
+
+def _num(v) -> Optional[float]:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return float(v)
+
+
+def wake_at(events: Optional[list], now: float) -> Optional[float]:
+    """The latest wake event at or before ``now`` (jobs.wake_times), or None when there is none or it is older
+    than MAX_AWAKE_H (missing data, not a long day)."""
+    wakes = jobs.wake_times(list(events or ()), now)
+    w = wakes[-1] if wakes else None
+    return None if w is None or now - w > MAX_AWAKE_H * 3600 else float(w)
+
+
+def load_mark(state_dir) -> Optional[dict]:
+    """``{"wake_at", "offered_at"}`` from explain-back.json, or None (missing, unreadable or malformed)."""
+    try:
+        data = json.loads((Path(state_dir) / MARK_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    w, o = _num(data.get("wake_at")), _num(data.get("offered_at"))
+    return None if w is None or o is None else {"wake_at": w, "offered_at": o}
+
+
+def mark(state_dir, wake: float, now: float) -> bool:
+    """Write explain-back.json for ``wake`` (atomic, 0600). True when written; never raises."""
+    try:
+        d = Path(state_dir)
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".explain-back.", suffix=".tmp")
+        try:
+            os.write(fd, json.dumps({"wake_at": float(wake), "offered_at": float(now)}).encode("utf-8"))
+        finally:
+            os.close(fd)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, d / MARK_FILE)
+        return True
+    except Exception:  # noqa: BLE001 - a failed mark must not break the turn
+        return False
+
+
+def _events(reader, env, home) -> list:
+    from . import jobs_runner   # jobs_runner imports overnight: import at call time
+    return jobs_runner.events(reader, env=env, home=home)
+
+
+def for_turn(reader, now: float, window, env: Optional[Mapping[str, str]] = None,
+             home: Optional[Path] = None) -> tuple:
+    """``(line, wake)`` for this turn: offer() over the work landed since the last offer (or since
+    overnight.since when there was none), ``window`` (focused mode and the Glide block already applied by the
+    caller) and whether ``wake`` already had its offer. ``("", None)`` when no wake is seen."""
+    evs = _events(reader, env, home)
+    wake = wake_at(evs, now)
+    if wake is None:
+        return "", None
+    m = load_mark(reader.path)
+    since = m["offered_at"] if m is not None else _overnight.since(evs, now)
+    c = _overnight.counts(_overnight.items_for(reader, env, home), since)
+    landed = 0 if c is None else c["done_since"]
+    already = m is not None and m["wake_at"] == wake
+    return offer(landed, window, already), wake
