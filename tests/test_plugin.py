@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_metrics",
+TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_ledger", "limitless_flow_metrics",
          "limitless_habit", "limitless_loop", "limitless_naps", "limitless_overnight",
          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
@@ -70,11 +70,11 @@ def presleep_hr_config(st: Path) -> Path:
     return cfg
 
 
-def blocks_config(st: Path) -> Path:
-    """A config naming a synthetic ActivityWatch DB in ``st`` with one long block of a made-up work app."""
+def blocks_config(st: Path, at: float = NOW) -> Path:
+    """A config naming a synthetic ActivityWatch DB in ``st`` with one long block of a made-up work app up to ``at``."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from test_flow_week import make_db
-    make_db(st / "aw-blocks.db", spans=[(NOW - 6000, NOW - 60, "editor")])
+    make_db(st / "aw-blocks.db", spans=[(at - 6000, at - 60, "editor")])
     cfg = st / "blocks-config.json"
     cfg.write_text(json.dumps({"aw_db": "aw-blocks.db", "flow_work_apps": ["editor"]}))
     return cfg
@@ -234,6 +234,10 @@ class Wiring(unittest.TestCase):
             if name == "limitless_flow_metrics":   # the same synthetic block, in its own state dir
                 (st / "flow").mkdir()
                 env = {"LIMITLESS_STATE": str(st / "flow"), "LIMITLESS_CONFIG": str(blocks_config(st / "flow"))}
+            if name == "limitless_flow_ledger":   # one synthetic long block on the day before NOW
+                (st / "ledger").mkdir()
+                env = {"LIMITLESS_STATE": str(st / "ledger"),
+                       "LIMITLESS_CONFIG": str(blocks_config(st / "ledger", at=NOW - 86400))}
             if name == "limitless_loop":   # one synthetic decided week
                 from limitless import stop_rule
                 (st / "loop").mkdir()

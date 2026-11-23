@@ -116,6 +116,10 @@ def _flow_metrics(args, now):
     return tools.flow_metrics(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _flow_ledger(args, now):
+    return tools.flow_ledger(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
@@ -312,6 +316,16 @@ resumed after such a switch, in plain words: work stayed in long blocks, work wa
 unknown with the reason. A proxy (evidence_tier observed-activity): app activity, not attention or output; no \
 score, no target. Counts and the words only; the numbers need the person's raw opt-in. No work apps or no data \
 is unknown, never zero. Read-only; nothing is written or sent."), _flow_metrics, "🧩"),
+    "limitless_flow_ledger": (_schema(
+        "limitless_flow_ledger",
+        "Yesterday's deep-work ledger from observed app activity (the ActivityWatch DB; work apps in config \
+flow_work_apps, feed apps in feed_apps): the long focus blocks (at least break_after_min), whether a feed app was \
+in the foreground inside each (a feed leak), and how many work-queue items landed (done that day, config \
+work_queue_dir), in plain words such as two long blocks, one with a feed leak; three items landed, or no long \
+blocks. Unknown with the reason when no work apps are set, there is no app activity for the day, or the day is \
+not over. Observed app activity (modality observed), not attention or output: no score, no productivity \
+measure, no ranking, no target, no advice. The words only; block times and app names need the person's raw \
+opt-in, and work-queue file names never appear. Read-only; nothing is written or sent."), _flow_ledger, "📒"),
     "limitless_propose": (_schema(
         "limitless_propose",
         "The one small thing that fits now, from a short rule table the person can read (docs/propose.md), \
