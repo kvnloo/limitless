@@ -200,6 +200,16 @@ def for_week(first: date, today: date, tz: Optional[tzinfo] = None, env: Optiona
     return week(collection_path(env, home), first, today, tz, immutable=is_copy(env, home))
 
 
+def review_line(w) -> str:
+    """The week review's Anki line, words only: "Anki: some reviews this week (measured)"; "" when the week
+    is unknown (no collection set, unreadable) or the label is not one of the known words."""
+    lab = w.get("label") if isinstance(w, dict) else None
+    word = lab.get("label") if isinstance(lab, dict) else None
+    if word not in (NONE, SOME, MOST):
+        return ""
+    return f"Anki: {word} ({MODALITY})"
+
+
 # --- the trough offer ---------------------------------------------------------------------------------------
 
 OFFER = "trough: a short Anki review fits now"
