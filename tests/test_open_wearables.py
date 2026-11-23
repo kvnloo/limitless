@@ -34,6 +34,9 @@ class Fake:
         self.answers, self.calls = list(answers), []
 
     def __call__(self, url, headers, timeout):
+        if "/events/sleep" not in url:   # the seed check's user record (mock_guard): not a sleep page
+            self.users = getattr(self, "users", 0) + 1
+            return 404, b""
         self.calls.append({"url": url, "headers": dict(headers), "timeout": timeout})
         got = self.answers.pop(0)
         if isinstance(got, BaseException):

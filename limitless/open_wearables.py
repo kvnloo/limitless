@@ -18,6 +18,13 @@ reader of sleep_file works unchanged. Time asleep is ``sleep_duration_seconds``,
 time in bed is never taken as sleep. Naps and sessions from a phone, tablet, scale or smart display are skipped.
 Per night the session with the most sleep wins, the earlier onset on a tie.
 
+Demo rows never count (mock_guard): a session whose ``source.device`` or ``source.device_id`` carries a demo mark
+or matches config ``mock_device_patterns`` is dropped, and when there are sessions the user record
+(``GET {base}/api/v1/users/{user_id}``, route backend/app/api/routes/v1/users.py ``get_user``) is read once: a
+``first_name`` with the seed generator's ``[SEED:`` mark makes every session a demo row. That read is best effort:
+an unreadable user record changes nothing. The count is ``skipped["demo"]``; only demo rows is
+mock_guard.ONLY_DEMO.
+
 Never raises and never writes. Every failure is one plain reason in words (REASONS) with no rows; no reason, row or
 exception text carries the API key, the URL or the user id. The http callable is injected so tests never touch
 the network: ``http(url, headers, timeout) -> (status, body bytes)``, raising OSError (or TimeoutError) when the
@@ -38,7 +45,8 @@ from pathlib import Path
 from typing import Callable, Mapping, Optional
 from urllib.parse import quote, urlencode, urlsplit
 
-from .noop_export import merge, night_of, nights_words, sleep_row, words, write_atomic
+from . import mock_guard
+from .noop_export import demo_words, merge, night_of, nights_words, sleep_row, words, write_atomic
 from .state_reader import MAX_ASLEEP_S, StateReader, config, parse_ts, state_dir
 
 SOURCE = "open_wearables"     # the one source name these sleep rows carry: never a provider, device or id
@@ -60,7 +68,8 @@ HTTP_ERROR = "the Open Wearables server answered with an error"
 TIMEOUT = "the Open Wearables server did not answer in time"
 UNREACHABLE = "the Open Wearables server could not be reached"
 BAD_JSON = "the Open Wearables server's answer is not the sleep list this reader knows"
-REASONS = (NO_URL, BAD_URL, NO_USER, NO_KEY, REFUSED, NOT_FOUND, HTTP_ERROR, TIMEOUT, UNREACHABLE, BAD_JSON)
+REASONS = (NO_URL, BAD_URL, NO_USER, NO_KEY, REFUSED, NOT_FOUND, HTTP_ERROR, TIMEOUT, UNREACHABLE, BAD_JSON,
+           mock_guard.ONLY_DEMO)
 
 Http = Callable[[str, dict, float], tuple]
 
@@ -89,6 +98,36 @@ def endpoint(base_url: str, user: str) -> str:
     if base.endswith(API):
         base = base[: -len(API)]
     return f"{base}{API}/users/{quote(user.strip(), safe='')}/events/sleep"
+
+
+def user_endpoint(base_url: str, user: str) -> str:
+    """``{base}/api/v1/users/{user}``: the user record, whose ``first_name`` may carry the seed mark."""
+    return endpoint(base_url, user)[: -len("/events/sleep")]
+
+
+def seed_user(http: Http, base_url: str, key: str, user: str, timeout: float) -> bool:
+    """True only when the user record reads and its ``first_name`` carries the seed mark (mock_guard). Any
+    failure (no answer, an error status, an answer that is not a user) is False: never a reason of its own."""
+    try:
+        status, raw = http(user_endpoint(base_url, user), {HEADER: key, "Accept": "application/json"}, timeout)
+        if status != 200:
+            return False
+        got = json.loads(raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw)
+    except Exception:  # noqa: BLE001 - best effort: the sleep list has already been read
+        return False
+    return isinstance(got, dict) and mock_guard.is_mock({"first_name": got.get("first_name")})
+
+
+def drop_demo(items: list, cfg=None) -> tuple:
+    """(the sessions whose source device is not a demo device, how many were dropped)."""
+    real, n = [], 0
+    for s in items:
+        src = s.get("source") if isinstance(s, dict) else None
+        if isinstance(src, dict) and mock_guard.is_mock({"source": src}, cfg):
+            n += 1
+        else:
+            real.append(s)
+    return real, n
 
 
 def _day(v) -> str:
@@ -194,9 +233,10 @@ def ow_row(s: dict) -> dict:
 
 
 def fetch_sleep(base_url, api_key, since, http: Optional[Http] = None, *, user=None, until=None, tz=None,
-                timeout: float = TIMEOUT_S) -> dict:
+                timeout: float = TIMEOUT_S, cfg=None) -> dict:
     """The nightly sleep rows from the Open Wearables server at ``base_url`` for ``user``, sessions from ``since``
-    through ``until`` (default: tomorrow, so last night is in). Never raises, never writes."""
+    through ``until`` (default: tomorrow, so last night is in), demo rows left out (config ``cfg``'s
+    mock_device_patterns, and a seed user's sessions). Never raises, never writes."""
     if not isinstance(base_url, str) or not base_url.strip():
         return _empty(NO_URL)
     if urlsplit(base_url.strip()).scheme not in ("http", "https") or not urlsplit(base_url.strip()).netloc:
@@ -212,7 +252,17 @@ def fetch_sleep(base_url, api_key, since, http: Optional[Http] = None, *, user=N
         return _empty(str(e))
     except Exception:  # noqa: BLE001 - never a traceback, never the exception's text
         return _empty(UNREACHABLE)
+    if items and seed_user(http or urllib_get, base_url, api_key.strip(), user, timeout):
+        items, demo = [], len(items)
+    else:
+        items, demo = drop_demo(items, cfg)
+    if demo and not items:
+        out = _empty(mock_guard.ONLY_DEMO)
+        out["skipped"] = {"demo": demo}
+        return out
     nights, skipped = sleep_nights(items, tz)
+    if demo:
+        skipped["demo"] = demo
     out = _empty(None)
     out.update(sleep=[ow_row(s) for s in nights.values()], skipped=skipped)
     return out
@@ -243,7 +293,7 @@ def mode(cfg) -> str:
 def _skipped(skipped: dict) -> str:
     parts = [f"{words(skipped[k])} {noun}{'' if skipped[k] == 1 else 's'}{why}"
              for k, noun, why in SKIP_WORDS if skipped.get(k)]
-    return ("; skipped " + ", ".join(parts)) if parts else ""
+    return (("; skipped " + ", ".join(parts)) if parts else "") + demo_words(skipped.get("demo", 0))
 
 
 def merge_sleep(existing: str, rows: list) -> tuple:
@@ -321,7 +371,7 @@ def main(argv, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
         return 1
 
     got = fetch_sleep(cfg.get(URL_CONFIG), env.get(KEY_ENV), today - timedelta(days=DAYS), http,
-                      user=cfg.get(USER_CONFIG), until=today + timedelta(days=1), tz=tz)
+                      user=cfg.get(USER_CONFIG), until=today + timedelta(days=1), tz=tz, cfg=cfg)
     if got["reason"] is not None:
         return fail(got["reason"])
     found = f"{nights_words(len(got['sleep']))} of wearable sleep from Open Wearables{_skipped(got['skipped'])}"
@@ -343,7 +393,8 @@ def main(argv, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
             write_atomic(path, text)
     except (OSError, ValueError) as e:
         return fail(f"sleep file: not written: {getattr(e, 'strerror', None) or type(e).__name__}")
-    tail = f"; {nights_words(kept)} kept from another source" if kept else ""
+    tail = (f"; {nights_words(kept)} kept from another source" if kept else "") + \
+        (f"; {mock_guard.LEFT_OUT}" if got["skipped"].get("demo") else "")
     line = "sleep file: unchanged" + tail if text == old else \
         f"sleep file: written, {nights_words(changed)} new or changed{tail}"
     print(line, file=out)
