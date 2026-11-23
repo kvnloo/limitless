@@ -6,8 +6,9 @@ status is one of STATUSES: live, stale, missing or off. The rows are the state d
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
 last sync run's age in words from runs.jsonl, one row per tool in plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
-open-wearables.json; the server is never called) and the NOOP export job's row (config noop_export,
-its mark noop-export.json).
+open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
+its mark noop-export.json) and, before both, the context packet's row (config context_packet_path: off, live
+when written within STALE_H, else stale; read from the packet's own generated_at).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -141,6 +142,33 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     if outcome == jobs_runner.NOOP_NOTHING:
         return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}: {said}")
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
+
+
+PACKET_ROW = "export context packet"
+
+
+def context_packet_row(cfg: Mapping, now: float) -> dict:
+    """The context packet (limitless-context-packet --write, config ``context_packet_path``): off when unset; stale
+    when not written yet, not a packet this plugin wrote, or older than STALE_H by its own generated_at; else live.
+    Reads that one file; words only, never a path."""
+    from . import context_packet as cp   # context_packet imports doctor (age_words)
+    path = cp.resolve_path(cfg.get(cp.CONFIG_KEY) if isinstance(cfg, Mapping) else None, state_path(cfg))
+    if path is None:
+        return _row(PACKET_ROW, "export", OFF, f"the context packet is not written (config {cp.CONFIG_KEY})")
+    if not path.is_file():
+        return _row(PACKET_ROW, "export", STALE, "set, but not written yet (limitless-context-packet --write "
+                                                 "writes it)")
+    try:
+        p = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        p = None
+    at = parse_ts(p.get("generated_at")) if isinstance(p, dict) and p.get("schema") == cp.SCHEMA else None
+    if at is None:
+        return _row(PACKET_ROW, "export", STALE, "the file there is not a context packet this plugin wrote")
+    age_h = max(0.0, now - at) / 3600
+    if age_h > STALE_H:
+        return _row(PACKET_ROW, "export", STALE, f"written {age_words(age_h)}: older than a day")
+    return _row(PACKET_ROW, "export", LIVE, f"written {age_words(age_h)}")
 
 
 OW_ROW = "export Open Wearables"
@@ -278,8 +306,9 @@ def tool_row(name: str, now: float) -> dict:
 
 
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the Open Wearables
-    export (open_wearables_row), then the NOOP export job (noop_export_row).
+    """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
+    (context_packet_row), the Open Wearables export (open_wearables_row), then the NOOP export job
+    (noop_export_row).
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -287,7 +316,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
-    rows += [open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
+    rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
 
