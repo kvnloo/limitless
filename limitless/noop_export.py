@@ -12,6 +12,10 @@ here: ``sleepSession`` (deviceId, startTs, endTs, efficiency, stagesJSON, option
 Read-only, always: the file is a copy, opened through a ``file:...?mode=ro&immutable=1`` URI, so nothing is
 written, created or locked beside it. A missing table or column is one plain reason (SCHEMA_PREFIX + what is
 missing) and no rows: never a guess from a schema this module does not know.
+
+Demo rows (mock_guard: a demo strap id, the demo dataset's ``device.name`` mark, or config
+``mock_device_patterns``) are dropped before anything is counted, so a demo heart rate or night is never read;
+the count is ``skipped["demo"]``. A database whose sessions are all demo rows is mock_guard.ONLY_DEMO.
 """
 from __future__ import annotations
 
@@ -26,6 +30,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 from urllib.parse import quote
 
+from . import mock_guard
 from .presleep_hr import MAX_BPM, MEASURED, MIN_BPM
 from .sleep import EVENING_FROM_H
 from .state_reader import MAX_ASLEEP_S, PRESLEEP_HR_CONFIG, SLEEP_CONFIG, StateReader, config, state_dir
@@ -144,6 +149,26 @@ def _iso(t: int) -> str:
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _device_names(con) -> dict:
+    """NOOP's ``device`` table as id -> name ({} when the table or a column is missing): the demo seeders mark
+    their dataset only by this name (mock_guard.NAME_MARK)."""
+    if not {"id", "name"} <= (_columns(con, "device") or set()):
+        return {}
+    return {i: n for i, n in con.execute("SELECT id, name FROM device").fetchall()}
+
+
+def drop_demo(sessions, names: dict, cfg=None) -> tuple:
+    """(the sessions whose device is not a demo device, how many were dropped): mock_guard over each session's
+    deviceId and that id's ``device.name``."""
+    real, n = [], 0
+    for s in sessions:
+        if mock_guard.is_mock({"deviceId": s[0], "name": names.get(s[0])}, cfg):
+            n += 1
+        else:
+            real.append(s)
+    return real, n
+
+
 def _sessions(con, parts) -> list:
     onset = "COALESCE(s.startTsAdjusted, s.startTs)" if parts.get("adjusted") else "s.startTs"
     sql = (f"SELECT s.deviceId, {onset}, s.endTs, s.efficiency, s.stagesJSON, p.sourceKind "
@@ -209,8 +234,9 @@ def sleep_row(s: dict) -> dict:
             "end": _iso(s["end"])}
 
 
-def read(db_path, tz=None) -> dict:
-    """The nightly rows from the NOOP DB at ``db_path``; never raises, never writes."""
+def read(db_path, tz=None, cfg=None) -> dict:
+    """The nightly rows from the NOOP DB at ``db_path``, demo rows left out (drop_demo, with config ``cfg``'s
+    mock_device_patterns); never raises, never writes."""
     try:
         path = Path(db_path)
         if not path.is_file():
@@ -220,8 +246,15 @@ def read(db_path, tz=None) -> dict:
             reason, parts = schema(con)
             if reason is not None:
                 return _empty(reason)
-            nights, skipped = sleep_nights(_sessions(con, parts), tz)
+            sessions, demo = drop_demo(_sessions(con, parts), _device_names(con), cfg)
+            if demo and not sessions:
+                out = _empty(mock_guard.ONLY_DEMO)
+                out["skipped"] = {"demo": demo}
+                return out
+            nights, skipped = sleep_nights(sessions, tz)
             skipped["too_few_hr"] = 0
+            if demo:
+                skipped["demo"] = demo
             pre = []
             for s in nights.values():
                 bpm, _n = presleep_bpm(con, s["device"], s["onset"])
@@ -323,10 +356,17 @@ SKIP_WORDS = (("not_wearable", "session", "not from a wearable"), ("no_asleep_ti
               ("not_a_night", "session", "not a night"), ("too_few_hr", "night", "with too few heart-rate samples"))
 
 
+def demo_words(n: int) -> str:
+    """'' for none, else mock_guard.LEFT_OUT with the count in words."""
+    if not n:
+        return ""
+    return f"; {mock_guard.LEFT_OUT} ({words(n)} session{'' if n == 1 else 's'} from a demo or sample device)"
+
+
 def _skipped(skipped: dict) -> str:
     parts = [f"{words(skipped[k])} {noun}{'' if skipped[k] == 1 else 's'} {why}"
              for k, noun, why in SKIP_WORDS if skipped.get(k)]
-    return ("; skipped " + ", ".join(parts)) if parts else ""
+    return (("; skipped " + ", ".join(parts)) if parts else "") + demo_words(skipped.get("demo", 0))
 
 
 def _target(reader: StateReader, cfg_key: str, env, home) -> Optional[Path]:
@@ -349,7 +389,7 @@ def main(argv, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = N
     if db is None:
         print(NO_DB, file=out)
         return 0
-    got = read(db, tz)
+    got = read(db, tz, config(env, home))
     if got["reason"] is not None:
         print(got["reason"], file=out)
         return 0
