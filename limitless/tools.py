@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, feeds_evidence,
+               habit_catalogue as _habit_catalogue,
                flow_ledger as _flow_ledger, flow_metrics as _flow_metrics, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler, modes as _modes,
                naps as _naps, presleep_hr as _presleep_hr,
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
@@ -13,7 +14,7 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, f
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
                scorecard as _scorecard, sleep as _sleep, stop_rule as _stop_rule, tier_audit as _tier_audit,
                weekly_target as _weekly_target)
-from .envelope import STALE_H, envelope, missing, with_label
+from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            PRESLEEP_HR_CONFIG, RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
 from .glide_provider import GlideProvider
@@ -371,6 +372,34 @@ def loop(state_dir, now: float, today: date) -> dict:
     weeks = [_loop_week(r, now, today) for r in rows]
     out = envelope({"weeks": weeks}, "self_report", _age_h(rows[0].get("decided_at"), now))
     out["label"] = _t1(f"latest week: {weeks[0]['decision']['value']}", "self_report")
+    return out
+
+
+HABIT_NEXT_MODALITY = "derived"
+HABIT_NEXT_NOTE = ("a suggestion only: nothing was started; the person starts it by saying start habit, and then "
+                   "limitless_habit start runs with their yes")
+
+
+def habit_next(state_dir, now: float, today: date) -> dict:
+    """limitless_habit_next: habit_catalogue.next_habit over the weekly loop rows (stop_rule.loop_rows) and the
+    running week (habit.json, while jobs.habit_week_gate is None), as a derived envelope: value ``{id, name,
+    cue, start}``, ``age_h`` None, the evidence_tier of the newest decision used (self-reported; ``none`` before
+    any week was decided) and the digit-free T1 label "next habit: <name>". Null with a plain reason when the
+    list is exhausted. It only suggests: read-only, nothing is written, sent or started."""
+    h = StateReader(Path(state_dir)).habit()
+    running = isinstance(h, dict) and jobs.habit_week_gate(h, today) is None
+    rows = _stop_rule.loop_rows(state_dir)
+    n = _habit_catalogue.next_habit(rows, current=h if running else None)
+    if n.habit is None:
+        out = missing(n.reason)
+    else:
+        ages = [a for a in (_age_h(r.get("decided_at"), now) for r in rows) if a is not None]
+        tier = "none" if not rows else _envelope_tier("self_report", min(ages) if ages else None)
+        out = {"value": {k: n.habit[k] for k in ("id", "name", "cue", "start")}, "modality": HABIT_NEXT_MODALITY,
+               "age_h": None, "evidence_tier": tier, "because": n.reason,
+               "label": _t1(f"next habit: {n.habit['name']}", HABIT_NEXT_MODALITY)}
+    out["habit_week"] = "running" if running else "not running"
+    out["note"] = HABIT_NEXT_NOTE
     return out
 
 
