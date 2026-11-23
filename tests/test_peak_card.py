@@ -58,6 +58,20 @@ class ReadFor(Base):
         out = peak.read_for(StateReader(self.st), WAKE + H, self.env, self.root)
         self.assertEqual((out["open"], out["why"]), (False, "unknown: no wake seen"))
 
+    def test_sleep_mode_back_on_after_the_wake_is_not_open(self):
+        with (self.st / "sleepmode.jsonl").open("a") as f:
+            f.write(json.dumps({"at": "2030-01-15T07:30:00Z", "on": True}) + "\n")
+        out = peak.read_for(StateReader(self.st), WAKE + H, self.env, self.root)
+        self.assertEqual((out["open"], out["label"]), (False, None))
+        self.assertTrue(out["why"].startswith("closed"))
+        self.assertFalse(any(c.isdigit() for c in out["why"]))
+
+    def test_state_dir_is_never_written(self):
+        before = {f.name: f.stat().st_mtime_ns for f in self.st.iterdir()}
+        peak.read_for(StateReader(self.st), WAKE + H, self.env, self.root)
+        self.card(WAKE + H)
+        self.assertEqual({f.name: f.stat().st_mtime_ns for f in self.st.iterdir()}, before)
+
 
 class CardLine(Base):
     def test_one_open_line_inside_the_peak(self):

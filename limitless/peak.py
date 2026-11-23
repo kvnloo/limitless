@@ -27,7 +27,7 @@ from typing import Mapping, Optional
 
 from . import blocks as _blocks
 from . import jobs, jobs_runner
-from .state_reader import config
+from .state_reader import config, parse_ts
 from .window import MAX_AWAKE_H
 
 PEAK_H, PEAK_CONFIG = 2.0, "post_wake_peak_h"
@@ -84,17 +84,32 @@ def post_wake_peak(wake_at, now: float, peak_h=PEAK_H, blocks=None, long_s: floa
     return _out(True, "open since the wake event: the pre-planned task fits now", OPEN)
 
 
+def _back_on(events: list, wake: float, now: float) -> bool:
+    """True when the latest Sleep-mode change in (wake, now] turned it on: the person went back to sleep."""
+    last = None
+    for e in events or ():
+        at = parse_ts(e.get("at")) if isinstance(e, dict) else None
+        if at is not None and wake < at <= now and e.get("event") in ("sleep_mode_on", "sleep_mode_off"):
+            if last is None or at >= last[0]:
+                last = (at, e["event"])
+    return last is not None and last[1] == "sleep_mode_on"
+
+
 def read_for(reader, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
     """post_wake_peak from the state dir: the latest wake event at or before ``now`` (jobs.wake_times over
     jobs_runner.events: Sleep mode, else screen-event wakes), config ``post_wake_peak_h``, and the focus
-    blocks and break_after_min / block_gap_min of blocks.read_for. Unreadable events are unknown. Read-only."""
+    blocks and break_after_min / block_gap_min of blocks.read_for. Sleep mode turned on again after the wake
+    closes the peak (back to sleep). Unreadable events are unknown. Read-only."""
     try:
-        wakes = jobs.wake_times(jobs_runner.events(reader, env, home), now)
+        evs = jobs_runner.events(reader, env, home)
+        wakes = jobs.wake_times(evs, now)
     except Exception:  # noqa: BLE001 - unreadable state is unknown, never a traceback
-        wakes = []
+        evs, wakes = [], []
     wake = wakes[-1] if wakes else None
     if wake is None:
         return _out(False, NO_WAKE)
+    if _back_on(evs, wake, now):
+        return _out(False, "closed: Sleep mode is on again after the wake event")
     try:
         got = _blocks.read_for(reader, now, env, home)
     except Exception:  # noqa: BLE001 - no block data leaves the peak open, as unknown blocks do
