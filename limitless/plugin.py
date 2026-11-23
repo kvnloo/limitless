@@ -18,7 +18,7 @@ import time
 from datetime import date
 from typing import Callable
 
-from . import (bedtime, capture, card, catchup, jobs_runner, labeler, modes, schedule_cards, scorecard, stop_rule,
+from . import (bedtime, capture, card, card_view, catchup, jobs_runner, labeler, modes, schedule_cards, scorecard, stop_rule,
                tier_audit, tools)
 from .envelope import missing
 from .state_reader import StateReader, config, state_dir
@@ -138,6 +138,12 @@ def _habit_next(args, now):
 
 def _loop(args, now):
     return tools.loop(state_dir(), now, date.fromtimestamp(now))
+
+
+def _card_view(args, now):
+    kind = args.get("kind", "state")
+    return card_view.view(state_dir(), now, date.fromtimestamp(now), kind if isinstance(kind, str) else "",
+                          bands=_bands(), labeler=labeler.from_config())
 
 
 def _handler(fn: Callable, name: str = "") -> Callable:
@@ -371,6 +377,20 @@ key in words, the send gate's daily cap and whether limitless-jobs or another se
 ledger set, one more card for its nightly append, which sends nothing. `lines` and the \
 label are plain words; the raw fields are only in value. Read-only: nothing is written, sent, scheduled or \
 registered."), _schedule, "🗓️"),
+    "limitless_card_view": (_schema(
+        "limitless_card_view",
+        "Today's state card (kind state, the default) or the week review (kind week) as one small, glanceable \
+HTML card for the person to look at instead of a block of text: the same plain-word lines the state card and \
+the week review already carry, one row each with a known, unknown or held chip read from the line's words, at \
+most eight rows. Built by code: never write or add rows yourself. A line holding a digit is dropped and \
+counted, never shown, even under the raw opt-in; the week card leaves out the Keep / Drop ask. The value is \
+{path, rows, dropped}: path is the card file under config card_dir (or LIMITLESS_CARD_DIR), named by its \
+content hash, or null with a note when no card dir is set (rendered only, nothing written). Modality derived, \
+age_h null; a digit-free T1 label such as a state card with three rows. No clock time, no score, no script; \
+nothing is sent or scheduled.",
+        {"kind": {"type": "string", "enum": ["state", "week"],
+                  "description": "state (today's state card, the default) or week (the week review)."}}),
+        _card_view, "🃏"),
 }
 
 
