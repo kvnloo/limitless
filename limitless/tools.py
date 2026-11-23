@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from . import (asks as _asks, body as _body, feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
-               owner_messages as _owner, passive_habit, prediction as _prediction, scorecard as _scorecard)
+               owner_messages as _owner, passive_habit, prediction as _prediction, rides as _rides,
+               scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
-from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader,
-                           parse_ts)
+from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
+                           RIDES_CONFIG, StateReader, parse_ts)
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
 from .window import window as _window
@@ -363,4 +364,33 @@ def body(reader: StateReader, now: float, today: date, raw: bool = False, env: O
             value[k] = None if v is None else round(v, 2)
     out = envelope(value, t["modality"], age_h)
     out["label"] = t["label"]
+    return out
+
+
+def rides(reader: StateReader, now: float, today: date, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+          home: Optional[Path] = None) -> dict:
+    """limitless_rides: rides in the last seven days against the seven before (rides.week), read-only.
+
+    An envelope whose value is ``{this_week, last_week, label}`` (counts and the T1 words) with the T1 label
+    beside it; modality measured, aged by the rides file's mtime. Total minutes (``minutes_this_week``,
+    ``minutes_last_week``) are T0 and appear only with ``raw`` (the card's LIMITLESS_RAW_IN_PROMPT opt-in).
+    No file configured, a missing file or no ride row is value None with a reason (unknown, not zero);
+    reasons never echo the path. No target, no score, no streak.
+    """
+    path = reader.rides_file(env, home)
+    if path is None:
+        return missing(f"no rides file: set \"{RIDES_CONFIG}\" in config.json")
+    rows = reader.ride_rows(today, env, home)
+    if not rows:
+        return missing("no ride in the configured rides file")
+    try:
+        age_h = max(0.0, now - path.stat().st_mtime) / 3600
+    except OSError:
+        age_h = None
+    w = _rides.week(rows, today)
+    value = {"this_week": w["this_week"], "last_week": w["last_week"], "label": w["label"]["label"]}
+    if raw:
+        value.update(minutes_this_week=w["minutes_this_week"], minutes_last_week=w["minutes_last_week"])
+    out = envelope(value, _rides.MODALITY, age_h)
+    out["label"] = w["label"]
     return out

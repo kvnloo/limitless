@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
-TOOLS = ["limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_scorecard", "limitless_state", "limitless_status",
-         "limitless_window"]
+TOOLS = ["limitless_body", "limitless_capture", "limitless_catchup", "limitless_habit", "limitless_rides",
+         "limitless_scorecard", "limitless_state", "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
 
@@ -34,6 +34,18 @@ def body_config(st: Path) -> Path:
     (st / "body.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     cfg = st / "body-config.json"
     cfg.write_text(json.dumps({"body_file": "body.jsonl"}))
+    return cfg
+
+
+def rides_config(st: Path) -> Path:
+    """A config naming a synthetic rides file in ``st`` with two rides in the week before NOW."""
+    from datetime import date, timedelta
+    today = date.fromtimestamp(NOW)
+    rows = [{"start": f"{(today - timedelta(days=d)).isoformat()}T07:00:00+00:00", "duration_s": 600,
+             "kind": "rehit", "source": "synthetic-bike-app"} for d in (1, 4)]
+    (st / "rides.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    cfg = st / "rides-config.json"
+    cfg.write_text(json.dumps({"rides_file": "rides.jsonl"}))
     return cfg
 
 
@@ -153,6 +165,8 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(owner_db(st / "owner.db"))}
             if name == "limitless_body":   # synthetic visits, three in each two-week window
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(body_config(st))}
+            if name == "limitless_rides":   # synthetic rides, two in the last seven days
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(rides_config(st))}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))
