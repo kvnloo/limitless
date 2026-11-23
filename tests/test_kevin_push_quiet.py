@@ -20,6 +20,7 @@ END = "<<END>>"
 
 def iso(t):
     return datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="seconds")
+AW = "you are awake and this fits any moment"   # decision_window.plain("anytime job and awake")
 
 
 class KevinPushQuiet(unittest.TestCase):
@@ -176,9 +177,10 @@ class KevinPushQuiet(unittest.TestCase):
         self.push("x", "Env why", "pick", KEVIN_PUSH_WHY="trough window open")
         self.push("x", "Plain", "pick")
         lasts = [b.splitlines()[-1] for b in self.bodies()]
-        self.assertEqual(lasts, ["Why now: you woke up", "Why now: wake event; peak window open",
-                                 "Why now: critical: delivers whatever the window", "Why now: trough window open",
-                                 "Why now: anytime job and awake"])
+        self.assertEqual(lasts, ["Why now: you woke up", "Why now: you woke up; your focus is high right now",
+                                 "Why now: this is urgent, so it comes whatever you are doing",
+                                 "Why now: it is a lighter moment, fine for a short read",
+                                 f"Why now: {AW}"])
 
     def test_the_why_line_does_not_change_the_dedupe_key(self):
         self.push("x", "Pick one", "body", "--why", "trough window open")

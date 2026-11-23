@@ -10,7 +10,8 @@ A proactive job declares a ``window_class``:
 A pluggable ``WindowProvider`` says which class is open *now*. Providers decide from events
 (woke up, screen off, focus block ended), never from clock times, so this module has no
 times of day in it. ``decide()`` turns (job class, current window) into deliver | hold | drop
-plus a one-line "why now / why not" reason.
+plus a one-line "why now / why not" reason; ``plain(reason)`` is that reason in plain words for the person
+(the "Why now" line), digit-free.
 
 Context (Hermes Agent, public):
 
@@ -26,6 +27,7 @@ Stdlib only, Python 3.9+.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, NamedTuple, Optional, Protocol, runtime_checkable
 
@@ -105,6 +107,42 @@ def decide(job_window_class: str, state: Optional[WindowState], *, budget_left: 
     if job_window_class == "peak" and budget_left <= 0:
         return Decision(DROP, "peak budget spent: one decision per peak window")
     return Decision(DELIVER, f"{now} window open{_opened_by(state)}")
+
+
+# Plain words for the person: decide's reasons are for logs and rows; the "Why now" line says these.
+_MOMENT = {"peak": "your focus is high right now", "trough": "it is a lighter moment, fine for a short read",
+           "wind_down": "your wind-down has started", "anytime": "you are awake"}
+_NEED = {"peak": "a moment when your focus is high", "trough": "a lighter moment", "wind_down": "your wind-down",
+         "anytime": "a moment you are awake"}
+_SINCE = r"(?: \(since [^()]*\))?"
+_CLS = "(" + "|".join(WINDOW_CLASSES) + ")"
+_PLAIN = (
+    (re.compile(r"critical: delivers whatever the window"), lambda m: "this is urgent, so it comes whatever you are doing"),
+    (re.compile(r"asleep: holds until wake"), lambda m: "you are asleep, so this waits until you wake"),
+    (re.compile(rf"focus block running{_SINCE}: holds until it ends"),
+     lambda m: "you are in a focus block, so this waits until it ends"),
+    (re.compile(r"anytime job and awake"), lambda m: "you are awake and this fits any moment"),
+    (re.compile(rf"window unknown: holds the {_CLS} job until a provider knows"),
+     lambda m: f"it is not clear yet what kind of moment this is, so this waits for {_NEED[m[1]]}"),
+    (re.compile(rf"{_CLS} window open{_SINCE}: holds the {_CLS} job"),
+     lambda m: f"{_MOMENT[m[1]]}, so this waits for {_NEED[m[2]]}"),
+    (re.compile(r"peak budget spent: one decision per peak window"),
+     lambda m: "you already had one decision in this focused stretch, so this one is skipped"),
+    (re.compile(rf"{_CLS} window open{_SINCE}"), lambda m: _MOMENT[m[1]]),
+)
+
+
+def plain(reason) -> str:
+    """The plain words for one of decide's reasons, for the person: digit-free, no window or job jargon.
+    Any other text is returned as it is (stripped); a non-string is ""."""
+    if not isinstance(reason, str):
+        return ""
+    text = " ".join(reason.split())
+    for pat, words in _PLAIN:
+        m = pat.fullmatch(text)
+        if m:
+            return words(m)
+    return text
 
 
 class StaticProvider:

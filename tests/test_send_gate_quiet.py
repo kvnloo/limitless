@@ -68,7 +68,7 @@ class QuietRows(unittest.TestCase):
 
 class WhyNow(unittest.TestCase):
     def test_line_from_the_decision_window_reason(self):
-        self.assertEqual(g.why_line("peak window open (since wake)"), "Why now: peak window open (since wake)")
+        self.assertEqual(g.why_line("peak window open (since wake)"), "Why now: your focus is high right now")
 
     def test_line_drops_digits_and_card_ids(self):
         line = g.why_line("wake event; peak window open (since 1999990000) for t_510c250d in 3 h")
@@ -84,8 +84,8 @@ class WhyNow(unittest.TestCase):
             self.assertFalse(any(c.isdigit() for c in line), line)
 
     def test_reason_for_a_class_comes_from_the_decision_window(self):
-        self.assertEqual(g.why_reason("critical"), "critical: delivers whatever the window")
-        self.assertEqual(g.why_reason("decision"), "anytime job and awake")
+        self.assertEqual(g.why_reason("critical"), "this is urgent, so it comes whatever you are doing")
+        self.assertEqual(g.why_reason("decision"), "you are awake and this fits any moment")
 
     def test_the_always_messages_name_their_event(self):
         self.assertEqual(g.why_reason("report", "Wake-up brief"), "you woke up")

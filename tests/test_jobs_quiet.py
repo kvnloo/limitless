@@ -140,7 +140,7 @@ class JobsCliQuiet(unittest.TestCase):
         r = self.jobs_cli()
         self.assertIn("Back from nap: deliver", r.stdout)
         [body] = self.bodies()
-        self.assertEqual(body.splitlines()[-1], "Why now: nap event; anytime job and awake")
+        self.assertEqual(body.splitlines()[-1], "Why now: you are back from a nap; you are awake and this fits any moment")
 
 
 if __name__ == "__main__":

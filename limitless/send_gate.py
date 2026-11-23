@@ -22,6 +22,16 @@ WHY_FALLBACK = "the send gate let it through"
 WHY_ALWAYS = {"Wake-up brief": "you woke up", "Back from nap": "you are back from a nap",
               "MIQ for tonight?": "your wind-down started"}
 _DIGIT_PARENS = re.compile(r"\s*\([^()]*\d[^()]*\)")
+# jobs.should_fire's deliver reason starts "<event> event"; the person gets what happened instead.
+WHY_EVENTS = {"wake event": "you woke up", "nap event": "you are back from a nap",
+              "wind-down event": "your wind-down started", "habit cue event": "it is your habit cue",
+              "Sleep-mode on event": "Sleep mode went on", "Sleep-mode off event": "Sleep mode went off",
+              "focus-end event": "your focus block ended"}
+
+
+def _plain(part: str) -> str:
+    part = part.strip(" ,.:")
+    return WHY_EVENTS.get(part) or decision_window.plain(part)
 
 
 def scrub(text: str) -> str:
@@ -34,18 +44,19 @@ def key(title: str, body: str) -> str:
 
 def why_reason(cls: str, title: "str | None" = None) -> str:
     """The reason for a push that brings no decision-window reason of its own: the event of an always-sent
-    message, else decision_window.decide's reason for an anytime message (critical or not)."""
+    message, else decision_window.decide's reason for an anytime message (critical or not), in plain words."""
     if title in WHY_ALWAYS:
         return WHY_ALWAYS[title]
-    return decision_window.decide("anytime", None, budget_left=1, asleep=False, critical=cls == "critical").reason
+    return decision_window.plain(
+        decision_window.decide("anytime", None, budget_left=1, asleep=False, critical=cls == "critical").reason)
 
 
 def why_line(reason: "str | None") -> str:
-    """``Why now: <reason>``, plain words: no card ids, no digits (a parenthesis or a ``;`` clause that holds
-    one is left out), one line. A reason with nothing left is WHY_FALLBACK."""
-    text = scrub(reason) if isinstance(reason, str) else ""
-    text = _DIGIT_PARENS.sub("", " ".join(text.split()))
-    parts = [p.strip(" ,.:") for p in text.split(";")]
+    """``Why now: <reason>``, plain words: each ``;`` clause that is a decision-window reason or a job's trigger
+    event is said plainly (decision_window.plain, WHY_EVENTS); no card ids, no digits (a parenthesis or a
+    clause that holds one is left out), one line. A reason with nothing left is WHY_FALLBACK."""
+    text = " ".join((scrub(reason) if isinstance(reason, str) else "").split())
+    parts = [_DIGIT_PARENS.sub("", _plain(p)).strip(" ,.:") for p in text.split(";")]
     words = "; ".join(p for p in parts if p and not any(c.isdigit() for c in p))
     return WHY_PREFIX + (words or WHY_FALLBACK)
 
