@@ -23,17 +23,25 @@ The hook (make_pre_tool_call, registered for Hermes ``pre_tool_call``) is off un
 it never blocks (Hermes approvals own that) and never rewrites args. On a warn it records the plain note
 (``note``) as one content-free tier_audit line, hook HOOK (counts and a hash, never the note or the command;
 nothing when the audit is off). Any exception is ok: a raising pre_tool_call callback would block the call,
-so the hook catches everything. Stdlib only, Python 3.9+.
+so the hook catches everything.
+
+The tool (``tool``, limitless_focus_safe) is read-only: ``value {mode, protected_devices, last_warnings_this_week}``
+in words (no devices, one device, two devices ... many devices; none this week ... many this week, counted from
+the audit rows with hook HOOK in the last seven days; unknown when the audit log is off, never none), modality
+derived, age_h None, and a digit-free T1 label (focus guard off, focus guard warns: two devices protected).
+It never names a serial or a display id. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import time
+from pathlib import Path
 from typing import Callable, Iterable, List, Mapping, Optional, Tuple
 
 from . import tier_audit
-from .state_reader import config
+from .state_reader import config, parse_ts
 
 OK, WARN = "ok", "warn"
 MODE_KEY, SERIALS_KEY, DISPLAYS_KEY = "focus_safe", "focus_safe_serials", "focus_safe_agent_displays"
@@ -273,3 +281,62 @@ def make_pre_tool_call(clock: Callable[[], float] = time.time) -> Callable:
             pass
         return None
     return pre_tool_call
+
+
+MODALITY = "derived"
+WEEK_S = 7 * 24 * 3600
+AUDIT_OFF = "unknown: the audit log is off"
+_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+
+
+def _count(n: int, one: str, many: str, none: str) -> str:
+    """``n`` in words: ``none``, one <one>, two <many> ... ten <many>, many <many>."""
+    if n <= 0:
+        return none
+    if n == 1:
+        return f"one {one}".strip()
+    return f"{_WORDS[n - 1]} {many}" if n <= len(_WORDS) else f"many {many}"
+
+
+def warnings_since(path, since: float) -> Optional[int]:
+    """How many focus-safe audit rows are at or after ``since``; None when there is no audit file to read."""
+    if path is None:
+        return None
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return 0
+    except (OSError, ValueError):
+        return None
+    n = 0
+    for ln in text.splitlines():
+        try:
+            row = json.loads(ln)
+        except ValueError:
+            continue
+        if not isinstance(row, dict) or row.get("hook") != HOOK or not isinstance(row.get("at"), str):
+            continue
+        at = parse_ts(row["at"])
+        n += at is not None and at >= since
+    return n
+
+
+def label(mode: str, serials: tuple, displays: tuple) -> str:
+    if mode != WARN:
+        return "focus guard off"
+    if not serials and not displays:
+        return "focus guard warns: nothing protected"
+    if not serials:
+        return "focus guard warns: the desktop is protected"
+    return f"focus guard warns: {_count(len(serials), 'device', 'devices', 'no devices')} protected"
+
+
+def tool(now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """limitless_focus_safe: the guard's settings and this week's warnings in words. Read-only."""
+    mode, serials, displays = settings(config(env, home))
+    got = warnings_since(tier_audit.audit_path(env, home), now - WEEK_S)
+    warned = AUDIT_OFF if got is None else _count(got, "this week", "this week", "none this week")
+    value = {"mode": mode, "protected_devices": _count(len(serials), "device", "devices", "no devices"),
+             "last_warnings_this_week": warned}
+    return {"value": value, "modality": MODALITY, "age_h": None, "evidence_tier": "direct",
+            "label": {"label": label(mode, serials, displays), "tier": "T1", "modality": MODALITY}}

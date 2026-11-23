@@ -150,6 +150,10 @@ def _loop(args, now):
     return tools.loop(state_dir(), now, date.fromtimestamp(now))
 
 
+def _focus_safe(args, now):
+    return focus_safe.tool(now)
+
+
 def _card_view(args, now):
     kind = args.get("kind", "state")
     return card_view.view(state_dir(), now, date.fromtimestamp(now), kind if isinstance(kind, str) else "",
@@ -423,6 +427,16 @@ nothing is sent or scheduled.",
         {"kind": {"type": "string", "enum": ["state", "week"],
                   "description": "state (today's state card, the default) or week (the week review)."}}),
         _card_view, "🃏"),
+    "limitless_focus_safe": (_schema(
+        "limitless_focus_safe",
+        "Whether the focus guard is on: when config focus_safe is warn, a shell command that drives the \
+person's own phone (adb input or am start on a protected serial, config focus_safe_serials, without naming an \
+agent display from focus_safe_agent_displays) or desktop (xdotool, wmctrl -a, osascript activate or keystroke, \
+open -a, cliclick) is noted in the audit log; it never blocks or changes a call. The value is {mode (warn or \
+off), protected_devices and last_warnings_this_week in words such as two devices and none this week; unknown \
+when the audit log is off}; modality derived, age_h null, a digit-free T1 label. Never names a serial or a \
+display. Test phone and desktop UI on an agent display, never on the person's screen. Read-only; nothing is \
+written, sent or run on a device."), _focus_safe, "🖥️"),
 }
 
 
