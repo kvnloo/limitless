@@ -111,7 +111,7 @@ def decide(job_window_class: str, state: Optional[WindowState], *, budget_left: 
 
 # Plain words for the person: decide's reasons are for logs and rows; the "Why now" line says these.
 _MOMENT = {"peak": "your focus is high right now", "trough": "it is a lighter moment, fine for a short read",
-           "wind_down": "your wind-down has started", "anytime": "you are awake"}
+           "wind_down": "it is a good moment to close the day", "anytime": "you are awake"}
 _NEED = {"peak": "a moment when your focus is high", "trough": "a lighter moment", "wind_down": "your wind-down",
          "anytime": "a moment you are awake"}
 _SINCE = r"(?: \(since [^()]*\))?"

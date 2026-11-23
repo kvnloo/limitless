@@ -157,7 +157,7 @@ def _reason(ask: Any, why: str) -> str:
 # One tap (L14): an ask the person sees ends in its own choices line; a reply is read back whole.
 NO_TITLE = "Something is waiting on you"
 LATER = "Later"
-ANSWERED, WAITING = "answered", "waiting"
+ANSWERED, REPLY_WAITING = "answered", "waiting"   # reply() actions; WAITING is the summary label
 
 
 def answers(ask: Any) -> tuple:
@@ -182,9 +182,9 @@ def reply(ask: Any, text: Any) -> dict:
     aid = ask.get("id") if isinstance(ask, dict) else None
     got = one_tap.parse(text, answers(ask))
     if got is None:
-        return {"id": aid, "answer": None, "action": WAITING, "reason": "not one of its choices: the ask stays waiting"}
+        return {"id": aid, "answer": None, "action": REPLY_WAITING, "reason": "not one of its choices: the ask stays waiting"}
     if got.lower() == LATER.lower():
-        return {"id": aid, "answer": got, "action": WAITING, "reason": "Later: the ask stays waiting, never a no"}
+        return {"id": aid, "answer": got, "action": REPLY_WAITING, "reason": "Later: the ask stays waiting, never a no"}
     return {"id": aid, "answer": got, "action": ANSWERED, "reason": "a whole reply that names one of its choices"}
 
 

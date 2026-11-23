@@ -84,7 +84,7 @@ class WhyReason(unittest.TestCase):
         self.assertEqual(g.why_line("habit cue event; anytime job and awake"),
                          "Why now: it is your habit cue; you are awake and this fits any moment")
         self.assertEqual(g.why_line("wind-down event; wind_down window open (since wind_down)"),
-                         "Why now: your wind-down started; your wind-down has started")
+                         "Why now: your wind-down started; it is a good moment to close the day")
         self.assertEqual(g.why_line("nap event; peak window open (since 1999990000)"),
                          "Why now: you are back from a nap; your focus is high right now")
 
