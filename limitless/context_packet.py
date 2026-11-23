@@ -100,11 +100,15 @@ def packet(state_dir, now: float, today: date, env: Optional[Mapping[str, str]] 
 def packet_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
     """Config ``context_packet_path`` (a relative path is in the state dir); None when unset: write nothing."""
     env = os.environ if env is None else env
-    v = config(env, home).get(CONFIG_KEY)
+    return resolve_path(config(env, home).get(CONFIG_KEY), state_dir(env, home))
+
+
+def resolve_path(v, state: Path) -> Optional[Path]:
+    """A configured ``context_packet_path`` value as a path (relative: in ``state``); None when unset or blank."""
     if not isinstance(v, str) or not v.strip():
         return None
     p = Path(v).expanduser()
-    return p if p.is_absolute() else state_dir(env, home) / p
+    return p if p.is_absolute() else Path(state) / p
 
 
 def write(p: Mapping, path) -> str:
