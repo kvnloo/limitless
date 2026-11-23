@@ -10,7 +10,9 @@ open-wearables.json; the server is never called), the NOOP export job's row (con
 its mark noop-export.json) and, before both, the context packet's row (config context_packet_path: off, live
 when written within STALE_H, else stale; read from the packet's own generated_at), with the voice MIQ's row
 (config voice_miq, its mark voice-miq.json) just before it. Right after the tool rows comes the NOOP MCP row
-(config noop_mcp and t0_tools; the server is never started).
+(config noop_mcp and t0_tools; the server is never started), then the desktop ActivityWatch's row (config
+desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
+call a server, read-only, with a short timeout).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -348,11 +350,32 @@ def tool_row(name: str, now: float) -> dict:
     return _row(f"tool {name}", "tool", status, reason)
 
 
+DESKTOP_AW_ROW = "desktop AW"
+
+
+def desktop_aw_row(cfg: Mapping, now: float, fetch=None) -> dict:
+    """The desktop's ActivityWatch (aw_desktop: config ``desktop_aw_url``, else ``desktop_aw_export``), read for
+    the STALE_H up to ``now``: off when unset (nothing is called); live when it shows app activity in that time;
+    stale when it answers with none; unreachable (status missing) when it cannot be read, with the reason.
+    Words only: never the address, a path, an app name or a title. Kind ``source``: --strict does not count it."""
+    from . import aw_desktop
+    got = aw_desktop.from_settings(cfg, state_path(cfg), now - STALE_H * 3600, now, fetch=fetch)
+    if got["state"] == aw_desktop.OFF:
+        return _row(DESKTOP_AW_ROW, "source", OFF, aw_desktop.OFF_WHY)
+    if got["events"] is None:
+        return _row(DESKTOP_AW_ROW, "source", MISSING, f"unreachable: {got['why']}")
+    if got["newest"] is None:
+        return _row(DESKTOP_AW_ROW, "source", STALE, "it answers, with no active app time in the last day")
+    return _row(DESKTOP_AW_ROW, "source", LIVE,
+                f"active app time {age_words(max(0.0, now - got['newest']) / 3600)}")
+
+
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
-    (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, the voice
-    MIQ's row (voice_miq_row) just before the context packet's.
+    (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
+    desktop's ActivityWatch (desktop_aw_row), then the voice MIQ's row (voice_miq_row) just before the
+    context packet's.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -361,7 +384,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now)) + [run_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
-    rows += [voice_miq_row(reader, cfg, now)]
+    rows += [desktop_aw_row(cfg, now), voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 

@@ -5,7 +5,9 @@
 
 The week is the seven local days from ``week_of`` in ``tz`` (a tzinfo; None = this machine's zone).
 Active time is the app-in-foreground spans (bucket type ``currentwindow``), cut to the not-afk spans when
-the DB has an ``afkstatus`` bucket for the week. Overlapping spans count once.
+the DB has an ``afkstatus`` bucket for the week. Overlapping spans count once. The desktop's ActivityWatch
+(aw_desktop, ``desktop`` below) adds its own spans, cut to its own not-afk time; titles are never read from
+it, so a ``title:`` work entry matches phone rows only.
 
 - Deep work: active time in an app the person names as work (``work_apps``: an ``app`` or ``package``
   name, trimmed and case-folded; ``title:<text>`` matches inside the window title). No list = unknown.
@@ -30,7 +32,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional
 from urllib.parse import quote
 
-from . import feeds_evidence, glide_provider
+from . import aw_desktop, feeds_evidence, glide_provider
 from .aw_reader import BUSY_TIMEOUT_S, CURRENT_WINDOW, NS
 from .state_reader import StateReader, config
 
@@ -167,30 +169,54 @@ def _week_start(week_of) -> Optional[date]:
         return None
 
 
+NO_DB = "no ActivityWatch DB at the configured path"
+
+
 def week(aw_db, week_of, tz: Optional[tzinfo], blocks=None, *, work_apps: Iterable = (),
-         feed_apps: Iterable = ()) -> dict:
+         feed_apps: Iterable = (), desktop=None) -> dict:
     """The week's flow numbers; every unknown is None with its reason in ``evidence``. Never raises on
-    missing or bad input: no DB, an unreadable DB or a bad ``week_of`` gives ``unknown(reason)``."""
+    missing or bad input: no DB, an unreadable DB or a bad ``week_of`` gives ``unknown(reason)``.
+
+    ``desktop`` (optional) is ``(lo, hi) -> aw_desktop result`` for the desktop's ActivityWatch: its spans
+    (already cut to its own not-afk time, app names only) join the phone's. Off is the phone alone, exactly as
+    without it; set and unreadable is ``unknown(reason)``, never zero work. With a desktop on, ``aw_db`` may
+    be None (no phone DB set)."""
     start = _week_start(week_of)
     if start is None:
         return unknown("no valid week_of date")
-    if not aw_db or not Path(aw_db).is_file():
-        return unknown("no ActivityWatch DB at the configured path")
+    if aw_db and not Path(aw_db).is_file() or not aw_db and desktop is None:
+        return unknown(NO_DB)
     try:
         bounds = [_day_start(start + timedelta(days=i), tz) for i in range(DAYS + 1)]
         lo, hi = bounds[0], bounds[-1]
-        windows, afk_rows = _read(Path(aw_db), lo, hi)
+        windows, afk_rows = _read(Path(aw_db), lo, hi) if aw_db else ([], [])
     except (sqlite3.Error, OSError, ValueError, OverflowError, TypeError):
         return unknown("the ActivityWatch DB could not be read (locked, broken or not an AW DB)")
+    desk = desktop(lo, hi) if desktop is not None else None
+    sources = None
+    if desk is not None and desk.get("state") != aw_desktop.OFF:
+        if desk.get("events") is None:
+            return unknown(desk.get("why") or aw_desktop.NO_ANSWER)
+        sources = (["phone"] if aw_db else []) + [aw_desktop.SOURCE]
+        windows = windows + [{"s": s, "e": e, "names": {app.casefold()}, "title": "", "desk": True}
+                             for s, e, app in desk["events"]]
+    elif not aw_db:
+        return unknown(NO_DB)
     seen = [i for i in range(DAYS) if any(w["s"] < bounds[i + 1] and w["e"] > bounds[i] for w in windows)]
     covered = _merge((bounds[i], bounds[i + 1]) for i in seen)
     days = [(start + timedelta(days=i)).isoformat() for i in seen]
     afk = _merge(x for x in afk_rows if x is not None)
 
-    def active(spans) -> list:
-        return _cut(_merge(spans), afk) if afk_rows else _merge(spans)
+    def active(ws) -> list:
+        ws = list(ws)
+        phone = _merge((w["s"], w["e"]) for w in ws if not w.get("desk"))
+        phone = _cut(phone, afk) if afk_rows else phone
+        desk_spans = [(w["s"], w["e"]) for w in ws if w.get("desk")]
+        return _merge(phone + desk_spans) if desk_spans else phone   # the desktop's spans are cut already
 
     evidence = {"source": "activitywatch", "days": days, "afk_cut": bool(afk_rows)}
+    if sources is not None:
+        evidence["sources"] = sources
     out = {"deep_min": None, "block_hours": None, "feed_leak_min": None, "leak_per_block_hour": None,
            "days_with_data": len(days), "modality": MODALITY, "evidence": evidence}
     if not days:
@@ -201,7 +227,7 @@ def week(aw_db, week_of, tz: Optional[tzinfo], blocks=None, *, work_apps: Iterab
     if work is None:
         evidence["deep"] = "unknown: no work apps set (flow_work_apps)"
     else:
-        out["deep_min"] = round(_total(active((w["s"], w["e"]) for w in windows if work(w))) / 60, 1)
+        out["deep_min"] = round(_total(active(w for w in windows if work(w))) / 60, 1)
         evidence["deep"] = "active time in the configured work apps"
 
     data_end = max((w["e"] for w in windows), default=lo)
@@ -215,7 +241,7 @@ def week(aw_db, week_of, tz: Optional[tzinfo], blocks=None, *, work_apps: Iterab
     if feed is None:
         evidence["leak"] = "unknown: no feed apps set (feed_apps)"
         return out
-    leak_min = _total(_cut(active((w["s"], w["e"]) for w in windows if feed(w)), block)) / 60
+    leak_min = _total(_cut(active(w for w in windows if feed(w)), block)) / 60
     out["feed_leak_min"] = round(leak_min, 1)
     out["leak_per_block_hour"] = round(leak_min / block_h, 1)
     evidence["leak"] = "feed-app active time inside focus blocks"
@@ -328,7 +354,9 @@ def glide_blocks(env: Optional[Mapping[str, str]] = None, home: Optional[Path] =
 
 def for_week(reader: StateReader, week_of, tz: Optional[tzinfo], env: Optional[Mapping[str, str]] = None,
              home: Optional[Path] = None) -> dict:
-    """week() with every input from config: the AW DB (StateReader.aw_db_path), the work apps, the feed
-    apps (feeds_evidence.feed_apps) and the Glide block. Read-only."""
+    """week() with every input from config: the AW DB (StateReader.aw_db_path), the desktop's ActivityWatch
+    (aw_desktop.for_config: config desktop_aw_url or desktop_aw_export; off when unset), the work apps, the
+    feed apps (feeds_evidence.feed_apps) and the Glide block. Read-only."""
     return week(reader.aw_db_path(env, home), week_of, tz, blocks=glide_blocks(env, home),
-                work_apps=work_apps(env, home), feed_apps=feeds_evidence.feed_apps(env, home))
+                work_apps=work_apps(env, home), feed_apps=feeds_evidence.feed_apps(env, home),
+                desktop=lambda lo, hi: aw_desktop.for_config(env, home, lo, hi))

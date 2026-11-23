@@ -47,7 +47,8 @@ class Wiring(unittest.TestCase):
                          {START.isoformat(): "Skipped"})
 
     def test_habit_card_imports_nothing_else_from_limitless(self):
-        src = open(habit_card.__file__, encoding="utf-8").read()
+        with open(habit_card.__file__, encoding="utf-8") as fh:
+            src = fh.read()
         self.assertNotIn("from .", src.replace("from .envelope", ""))
         self.assertNotIn("import limitless", src)
 

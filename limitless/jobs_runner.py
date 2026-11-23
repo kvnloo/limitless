@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import delivery_audit as _delivery, habit_catalogue, idea_ledger as _idea_ledger, prediction as _prediction
-from . import anki as _anki, aw_reader, blocks as _blocks, body_calibration as _body_calibration, feeds_evidence, flow_ledger as _flow_ledger, \
+from . import anki as _anki, aw_desktop, aw_reader, blocks as _blocks, body_calibration as _body_calibration, feeds_evidence, flow_ledger as _flow_ledger, \
     flow_metrics as _flow_metrics, flow_week, \
     jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
@@ -402,10 +402,11 @@ def week_passive(state_dir, habit: Optional[dict], env: Optional[Mapping[str, st
 def week_flow(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
               home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> str:
     """The week review's flow line (flow_week.review_line) for the habit week and the week before it;
-    "" when no ActivityWatch DB is configured or no week is named. Read-only."""
+    "" when neither the ActivityWatch DB nor the desktop's ActivityWatch is configured, or no week is named.
+    Read-only."""
     reader = StateReader(Path(state_dir))
     start = jobs._week_start(habit)
-    if start is None or reader.aw_db_path(env, home) is None:
+    if start is None or reader.aw_db_path(env, home) is None and not aw_desktop.configured(env, home):
         return ""
     this = flow_week.for_week(reader, start, tz, env, home)
     last = flow_week.for_week(reader, start - timedelta(days=jobs.HABIT_WEEK_DAYS), tz, env, home)

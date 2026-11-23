@@ -37,7 +37,8 @@ Thresholds (``thresholds(env, home)``; config keys, documented defaults, wording
 - Anything between reads "mixed".
 
 ``read_for(reader, lo, hi, env, home, tz)`` reads every input from config (the ActivityWatch DB through
-blocks.read_rows, read-only, cut to not-afk spans; ``flow_work_apps``; ``block_gap_min``;
+blocks.read_rows, read-only, cut to not-afk spans, and the desktop's ActivityWatch when set, through
+blocks.source_rows; ``flow_work_apps``; ``block_gap_min``;
 ``break_after_min``) for [lo, hi) and returns ``{days, pool, rows_end, why, thresholds}``; ``days`` None
 (unknown) carries ``why``, plain and digit-free. The tool's evidence tier is EVIDENCE_TIER
 ("observed-activity"): app activity as observed, a proxy, never a measure of attention.
@@ -198,11 +199,10 @@ def read_for(reader, lo: float, hi: float, env=None, home=None, tz: Optional[tzi
     """metrics() and pooled() for [lo, hi) with every input from config. Read-only; never raises on a
     missing or bad DB (that is ``why``)."""
     out = {"days": None, "pool": None, "rows_end": None, "why": "", "thresholds": thresholds(env, home)}
-    db = reader.aw_db_path(env, home)
-    rows = None if db is None else _blocks.read_rows(db, lo, hi)
+    rows, why = _blocks.source_rows(reader, lo, hi, env, home)
     apps = flow_week.work_apps(env, home)
     if rows is None:
-        out["why"] = _blocks.NO_DB
+        out["why"] = why
     elif flow_week._matcher(apps) is None:
         out["why"] = NO_WORK_APPS
     elif not rows:
