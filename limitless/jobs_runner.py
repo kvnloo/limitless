@@ -34,7 +34,7 @@ from datetime import date, datetime, tzinfo
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
-from . import aw_reader, jobs, send_gate, wake_proxy
+from . import aw_reader, feeds_evidence, jobs, send_gate, wake_proxy
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -53,12 +53,18 @@ _BODY = {
 }
 
 
-def body(spec: jobs.JobSpec, habit: Optional[dict] = None) -> str:
-    """The plain-words message for one job. The habit check-in names this week's habit and its taps."""
+def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None) -> str:
+    """The plain-words message for one job. The habit check-in names this week's habit and its taps.
+
+    ``phone`` (feeds_evidence.feeds_in_first_hour) adds one plain line to the check-in when it is known:
+    a hint, no counts, times or app names; the answer stays the person's tap.
+    """
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
         what = f"Did you do it today: {name}?" if isinstance(name, str) and name.strip() else "Did you do your habit today?"
-        return f"{what} Reply {', '.join(spec.answers[:-1])} or {spec.answers[-1]}."
+        text = f"{what} Reply {', '.join(spec.answers[:-1])} or {spec.answers[-1]}."
+        line = feeds_evidence.line(phone)
+        return f"{text}\n{line}" if line else text
     return _BODY.get(spec.name, spec.send_title)
 
 
@@ -225,6 +231,21 @@ def _send_brief(brief):
     return delivered(result), (result if isinstance(result, str) and result else "no delivery reported")
 
 
+def first_hour_wake(evs: list, cue_at: float) -> Optional[float]:
+    """The wake whose first hour a habit cue at ``cue_at`` closes: the latest wake at or before
+    ``cue_at - jobs.HABIT_CUE_AFTER_S``; None when there is none (a cue from elsewhere with no wake)."""
+    wakes = jobs.wake_times(evs, cue_at - jobs.HABIT_CUE_AFTER_S)
+    return wakes[-1] if wakes else None
+
+
+def _phone(spec: jobs.JobSpec, v: jobs.Verdict, p: "_Pass", state_dir, env, home) -> Optional[dict]:
+    """The feed-app hint for a habit check-in cued by the first hour after a wake; else None."""
+    if spec.name != jobs.HABIT_CHECKIN.name or spec.trigger_event != "habit_cue" or v.trigger_at is None:
+        return None
+    wake = first_hour_wake(p.evs, v.trigger_at)
+    return feeds_evidence.phone_hint(StateReader(Path(state_dir)), wake, env, home) if wake is not None else None
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -257,7 +278,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             if own:
                 ok, how = _send_brief(brief)       # the whole brief, same event key; never the placeholder
             else:
-                ok, how = _push(push, spec.send_title, body(spec, p.habit), _key(spec, v, p.evs, tz))
+                text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home))
+                ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz))
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)
                 with open(Path(state_dir) / SENT_LOG, "a", encoding="utf-8") as f:

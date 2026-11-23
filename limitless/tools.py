@@ -5,9 +5,11 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import habit_start as _habit_start, jobs, labeler as _labeler, owner_messages as _owner, scorecard as _scorecard
+from . import (feeds_evidence, habit_start as _habit_start, jobs, jobs_runner, labeler as _labeler,
+               owner_messages as _owner, scorecard as _scorecard)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
+from .window import MAX_AWAKE_H
 
 
 def _age_h(at, now: float):
@@ -64,11 +66,31 @@ def _checkin(v) -> str:
     return "unlogged"
 
 
-def habit(reader: StateReader, now: float, today: date) -> dict:
+def phone_hint(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+               home: Optional[Path] = None) -> dict:
+    """``{"value": seen | not seen | unknown, "evidence_tier": "proxy"}``: did the phone see a feed app in
+    the first hour after the latest wake (feeds_evidence)? Unknown while that hour is still open, with no
+    wake within MAX_AWAKE_H, no feed list or too little phone data. A hint only; never a check-in."""
+    try:
+        wakes = jobs.wake_times(jobs_runner.events(reader, env, home), now)
+    except Exception:  # noqa: BLE001 - unreadable state is unknown, never a traceback
+        wakes = []
+    wake = wakes[-1] if wakes else None
+    if wake is None or now - wake > MAX_AWAKE_H * 3600 or now < wake + jobs.HABIT_CUE_AFTER_S:
+        result = None
+    else:
+        result = feeds_evidence.phone_hint(reader, wake, env, home)
+    return {"value": feeds_evidence.hint(result), "evidence_tier": feeds_evidence.EVIDENCE_TIER}
+
+
+def habit(reader: StateReader, now: float, today: date, env: Optional[Mapping[str, str]] = None,
+          home: Optional[Path] = None) -> dict:
     """This week's one habit and its check-ins, week_of through today, and the one number so far.
 
     A 1-tap answer (habit.json) beats the sync's verdict (habit1.jsonl); a day with neither is unlogged.
     ``logged`` is "N of M logged days": N Done, M Done + No. Skipped and unlogged days stay out of M.
+    ``phone_hint`` (seen | not seen | unknown, evidence_tier "proxy") says what the phone saw in the
+    first hour after the latest wake; it never changes a check-in.
     """
     h = reader.habit()
     if not h or not h.get("habit"):
@@ -100,8 +122,11 @@ def habit(reader: StateReader, now: float, today: date) -> dict:
              "counts": counts, "today": days[-1]["checkin"], "day": len(days), "logged": f"{n} of {m} logged days"}
     if any(d["from"] == "sync" for d in days):
         ages = [a for a in sync_ages + [age_h] if a is not None]
-        return envelope(value, "proxy", min(ages) if ages else None)
-    return envelope(value, "self_report", age_h)
+        out = envelope(value, "proxy", min(ages) if ages else None)
+    else:
+        out = envelope(value, "self_report", age_h)
+    out["phone_hint"] = phone_hint(reader, now, env, home)
+    return out
 
 
 def habit_start(state_dir, habit, today: date, now: float, confirm: bool = False) -> dict:
