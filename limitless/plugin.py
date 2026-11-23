@@ -18,7 +18,7 @@ from .state_reader import StateReader, config, state_dir
 from .window import window
 
 TOOLSET = "limitless"
-_ENVELOPE = ("Returns an evidence envelope {value, modality (measured|imported|proxy|self_report), age_h, "
+_ENVELOPE = ("Returns an evidence envelope {value, modality (measured|imported|proxy|self_report|messages), age_h, "
              "evidence_tier}; value null means no data and comes with a reason. Never guess a missing value.")
 
 
@@ -82,7 +82,8 @@ TOOLS = {
     "limitless_state": (_schema(
         "limitless_state",
         "Today's state card: decision window, sleep and readiness as coarse labels with their modality, "
-        "this week's habit and inputs that are not recording. Labels only, no advice."), _state, "🧭"),
+        "this week's habit, inputs that are not recording and whether the person wrote to an agent recently "
+        "(from every configured session DB). Labels only, no advice."), _state, "🧭"),
     "limitless_window": (_schema(
         "limitless_window",
         "The current decision window: peak, trough, anytime, asleep or unknown, inferred from state "

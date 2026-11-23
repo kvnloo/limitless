@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
-from . import jobs, labeler as _labeler, scorecard as _scorecard
+from . import jobs, labeler as _labeler, owner_messages as _owner, scorecard as _scorecard
 from .envelope import STALE_H, envelope, missing, with_label
-from .state_reader import StateReader, parse_ts
+from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
 
 
 def _age_h(at, now: float):
@@ -119,3 +119,28 @@ def scorecard(path: Optional[Path], now: float) -> dict:
     if not lines:
         return envelope(None, "self_report", age_h, reason="the scorecard file has no scorecard table rows")
     return envelope(lines, "self_report", age_h)
+
+
+OWNER_KIND = "owner_message_age_h"
+
+
+def owner_message(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                  home: Optional[Path] = None) -> dict:
+    """When the person last wrote to any agent, across every configured Hermes session store: an envelope
+    ``{value: ISO time, modality: "messages", age_h, evidence_tier}`` plus ``sources: {read, failed}`` and a
+    digit-free T1 label (wrote recently | quiet for a while | no data). No store configured is missing, not
+    zero. Never carries message content; reasons never echo a path."""
+    paths = reader.owner_db_paths(env, home)
+    if paths is None:
+        return missing(f"no owner session DBs: set {OWNER_DBS_ENV} or \"{OWNER_DBS_CONFIG}\" in config.json")
+    got = _owner.newest_user_message(paths, now)
+    sources = {"read": got["sources_read"], "failed": got["sources_failed"]}
+    if got["at"] is None:
+        why = ("no message from the person in the owner session DBs" if sources["read"]
+               else "the owner session DBs could not be read")
+        out = envelope(None, "messages", None, reason=why)
+    else:
+        out = envelope(got["at"], "messages", got["age_h"])
+    out["sources"] = sources
+    out["label"] = _labeler.label(OWNER_KIND, got["age_h"], "messages")
+    return out

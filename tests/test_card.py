@@ -156,6 +156,20 @@ class Hook(unittest.TestCase):
         self.assertIn("readiness low (imported)", out["context"])
         self.assertEqual(re.findall(r"\d", out["context"]), [])
 
+    def test_owner_message_label_reaches_the_prompt_without_a_digit(self):
+        from unittest import mock
+        from test_owner_messages import CONTENT, make_db
+        with tempfile.TemporaryDirectory() as d:
+            db = make_db(Path(d) / "owner.db", [("s-cli", "user", CONTENT + " 1234", NOW - 1234.5)])
+            env = {"LIMITLESS_STATE": str(FIX), "LIMITLESS_OWNER_DBS": str(db),
+                   "LIMITLESS_CONFIG": str(Path(d) / "none.json")}
+            for mask in (True, False):
+                with mock.patch.object(card, "MASK_DIGITS", mask):
+                    out = card.make_pre_llm_call(env=env, clock=lambda: NOW, today=lambda: TODAY)()
+                self.assertIn("messages: wrote recently", out["context"])
+                self.assertEqual(re.findall(r"\d", out["context"]), [], mask)
+                self.assertNotIn("synthetic", out["context"])
+
     def test_raw_opt_in_via_env(self):
         hook = card.make_pre_llm_call(env={"LIMITLESS_STATE": str(FIX), "LIMITLESS_RAW_IN_PROMPT": "1"},
                                       clock=lambda: NOW, today=lambda: TODAY)

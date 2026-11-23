@@ -16,6 +16,9 @@ else ~/.local/state/limitless. Shapes read (see tests/fixtures/state for synthet
   screen-events.jsonl  {"ts": epoch_ms, "type", "pkg"} Android screen events (wake_proxy.events_from_screen)
   ActivityWatch DB     optional SQLite copy at $LIMITLESS_AW_DB, else config "aw_db" (relative to the
                        state dir); read only through aw_reader.person_rows (aw_db_path)
+  owner session DBs    optional Hermes session stores, one per machine the person chats from:
+                       $LIMITLESS_OWNER_DBS (os.pathsep-separated), else config "owner_dbs" (a list;
+                       relative paths in the state dir); read only through owner_messages (owner_db_paths)
 Missing or malformed files read as None / []: callers report "no data", never a guess.
 """
 from __future__ import annotations
@@ -27,6 +30,8 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 TAIL_BYTES = 64 * 1024
+OWNER_DBS_ENV = "LIMITLESS_OWNER_DBS"
+OWNER_DBS_CONFIG = "owner_dbs"
 
 
 def config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
@@ -182,6 +187,24 @@ class StateReader:
             return None
         p = Path(v).expanduser()
         return p if p.is_absolute() else self.path / p
+
+    def owner_db_paths(self, env: Optional[Mapping[str, str]] = None,
+                       home: Optional[Path] = None) -> Optional[list]:
+        """The person's Hermes session stores: $LIMITLESS_OWNER_DBS (os.pathsep-separated), else config
+        ``owner_dbs`` (a list of strings); a relative path is in the state dir, empty entries are dropped.
+        None when neither names a path (the input is missing, not zero)."""
+        env = os.environ if env is None else env
+        if env.get(OWNER_DBS_ENV):
+            items = env[OWNER_DBS_ENV].split(os.pathsep)
+        else:
+            v = config(env, home).get(OWNER_DBS_CONFIG)
+            items = v if isinstance(v, list) else []
+        out = []
+        for v in items:
+            if isinstance(v, str) and v.strip():
+                p = Path(v).expanduser()
+                out.append(p if p.is_absolute() else self.path / p)
+        return out or None
 
     def screen_events(self) -> list:
         return self._jsonl("screen-events.jsonl")

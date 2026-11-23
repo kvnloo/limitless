@@ -4,7 +4,8 @@ Privacy tier T2 (default): the card carries coarse labels only ("sleep short (pr
 made at the source by the T1 labeler (labeler.py: rules, or an optional local model), so its lines never
 hold a raw value. Every digit left in it is masked as a second guard (MASK_DIGITS). LIMITLESS_RAW_IN_PROMPT=1
 opts in to raw numbers. Labels describe one imported or proxy value; nothing here computes a score.
-The hook's card is cached until the window class, a card input file's mtime, the date or the raw flag changes.
+The hook's card is cached until the window class, a card input file's mtime, the date, the raw flag or the
+owner-message label (tools.owner_message: one short read-only probe of each owner session DB per turn) changes.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from .window import window
 MAX_LINES = 6
 ASKS_MAX_AGE_H = 36.0
 CARD_FILES = ("inputs.json", "digests.jsonl", "habit.json", "asks-latest.json")
-_WEAKEST_LAST = ("measured", "imported", "self_report", "proxy")
+_WEAKEST_LAST = ("measured", "messages", "imported", "self_report", "proxy")
 MASK_DIGITS = True  # the second guard: lines are built from T1 labels first
 
 
@@ -84,16 +85,27 @@ def _metric_text(name: str, env: dict, unit: str) -> str:
     return f"{name} {env['value']} ({env['modality']}{raw})"
 
 
+def _owner_text(owner: dict) -> str:
+    """"; messages: <T1 label>" once owner session DBs are configured; nothing when they are not."""
+    word = (owner.get("label") or {}).get("label")
+    return f"; messages: {word}" if isinstance(word, str) and not any(c.isdigit() for c in word) else ""
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
-          labeler: Optional[Callable] = None) -> dict:
+          labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
+          owner: Optional[dict] = None) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
-    labeler(kind, value, modality) -> T1 dict; the rule labeler by default."""
+    labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
+    tools.owner_message envelope (read from ``env`` when not given)."""
     win = win or window(reader, now, bands)
     items, digest_age = _metric_items(reader, now, raw, labeler or _labeler.label)
     items["window"] = win
+    owner = owner if owner is not None else tools.owner_message(reader, now, env)
+    items["owner_message"] = owner
     lines = ["[limitless] state card (coarse labels; limitless_state has detail)",
-             f"window: {win['value']}" + (f" ({win['modality']})" if win["value"] != "unknown" else ""),
+             f"window: {win['value']}" + (f" ({win['modality']})" if win["value"] != "unknown" else "")
+             + _owner_text(owner),
              "; ".join(_metric_text(n, items[n], u) for n, _, u in METRICS)]
     h = tools.habit(reader, now, today)
     items["habit_today"] = h if h["value"] is None else envelope(h["value"]["today"], "self_report", h["age_h"])
@@ -115,11 +127,12 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
 
 
 def state(reader: StateReader, now: float, today: date, *, raw: bool = False,
-          bands: Optional[Mapping] = None, labeler: Optional[Callable] = None) -> dict:
+          bands: Optional[Mapping] = None, labeler: Optional[Callable] = None,
+          env: Optional[Mapping[str, str]] = None) -> dict:
     """limitless_state: today's card plus its parts, each an envelope. Modality = the weakest part's."""
     if not reader.exists():
         return missing("the state dir does not exist")
-    c = build(reader, now, today, raw=raw, bands=bands, labeler=labeler)
+    c = build(reader, now, today, raw=raw, bands=bands, labeler=labeler, env=env)
     mods = [e["modality"] for e in c["items"].values() if e["value"] is not None and e["modality"]]
     if not mods:
         return envelope(None, "proxy", c["age_h"], reason="no state for today: every part is unknown")
@@ -132,12 +145,15 @@ class CardCache:
         self._key, self._text, self.builds = None, None, 0
 
     def get(self, reader: StateReader, now: float, today: date, raw: bool = False,
-            bands: Optional[Mapping] = None, labeler: Optional[Callable] = None) -> str:
+            bands: Optional[Mapping] = None, labeler: Optional[Callable] = None,
+            env: Optional[Mapping[str, str]] = None) -> str:
         win = window(reader, now, bands)
+        owner = tools.owner_message(reader, now, env)
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
-               tuple(getattr(labeler, "cmd", None) or ()))
+               tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner))
         if key != self._key:
-            self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler)["text"]
+            self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
+                               owner=owner)["text"]
             self._key = key
             self.builds += 1
         return self._text
@@ -157,6 +173,6 @@ def make_pre_llm_call(env: Optional[Mapping[str, str]] = None, clock: Callable[[
         if not reader.exists():
             return None
         return {"context": cache.get(reader, clock(), today(), raw=raw_in_prompt(e), bands=bands,
-                                     labeler=_labeler.from_config(e))}
+                                     labeler=_labeler.from_config(e), env=e)}
 
     return pre_llm_call

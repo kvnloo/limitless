@@ -33,7 +33,9 @@ ALLOWED = {
     "sleep_h": ("short", "ok", "long"),
     "readiness": ("low", "moderate", "high"),
     "age_h": ("fresh", "stale", "missing"),
+    "owner_message_age_h": ("wrote recently", "quiet for a while", "no data"),
 }
+OWNER_RECENT_H = 2.0  # hours since the person's newest message to any agent that still reads as "wrote recently"
 
 
 def _num(v) -> Optional[float]:
@@ -65,7 +67,16 @@ def _age(v) -> str:
     return "fresh" if a <= STALE_H else "stale"
 
 
-RULES = {"sleep_h": _sleep, "readiness": _readiness, "age_h": _age}
+def _owner_age(v) -> str:
+    if v is None:
+        return "no data"
+    a = _num(v)
+    if a is None or a < 0:
+        return UNKNOWN
+    return "wrote recently" if a <= OWNER_RECENT_H else "quiet for a while"
+
+
+RULES = {"sleep_h": _sleep, "readiness": _readiness, "age_h": _age, "owner_message_age_h": _owner_age}
 
 
 def t1(lab: str, modality) -> dict:
@@ -116,9 +127,9 @@ class LocalModelLabeler:
 
     def label(self, kind: str, value, modality=None) -> dict:
         rule = label(kind, value, modality)
-        if not self.cmd or rule["label"] in (UNKNOWN, "missing"):
+        if not self.cmd or rule["label"] in (UNKNOWN, "missing", "no data"):
             return rule
-        allowed = tuple(x for x in ALLOWED[kind] if x != "missing")
+        allowed = tuple(x for x in ALLOWED[kind] if x not in ("missing", "no data"))
         answer = self._ask(kind, value, allowed)
         return rule if answer is None else t1(answer, modality)
 
