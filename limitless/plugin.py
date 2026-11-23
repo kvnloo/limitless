@@ -300,8 +300,10 @@ streak, no score. Read-only; nothing is written, sent or started."), _habit_next
 replied Keep or Drop to the week review: the habit, whether a prediction was locked, the outcome (the receipt's \
 verdict: supports, contradicts or inconclusive, with the receipt's own modality; missing when there was none), \
 what the stop rule picked at the week's start said (keep it, drop it, your call; it only suggested) and the \
-person's decision (kept or dropped, self-reported). Words only: no score, no streak, no advice. Read-only; \
-nothing is written or sent."), _loop, "🔁"),
+person's decision (kept or dropped, self-reported). `strength`, beside the envelope, is how strong the newest \
+week's habit claim is on the evidence ladder in words (measured, derived, association, preregistered: one \
+locked week supported it, repeated: separate locked weeks did; replicated only with an outside source). Words \
+only: no score, no streak, no advice. Read-only; nothing is written or sent."), _loop, "🔁"),
     "limitless_experiment": (_schema(
         "limitless_experiment",
         "The N-of-1 habit experiments in the prediction ledger, in plain words. `current` is the newest locked \
@@ -312,8 +314,10 @@ running. `past` lists the other weeks newest first as {week_of, verdict (support
 pending or not judged without a receipt), falsifier_stated}. Modality derived; a digit-free T1 label. The \
 prediction and falsifier text are the person's own words and need the person's raw opt-in. It only suggests: \
 lock a prediction only through limitless_habit predict and write a receipt only through limitless_habit \
-receipt, each with the person's yes. Habits only; no score, no streak. Read-only; nothing is \
-written or sent."), _experiment, "🧪"),
+receipt, each with the person's yes. `strength`, beside the envelope once anything is locked, is how strong \
+the newest prediction's habit claim is on the evidence ladder in words (preregistered: one locked week supported \
+it; repeated: separate locked weeks did; a contradicted or inconclusive week never climbs). Habits only; no \
+score, no streak. Read-only; nothing is written or sent."), _experiment, "🧪"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",
         "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "
