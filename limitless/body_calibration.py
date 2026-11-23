@@ -69,3 +69,75 @@ def pairs(rows, methods: Optional[Iterable[str]] = None, pair_days: int = PAIR_D
             out.append({"day": r["day"], "reference": r["bf_pct"], "scale_day": best[1],
                         "scale": float(statistics.median(by_day[best[1]])), "gap_days": best[0]})
     return out
+
+
+MIN_PAIRS = 2
+MIN_LINEAR_PAIRS = 5
+FITTED = "calibrated against reference scans"
+NO_FIT = "uncalibrated: fewer than two reference scans paired with a scale reading"
+WORDS = (FITTED, NO_FIT)
+
+
+def _offset(ps: list) -> float:
+    return float(statistics.median(p["reference"] - p["scale"] for p in ps))
+
+
+def _line(ps: list) -> Optional[tuple]:
+    """Least squares ``reference = intercept + slope * scale``; None when the scale values do not vary."""
+    xs, ys = [p["scale"] for p in ps], [p["reference"] for p in ps]
+    mx, my = statistics.fmean(xs), statistics.fmean(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx <= 1e-12:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    return my - slope * mx, slope
+
+
+def _loo(ps: list) -> tuple:
+    """Mean absolute leave-one-out error of the offset and of the line (None when a line cannot be fitted)."""
+    off, lin = [], []
+    for i, p in enumerate(ps):
+        rest = ps[:i] + ps[i + 1:]
+        off.append(abs(p["scale"] + _offset(rest) - p["reference"]))
+        line = _line(rest)
+        if line is None:
+            lin = None
+        elif lin is not None:
+            lin.append(abs(line[0] + line[1] * p["scale"] - p["reference"]))
+    return statistics.fmean(off), (statistics.fmean(lin) if lin else None)
+
+
+def fit(rows, methods: Optional[Iterable[str]] = None, pair_days: int = PAIR_DAYS) -> dict:
+    """The simplest model the pairs support; never raises.
+
+    ``{"model": "offset"|"linear"|None, "pairs": int, "offset", "slope", "intercept", "loo_offset",
+    "loo_linear", "methods": [...], "label": T1}``. Under MIN_PAIRS pairs: model None (no calibration). Else
+    a constant offset (the median of reference minus scale). A line only with MIN_LINEAR_PAIRS or more pairs
+    and only when its leave-one-out error is strictly lower than the offset's. Numbers are T0; the label
+    has no digit.
+    """
+    ps = pairs(rows, methods, pair_days)
+    out = {"model": None, "pairs": len(ps), "offset": None, "slope": None, "intercept": None,
+           "loo_offset": None, "loo_linear": None, "methods": sorted(_methods(methods)),
+           "label": {"label": NO_FIT, "tier": "T1"}}
+    if len(ps) < MIN_PAIRS:
+        return out
+    out.update(model="offset", offset=_offset(ps), label={"label": FITTED, "tier": "T1"})
+    if len(ps) >= MIN_LINEAR_PAIRS:
+        loo_off, loo_lin = _loo(ps)
+        out.update(loo_offset=loo_off, loo_linear=loo_lin)
+        line = _line(ps)
+        if loo_lin is not None and line is not None and loo_lin < loo_off:
+            out.update(model="linear", intercept=line[0], slope=line[1])
+    return out
+
+
+def predict(f, bf: float) -> Optional[float]:
+    """The scale reading ``bf`` corrected by fit ``f``; None when ``f`` is no fit."""
+    if not isinstance(f, dict):
+        return None
+    if f.get("model") == "linear":
+        return f["intercept"] + f["slope"] * bf
+    if f.get("model") == "offset":
+        return bf + f["offset"]
+    return None
