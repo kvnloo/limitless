@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""limitless-habit-start "<habit>" [--first-step TEXT] [--write]: start this week's one habit.
+"""limitless-habit-start "<habit>" [--first-step TEXT] [--stop-rule ID] [--write]: start this week's one habit.
 
 Run it only after the person said yes. Without --write it is a dry run: it prints what it would start
 and writes nothing. It prints one plain line: "would start: ...", "started: ..." or "refused: <why>".
@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import habit_start  # noqa: E402
+from limitless import habit_start, stop_rule  # noqa: E402
 from limitless.state_reader import state_dir  # noqa: E402
 
 REFUSED_EXIT = 3
@@ -25,11 +25,13 @@ def main(argv):
     ap = argparse.ArgumentParser(prog="limitless-habit-start", add_help=True)
     ap.add_argument("habit", help="this week's one habit, in the person's words")
     ap.add_argument("--first-step", help="its 2-minute first step (optional)")
+    ap.add_argument("--stop-rule", choices=list(stop_rule.RULES),
+                    help="the week's keep-or-drop rule, from the list (optional; it only suggests)")
     ap.add_argument("--write", action="store_true", help="write habit.json (default: dry run)")
     args = ap.parse_args(argv[1:])
     now = time.time()
     r = habit_start.start_week(state_dir(), args.habit, date.fromtimestamp(now), args.write, now=now,
-                               first_step=args.first_step)
+                               first_step=args.first_step, stop_rule=args.stop_rule)
     print(habit_start.line(r))
     return REFUSED_EXIT if r["action"] == habit_start.REFUSED else 0
 

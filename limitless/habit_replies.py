@@ -20,7 +20,9 @@ belongs to this week (sent on or after its day seven, at or before ``now``) and 
 of it. Its first word, read as above, must be Keep or Drop. The first one writes ``decision`` (Keep or
 Drop) and ``decided_at`` (the reply's ISO time, UTC) into habit.json, atomically, with every other key
 kept; a decision already there is never overwritten. No reply or any other reply writes nothing: the
-week stays undecided, never a Drop. Dry run by default.
+week stays undecided, never a Drop. Dry run by default. The written decision also appends the week's one loop
+row to predictions.jsonl (stop_rule.record_loop: habit, prediction, outcome, rule verdict, decision); the
+rule's verdict never changes the decision.
 
 The Hermes session store is SQLite, opened read-only (``mode=ro``). Columns used, as in
 NousResearch/hermes-agent ``hermes_state.py`` (v2026.4.13) and ``persistence/sqlite/_schema_ddl.py``:
@@ -232,7 +234,10 @@ def decide(state_dir, replies: Iterable[Tuple[float, str]], now: float, dry_run:
             rows.append(_drow(t, week_of, answer, WOULD_WRITE if dry_run else WRITE,
                               "the first Keep or Drop after the week review", tz))
     if new is not None and not dry_run:
-        _write_atomic(state / HABIT_FILE, dict(habit, decision=new, decided_at=_iso(new_at, timezone.utc)))
+        from . import stop_rule   # not at the top: stop_rule -> prediction -> habit_replies
+        decided = dict(habit, decision=new, decided_at=_iso(new_at, timezone.utc))
+        _write_atomic(state / HABIT_FILE, decided)
+        stop_rule.record_loop(state, decided, new, decided["decided_at"], reader.habit_days(), now)
     return rows
 
 

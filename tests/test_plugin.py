@@ -21,7 +21,7 @@ FIX = ROOT / "tests" / "fixtures" / "state"
 CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_capture", "limitless_catchup", "limitless_flow_metrics",
-         "limitless_habit", "limitless_naps", "limitless_overnight",
+         "limitless_habit", "limitless_loop", "limitless_naps", "limitless_overnight",
          "limitless_propose", "limitless_quiet", "limitless_rides", "limitless_scorecard", "limitless_sleep", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
@@ -220,6 +220,13 @@ class Wiring(unittest.TestCase):
             if name == "limitless_flow_metrics":   # the same synthetic block, in its own state dir
                 (st / "flow").mkdir()
                 env = {"LIMITLESS_STATE": str(st / "flow"), "LIMITLESS_CONFIG": str(blocks_config(st / "flow"))}
+            if name == "limitless_loop":   # one synthetic decided week
+                from limitless import stop_rule
+                (st / "loop").mkdir()
+                stop_rule.record_loop(st / "loop", {"habit": "Synthetic habit", "week_of": "2030-01-08",
+                                                    "checkins": {"2030-01-08": "Done"}, "stop_rule": "most_done"},
+                                      "Keep", "2030-01-14T09:00:00+00:00", now=NOW)
+                env = {"LIMITLESS_STATE": str(st / "loop")}
             res = self.call(name, args, env)
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], (name, res))
