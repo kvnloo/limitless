@@ -77,7 +77,7 @@ class Handlers(unittest.TestCase):
             if name in ("limitless_anki", "limitless_body", "limitless_overnight", "limitless_rides",
                         "limitless_sleep", "limitless_naps", "limitless_quiet", "limitless_blocks", "limitless_flow_metrics", "limitless_flow_ledger",
                         "limitless_propose", "limitless_loop", "limitless_presleep_hr",
-                        "limitless_schedule", "limitless_habit_next", "limitless_ideas", "limitless_card_view"):  # own T1 words; the
+                        "limitless_schedule", "limitless_habit_next", "limitless_ideas", "limitless_card_view", "limitless_phase"):  # own T1 words; the
                 continue                     # fixture has no body_file, work queue, rides, sleep or AW data;
                                              # quiet: on, off, ...; anki: no collection;
                                              # propose: its action words; loop: no week decided;
@@ -85,6 +85,7 @@ class Handlers(unittest.TestCase):
                                              # schedule: its card count (test_schedule_tool)
                                              # habit_next: next habit: <name> (test_habit_next_tool)
                                              # card_view: a state card with <rows> (test_ui_card_tool)
+                                             # phase: just woke, day, ... (test_phase_tool)
             res = self.call(name, {"text": "a synthetic thought"})
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], name)
