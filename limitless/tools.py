@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import jobs, labeler as _labeler, owner_messages as _owner, scorecard as _scorecard
+from . import habit_start as _habit_start, jobs, labeler as _labeler, owner_messages as _owner, scorecard as _scorecard
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, parse_ts
 
@@ -102,6 +102,19 @@ def habit(reader: StateReader, now: float, today: date) -> dict:
         ages = [a for a in sync_ages + [age_h] if a is not None]
         return envelope(value, "proxy", min(ages) if ages else None)
     return envelope(value, "self_report", age_h)
+
+
+def habit_start(state_dir, habit, today: date, now: float, confirm: bool = False) -> dict:
+    """Start this week's one habit (habit_start.start_week), writing only when ``confirm`` is True.
+
+    An envelope whose value is the start row ``{action, reason, habit, week_of, kept}``, self-reported and
+    of age zero, with a digit-free T1 label: would start this habit week, started this habit week or
+    refused: <why>. Without confirm it writes nothing and says what it would do.
+    """
+    r = _habit_start.start_week(state_dir, habit, today, confirm is True, now=now)
+    out = envelope(r, "self_report", 0.0)
+    out["label"] = {"label": _habit_start.label(r), "tier": "T1", "modality": "self_report"}
+    return out
 
 
 def scorecard(path: Optional[Path], now: float) -> dict:
