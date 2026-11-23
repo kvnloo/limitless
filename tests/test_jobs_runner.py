@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -15,6 +16,7 @@ from limitless import jobs, jobs_runner  # noqa: E402
 
 NOW = 2_000_000_000.0
 H = 3600.0
+WEEK_OF = date.fromtimestamp(NOW).isoformat()   # a habit week started today: the check-in may speak
 
 
 def write_rows(path, rows):
@@ -180,7 +182,7 @@ class EventsAndWindow(Base):
 
     def test_events_jsonl_wakes_the_habit_check_in_with_its_habit(self):
         self.awake_after_night()
-        (self.st / "habit.json").write_text(json.dumps({"habit": "Stretch for two minutes", "checkins": {}}))
+        (self.st / "habit.json").write_text(json.dumps({"week_of": WEEK_OF, "habit": "Stretch for two minutes", "checkins": {}}))
         write_rows(self.st / "events.jsonl", [{"event": "habit_cue", "at": NOW - 60},
                                               {"event": "not_an_event", "at": NOW - 30},
                                               {"event": "habit_cue", "at": "not a time"}, ["junk"]])
@@ -223,6 +225,7 @@ class EventsAndWindow(Base):
         (self.st / "sleepmode-poll.json").write_text(json.dumps({"at": NOW - 60, "ok": True}))
         # A habit cue after Sleep mode went on: triggered, not expired, but the person is asleep.
         write_rows(self.st / "events.jsonl", [{"event": "habit_cue", "at": NOW - 60}])
+        (self.st / "habit.json").write_text(json.dumps({"week_of": WEEK_OF, "habit": "Synthetic habit"}))
         self.glide({"resume": {"saved": NOW - 0.5 * H}})
         row = self.by_job(self.once())["Habit check-in"]
         self.assertEqual(row["action"], jobs.HOLD)

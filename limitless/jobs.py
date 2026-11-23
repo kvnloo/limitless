@@ -10,6 +10,7 @@ Stdlib only, Python 3.9+.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any, NamedTuple, Optional, Tuple
 
 from . import decision_window, send_gate
@@ -93,6 +94,29 @@ class Verdict(NamedTuple):
     action: str                        # deliver | hold | drop | not_triggered
     reason: str                        # one line; a held or dropped job shows it in the run log
     trigger_at: Optional[float] = None
+
+
+HABIT_WEEK_DAYS = 7
+
+
+def habit_week_gate(habit: Optional[dict], today: date) -> Optional[Verdict]:
+    """None inside a started habit week, else the check-in's drop verdict.
+
+    Started: habit.json names a habit and its ``week_of`` is today or up to six days back (days one to
+    seven). No habit, no valid week_of or a week_of after today: "no habit week started". From day
+    eight on: "habit week over", so the check-in never runs past its week without a new start.
+    """
+    h = habit if isinstance(habit, dict) else {}
+    name = h.get("habit")
+    try:
+        start = date.fromisoformat(str(h.get("week_of")))
+    except ValueError:
+        start = None
+    if not (isinstance(name, str) and name.strip()) or start is None or start > today:
+        return Verdict(DROP, "no habit week started")
+    if today >= start + timedelta(days=HABIT_WEEK_DAYS):
+        return Verdict(DROP, "habit week over")
+    return None
 
 
 def events_from_sleepmode(rows: list) -> list:

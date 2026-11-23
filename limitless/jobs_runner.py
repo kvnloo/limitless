@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from datetime import date
 from pathlib import Path
 from typing import Callable, Mapping, NamedTuple, Optional
 
@@ -153,14 +154,23 @@ def event_key(state_dir, now: float, job: str = jobs.WAKE_BRIEF.name, env: Optio
 
 
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
-             env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> list:
-    """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``."""
+             env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+             today: Optional[date] = None) -> list:
+    """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``.
+
+    A triggered habit check-in drops outside a started habit week (jobs.habit_week_gate); ``today``
+    is the local date of ``now`` unless the caller passes one.
+    """
     p = _read_pass(state_dir, now, env=env, home=home)
+    today = date.fromtimestamp(now) if today is None else today
     sent = p.sent
     proxy_at = {e["at"] for e in p.evs if e.get("source") == "screen"}   # screen wakes and their habit cues
     rows = []
     for spec in p.specs:
         v = jobs.should_fire(spec, p.evs, p.window, sent, now)
+        gate = jobs.habit_week_gate(p.habit, today) if spec.name == jobs.HABIT_CHECKIN.name else None
+        if gate is not None and v.action != jobs.NOT_TRIGGERED:
+            v = gate._replace(trigger_at=v.trigger_at)      # a cue came, but no started week: drop, never send
         action, reason = v.action, v.reason
         if v.trigger_at is not None and v.trigger_at in proxy_at:
             reason = f"{reason}; the wake is a phone-quiet gap (proxy), not a sleep measure"
