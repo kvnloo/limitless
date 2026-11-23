@@ -175,5 +175,103 @@ class DryRunMode(Base):
         self.assertIn("four nights of wearable sleep", r["reason"])
 
 
+class WriteMode(Base):
+    def test_write_mode_writes_both_files_and_a_rerun_is_byte_identical(self):
+        self.config(noop_export="write")
+        self.runs(self.copied(NOW - 2 * H))
+        r = self.row(self.once())
+        self.assertEqual(r["action"], jobs.RUN, r)
+        self.assertIn("sleep file: written, four nights new or changed", r["reason"])
+        self.assertEqual(len(self.sleep.read_text().splitlines()), 4)
+        self.assertEqual(len(self.pre.read_text().splitlines()), 4)
+        for p in (self.sleep, self.pre):
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+        before = {p: (p.read_bytes(), os.stat(p).st_mtime_ns) for p in (self.sleep, self.pre)}
+        self.runs(self.copied(NOW - 2 * H), self.copied(NOW - H))      # the next sync copied the same DB again
+        again = self.row(self.once(NOW + 60))
+        self.assertEqual(again["action"], jobs.RUN, again)
+        self.assertIn("sleep file: unchanged", again["reason"])
+        self.assertIn("pre-sleep heart-rate file: unchanged", again["reason"])
+        self.assertEqual({p: (p.read_bytes(), os.stat(p).st_mtime_ns) for p in (self.sleep, self.pre)}, before)
+        self.assertEqual(self.load_mark()["outcome"], "done")
+
+
+class PlainReasons(Base):
+    def test_no_noop_db_is_the_plain_reason_recorded_once_never_a_loop(self):
+        self.config(noop_export="write", noop_db=None)
+        self.runs(self.copied(NOW - H))
+        r = self.row(self.once())
+        self.assertEqual(r["action"], jobs.RUN)
+        self.assertIn("no NOOP database configured", r["reason"])
+        m = self.load_mark()
+        self.assertEqual((m["outcome"], m["row_at"]), ("nothing to export", NOW - H))
+        self.assertEqual(self.row(self.once(NOW + 60))["action"], jobs.DROP, "the same copy is not retried")
+        self.assertFalse(self.sleep.exists())
+
+    def test_a_missing_db_file_is_nothing_to_export(self):
+        self.config(noop_export="write", noop_db="gone.db")
+        self.runs(self.copied(NOW - H))
+        self.assertIn("no NOOP database at the configured path", self.row(self.once())["reason"])
+        self.assertEqual(self.load_mark()["outcome"], "nothing to export")
+
+    def test_an_unconfigured_output_is_named_and_the_other_still_written(self):
+        for missing, written, other in (("sleep_file", self.pre, self.sleep),
+                                        ("presleep_hr_file", self.sleep, self.pre)):
+            for p in (self.sleep, self.pre, self.mark):
+                if p.exists():
+                    p.unlink()
+            self.config(noop_export="write", **{missing: None})
+            self.runs(self.copied(NOW - H))
+            r = self.row(self.once())
+            self.assertIn(f'not configured (set "{missing}" in config.json), not written', r["reason"])
+            self.assertTrue(written.exists(), missing)
+            self.assertFalse(other.exists(), missing)
+            self.assertEqual(self.load_mark()["outcome"], "done")
+            self.assertEqual(self.row(self.once(NOW + 60))["action"], jobs.DROP)
+
+
+class MarkFile(Base):
+    def test_mark_is_0600_digit_free_except_epochs_and_has_no_path(self):
+        self.config(noop_export="write")
+        self.runs(self.copied(NOW - H))
+        self.once()
+        self.assertEqual(stat.S_IMODE(os.stat(self.mark).st_mode), 0o600)
+        m = self.load_mark()
+        self.assertEqual(set(m), {"row_at", "ran_at", "mode", "outcome", "said"})
+        self.assertEqual((m["row_at"], m["ran_at"]), (NOW - H, NOW))
+        rest = json.dumps({k: v for k, v in m.items() if k not in ("row_at", "ran_at")})
+        self.assertNotRegex(rest, r"\d")
+        for bad in ("/", "\\", self.tmp.name, "noop-copy", ".db", ".jsonl", RING, "bpm", "asleep_s"):
+            self.assertNotIn(bad, self.mark.read_text(), bad)
+        self.assertEqual([p.name for p in self.st.iterdir() if p.name.startswith(".")], [], "no temp file left")
+
+    def test_a_malformed_mark_is_no_mark(self):
+        self.config(noop_export="dry_run")
+        self.runs(self.copied(NOW - H))
+        self.mark.write_text("not json")
+        self.assertEqual(self.row(self.once())["action"], jobs.RUN)
+        self.assertEqual(self.load_mark()["row_at"], NOW - H)
+
+
+class NeverSends(Base):
+    def test_it_never_pushes_even_with_a_push_and_send(self):
+        calls = []
+        self.config(noop_export="write")
+        self.runs(self.copied(NOW - H))
+        rows = jobs_runner.run_once(self.st, NOW, push=lambda *a, **k: calls.append(a) or "telegram",
+                                    dry_run=False, env=self.env, home=self.dir, tz=UTC)
+        self.assertEqual(self.row(rows)["action"], jobs.RUN)
+        self.assertEqual(calls, [])
+        self.assertFalse((self.st / "jobs-sent.jsonl").exists())
+
+    def test_the_job_module_starts_no_process_and_opens_no_socket(self):
+        src = (ROOT / "limitless" / "jobs_runner.py").read_text()
+        start = src.index("NOOP_MARK = ")
+        part = src[start:src.index("def run_once(")]
+        for word in ("subprocess", "os.system", "os.kill", "signal", "socket", "urllib", "Popen", "systemctl",
+                     "push("):
+            self.assertNotIn(word, part, word)
+
+
 if __name__ == "__main__":
     unittest.main()
