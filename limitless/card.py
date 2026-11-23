@@ -30,6 +30,10 @@ The same trough, with config ``palace_link`` set, no Anki offer on this card, no
 (palace.for_turn), adds "A short memory palace walk fits now. <link>" on a line of its own after the card
 (outside MAX_LINES, so the link stays whole); once the gate lets that card through, the hook marks the wake as
 offered (palace.json). build() adds it only when given ``palace_offer``.
+Sleep debt (tools.sleep_debt over the wearable sleep file and the phone proxy; sleep_debt.debt) adds its digit-free
+words on a line of their own right under the sleep and readiness line: "some sleep debt", "a lot of sleep debt
+(phone estimate)", ...; nothing when it is unknown (too few nights). Only a sleep_debt.KNOWN_LABELS word is used;
+the card never shows the minutes, not even under the raw opt-in (limitless_sleep_debt has them).
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
 MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -46,6 +50,7 @@ from typing import Any, Callable, Mapping, Optional
 from . import anki as _anki, bedtime, explain_back as _explain_back, flow_week, modes, peak as _peak, phase as _phase
 from . import palace as _palace
 from . import labeler as _labeler
+from . import sleep_debt as _sleep_debt
 from . import tier_audit, tools
 from . import weekly_target as _weekly_target
 from .decision_window import UNKNOWN
@@ -183,6 +188,19 @@ def peak_label(reader: StateReader, now: float, env: Optional[Mapping[str, str]]
     return word if isinstance(word, str) and not any(c.isdigit() for c in word) else None
 
 
+def debt_line(reader: StateReader, now: float, today: date, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """The sleep debt words (tools.sleep_debt, never its numbers) when known, else None; only a
+    sleep_debt.KNOWN_LABELS word, and a digit drops it. Read-only; never raises."""
+    try:
+        if not reader.exists():
+            return None
+        word = ((tools.sleep_debt(reader, now, today, raw=False, env=env) or {}).get("value") or {}).get("label")
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+    ok = isinstance(word, str) and word in _sleep_debt.KNOWN_LABELS and not any(c.isdigit() for c in word)
+    return word if ok else None
+
+
 def light_line(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None) -> Optional[str]:
     """phase.CARD_LINE while the phase is just_woke (phase.read_for), else None; a digit drops it. Never raises."""
     try:
@@ -238,7 +256,7 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
           explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET,
-          palace_offer: Optional[str] = None) -> dict:
+          palace_offer: Optional[str] = None, debt: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
@@ -253,6 +271,9 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
              f"window: {win['value']}" + (f" ({win['modality']})" if win["value"] != "unknown" else "")
              + _owner_text(owner),
              "; ".join(_metric_text(n, items[n], u) for n, _, u in METRICS)]
+    owed = debt_line(reader, now, today, env) if debt is _UNSET else debt
+    if isinstance(owed, str) and owed in _sleep_debt.KNOWN_LABELS:
+        lines.append(owed)   # its own line under the sleep line; the card has three lines here, so it fits
     h = tools.habit(reader, now, today, env)
     hv = h["value"] if isinstance(h.get("value"), dict) else None
     if hv is not None and hv.get("habit"):
@@ -341,14 +362,15 @@ class CardCache:
         lit = light_line(reader, now, env)   # the light part ends with time since the wake: part of the key
         explain, self.wake = explain_offer(reader, now, win, env)   # the mark and landed work change it too
         pal = palace_offer(reader, now, win, env, offer)   # quiet and its mark change it too: part of the key
+        owed = debt_line(reader, now, today, env)   # the sleep file and the phone's nights change it: part of the key
         self.palace = (pal["line"], pal["wake"]) if pal["line"] else None
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _passive_mtime(reader, env), word, offer, lit, explain, pal["line"])
+               _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
-                               explain_offer=explain, palace_offer=pal["line"])["text"]
+                               explain_offer=explain, palace_offer=pal["line"], debt=owed)["text"]
             self._key = key
             self.builds += 1
         return self._text

@@ -106,6 +106,10 @@ def _sleep(args, now):
     return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _sleep_debt(args, now):
+    return tools.sleep_debt(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
+
+
 def _outages(args, now):
     from . import outage   # outage -> doctor, which reads this module's TOOLS lazily
     return outage.tool(state_dir(), now, config())
@@ -381,6 +385,15 @@ measured only when the wearable covers the newest night, else proxy; a night wit
 zero. regularity says how regular sleep times have been over two weeks, the source named: sleep times steady, \
 vary a lot, drifting later or drifting earlier, or unknown with too few nights; never a clock time. A quiet \
 phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
+    "limitless_sleep_debt": (_schema(
+        "limitless_sleep_debt",
+        "Sleep debt in one word: the last three nights against the person's own usual night (the median of the \
+fourteen nights before them), from the same two sources as limitless_sleep: the wearable night first, the phone \
+proxy only for a date the wearable missed. Plain words: little sleep debt, some sleep debt or a lot of sleep debt, \
+with (phone estimate) when any night used is a phone night; unknown: too few nights when there are not enough \
+nights. A missing night is unknown, never zero. The thresholds are shares of the person's own usual night, not a \
+norm. The label only; minutes and night counts need the person's raw opt-in. No target, no advice, no clock \
+time. Read-only; nothing is written or sent."), _sleep_debt, "🛌"),
     "limitless_naps": (_schema(
         "limitless_naps",
         "Yesterday's naps from phone Sleep mode (on, then off): a Sleep-mode period shorter than config nap_max_h \

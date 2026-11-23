@@ -22,7 +22,7 @@ CARD = ROOT / "tests" / "fixtures" / "scorecard" / "scorecard.md"
 NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_delivery", "limitless_experiment", "limitless_explain_back", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
          "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_outages", "limitless_overnight",
-         "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_result_tier", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_state",
+         "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_result_tier", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_sleep_debt", "limitless_state",
          "limitless_status", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
@@ -53,6 +53,18 @@ def sleep_config(st: Path) -> Path:
     from datetime import date, timedelta
     night = (date.fromtimestamp(NOW) - timedelta(days=1)).isoformat()
     (st / "sleep.jsonl").write_text(json.dumps({"night": night, "asleep_s": 25200, "source": "synthetic-ring"}) + "\n")
+    cfg = st / "sleep-config.json"
+    cfg.write_text(json.dumps({"sleep_file": "sleep.jsonl"}))
+    return cfg
+
+
+def sleep_debt_config(st: Path) -> Path:
+    """A config naming a synthetic wearable sleep file in ``st`` with the seventeen nights before NOW."""
+    from datetime import date, timedelta
+    today = date.fromtimestamp(NOW)
+    rows = [{"night": (today - timedelta(days=a)).isoformat(), "asleep_s": 25200, "source": "synthetic-ring"}
+            for a in range(1, 18)]
+    (st / "sleep.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     cfg = st / "sleep-config.json"
     cfg.write_text(json.dumps({"sleep_file": "sleep.jsonl"}))
     return cfg
@@ -236,6 +248,8 @@ class Wiring(unittest.TestCase):
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_ANKI": str(anki_collection(st))}
             if name == "limitless_sleep":   # one synthetic wearable night before NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(sleep_config(st))}
+            if name == "limitless_sleep_debt":   # seventeen synthetic wearable nights before NOW
+                env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(sleep_debt_config(st))}
             if name == "limitless_presleep_hr":   # fifteen synthetic wearable nights before NOW
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(presleep_hr_config(st))}
             if name == "limitless_blocks":   # one synthetic long block up to NOW

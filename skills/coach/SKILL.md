@@ -43,6 +43,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | What ideas did I record this week? | limitless_ideas |
 | Did my pushes stay within the limit this week? | limitless_delivery |
 | How did I sleep this week? | limitless_sleep |
+| Am I short on sleep? | limitless_sleep_debt |
 | Did I nap yesterday? | limitless_naps |
 | Was my heart rate before sleep usual? | limitless_presleep_hr |
 | Does my wind-down line offer slow breathing? | limitless_breathing |
