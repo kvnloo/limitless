@@ -46,8 +46,8 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping, NamedTuple, Optional
 
 from . import anki as _anki, aw_reader, blocks as _blocks, body as _body, feeds_evidence, flow_metrics as _flow_metrics, flow_week, \
-    jobs, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
-    rides as _rides, send_gate, sleep as _sleep, wake_proxy, weekly_target
+    jobs, naps as _naps, overnight as _overnight, passive_habit, one_tap, quiet as _quiet, regularity as _regularity, \
+    rides as _rides, send_gate, sleep as _sleep, tier_audit, wake_proxy, weekly_target
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -75,7 +75,7 @@ _BODY[jobs.BREAK_NUDGE.name] = BREAK_BODY
 def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict] = None,
          synced: Optional[dict] = None, flow: str = "", passive: str = "", body_line: str = "",
          overnight: str = "", rides_line: str = "", sleep_line: str = "", fragment: str = "",
-         anki_line: str = "", target_days: Optional[int] = None) -> str:
+         anki_line: str = "", target_days: Optional[int] = None, naps_line: str = "") -> str:
     """The plain-words message for one job. The habit check-in names this week's habit; every body that asks
     (habit check-in, week review, MIQ) ends in its one_tap.choices_line, so one_tap.is_one_tap holds.
 
@@ -87,7 +87,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     (flow_week.review_line), then ``fragment`` (week_flow_metrics: how broken up the work was, in words), then
     ``body_line`` (week_body: the body fat trend in words), then ``rides_line``
     (week_rides: this week's rides in words), then ``sleep_line`` (week_sleep: the wearable beside the phone
-    proxy, in words), then ``anki_line`` (week_anki: this week's Anki reviews in words), each as one more line
+    proxy, in words), then ``naps_line`` (week_naps: this week's naps from phone Sleep mode, in words), then
+    ``anki_line`` (week_anki: this week's Anki reviews in words), each as one more line
     when given, then ``Reply: Keep / Drop``. The first line's number
     stays the tapped one. The MIQ (wind-down) body is its question, then ``overnight`` (overnight.plan_for:
     what runs tonight, count words only) when given, then ``Reply: Yes / No / Later``.
@@ -101,7 +102,8 @@ def body(spec: jobs.JobSpec, habit: Optional[dict] = None, phone: Optional[dict]
     if spec.name == jobs.WEEK_REVIEW.name:
         return "\n".join(x for x in (jobs.week_review_text(habit, synced), weekly_target.review_line(target),
                                       passive, flow, fragment, body_line,
-                                      rides_line, sleep_line, anki_line, one_tap.choices_line(spec.answers))
+                                      rides_line, sleep_line, naps_line, anki_line,
+                                      one_tap.choices_line(spec.answers))
                          if x)
     if spec.name == jobs.HABIT_CHECKIN.name:
         name = (habit or {}).get("habit") if isinstance(habit, dict) else None
@@ -428,6 +430,54 @@ def week_sleep(state_dir, env: Optional[Mapping[str, str]] = None, home: Optiona
         return ""
 
 
+RAW_ENV = "LIMITLESS_RAW_IN_PROMPT"     # card.raw_in_prompt's opt-in (card is not imported: it imports this module)
+
+
+def _gated(hook: str, text: str, env: Optional[Mapping[str, str]], home: Optional[Path]) -> str:
+    """``text`` after tier_audit.gate (recorded, content-free); "" when it is empty or blocked."""
+    if not text:
+        return ""
+    env_ = os.environ if env is None else env
+    return tier_audit.gate(hook, text, env_.get(RAW_ENV) == "1", env, home) or ""
+
+
+def _nap_events(state_dir, env, home):
+    reader = StateReader(Path(state_dir))
+    cfg = config(env, home)
+    return jobs.events_from_sleepmode(reader.sleepmode()), _naps.nap_max_h(cfg), _naps.near_night_h(cfg)
+
+
+def brief_naps(state_dir, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+               tz: Optional[tzinfo] = None) -> str:
+    """The wake brief's naps line for yesterday (the local day before ``now``): naps.day's words, capitalized,
+    with the source named ("Naps yesterday: one short nap (phone Sleep mode)"), through tier_audit.gate (hook
+    ``brief:naps``); "" when unknown (no Sleep-mode change yesterday) or unreadable. Read-only."""
+    try:
+        evs, nap_max, near = _nap_events(state_dir, env, home)
+        got = _naps.day(evs, datetime.fromtimestamp(now, tz).date() - timedelta(days=1), nap_max, near, tz)
+        if got["naps"] is None:
+            return ""
+        word = got["label"]["label"]
+        return _gated("brief:naps", f"{word[0].upper()}{word[1:]}{_naps.SOURCE}", env, home)
+    except Exception:  # noqa: BLE001 - broken Sleep-mode rows must not stop the brief
+        return ""
+
+
+def week_naps(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+              today: Optional[date] = None, tz: Optional[tzinfo] = None) -> str:
+    """The week review's naps line (naps.week_line over the seven local days before ``today``), digit-free, through
+    tier_audit.gate (hook ``week_review:naps``); "" when no ``today`` is given or no Sleep-mode change falls in those
+    days (unknown, not none). Read-only."""
+    if not isinstance(today, date):
+        return ""
+    try:
+        evs, nap_max, near = _nap_events(state_dir, env, home)
+        line = _naps.week_line(_naps.week(evs, today - timedelta(days=7), today - timedelta(days=1), nap_max, near, tz))
+        return _gated("week_review:naps", f"{line}." if line else "", env, home)
+    except Exception:  # noqa: BLE001 - broken Sleep-mode rows must not stop the review
+        return ""
+
+
 def week_anki(state_dir, habit: Optional[dict], env: Optional[Mapping[str, str]] = None,
               home: Optional[Path] = None, tz: Optional[tzinfo] = None, today: Optional[date] = None) -> str:
     """The week review's Anki line (anki.review_line of anki.for_week over the habit week up to ``today``),
@@ -496,9 +546,10 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 sleep_line = week_sleep(state_dir, env, home, today, tz) if review else ""
                 fragment = week_flow_metrics(state_dir, p.habit, env, home, tz) if review else ""
                 anki_line = week_anki(state_dir, p.habit, env, home, tz, today) if review else ""
+                naps_line = week_naps(state_dir, env, home, today, tz) if review else ""
                 text = body(spec, p.habit, _phone(spec, v, p, state_dir, env, home), p.synced, flow, passive,
                             body_line, plan, rides_line, sleep_line, fragment, anki_line,
-                            target_days=weekly_target.target_days(env, home))
+                            target_days=weekly_target.target_days(env, home), naps_line=naps_line)
                 ok, how = _push(push, spec.send_title, text, _key(spec, v, p.evs, tz, p.habit), why=v.reason)
             if ok:
                 entry = jobs.sent_entry(spec, v.trigger_at, now)

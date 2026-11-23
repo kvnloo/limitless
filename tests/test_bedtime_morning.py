@@ -133,7 +133,9 @@ class BriefCli(unittest.TestCase):
             r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=env,
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual((home / "delivered.txt").read_text(), "State: synthetic\nSaved last night: 2 ideas")
+            # the two synthetic nights are Sleep-mode rows yesterday with no short period: the naps line says none
+            self.assertEqual((home / "delivered.txt").read_text(),
+                             "State: synthetic\nSaved last night: 2 ideas\nNaps yesterday: none (phone Sleep mode)")
 
 
 if __name__ == "__main__":
