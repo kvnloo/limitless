@@ -11,7 +11,7 @@ from . import (anki as _anki, asks as _asks, blocks as _blocks, body as _body, f
                overnight as _overnight, owner_messages as _owner, passive_habit, peak as _peak,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, scorecard as _scorecard,
-               sleep as _sleep, weekly_target as _weekly_target)
+               sleep as _sleep, stop_rule as _stop_rule, weekly_target as _weekly_target)
 from .envelope import STALE_H, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
@@ -315,6 +315,62 @@ def habit_receipt(state_dir, today: date, now: float, confirm: bool = False) -> 
     else:
         r = _prediction.receipt(state_dir, week, write=confirm is True, today=today, now=now)
     return _labeled_row(r, _prediction.receipt_label(r))
+
+
+LOOP_WEEKS = 4                    # "the last few" weekly loop rows the tool shows
+_NUMBER_WORDS = ("two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
+_RULE_SAID = {"keep": "your rule said keep it", "drop": "your rule said drop it",
+              "your call": "your rule said your call"}
+_DECIDED = {"Keep": "kept", "Drop": "dropped"}
+
+
+def _week_words(week_of, today: date) -> str:
+    """this week, last week, two weeks ago ... ten weeks ago, else earlier (or a week not dated)."""
+    try:
+        back = (today - date.fromisoformat(str(week_of))).days // 7
+    except ValueError:
+        return "a week not dated"
+    if back <= 0:
+        return "this week"
+    if back == 1:
+        return "last week"
+    return f"{_NUMBER_WORDS[back - 2]} weeks ago" if back - 2 < len(_NUMBER_WORDS) else "earlier"
+
+
+def _t1(word: str, modality: str) -> dict:
+    return {"label": word, "tier": "T1", "modality": modality}
+
+
+def _loop_week(r: dict, now: float, today: date) -> dict:
+    decided = _DECIDED.get(r.get("decision"), "not decided")
+    decision = envelope(decided, "self_report", _age_h(r.get("decided_at"), now))
+    decision["label"] = _t1(decided, "self_report")
+    outcome = r.get("outcome")
+    if outcome in (_prediction.SUPPORTS, _prediction.CONTRADICTS, _prediction.INCONCLUSIVE):
+        modality = r.get("outcome_modality") or "proxy"   # a state metric whose rows name none: the weakest claim
+        out = envelope(outcome, modality, _age_h(r.get("outcome_at"), now))
+        out["label"] = _t1(outcome, modality)
+    elif r.get("prediction") == _stop_rule.LOCKED_LABEL:
+        out = missing("no receipt for that week's prediction when the person decided")
+    else:
+        out = missing("no prediction was locked for that week")
+    rule = "no rule set" if r.get("rule") is None else _RULE_SAID.get(r.get("verdict"), "your rule could not tell")
+    return {"week": _week_words(r.get("week_of"), today), "habit": r.get("habit"),
+            "prediction": "prediction locked" if r.get("prediction") == _stop_rule.LOCKED_LABEL else "no prediction",
+            "rule": rule, "outcome": out, "decision": decision}
+
+
+def loop(state_dir, now: float, today: date) -> dict:
+    """The last LOOP_WEEKS weekly loop rows (stop_rule.loop_rows), newest first, in T1 words: the week, the
+    habit, whether a prediction was locked, what the stop rule said, the outcome (the receipt's verdict, with
+    the receipt's own modality) and the decision (self_report: the person's Keep or Drop). Read-only."""
+    rows = _stop_rule.loop_rows(state_dir)[-LOOP_WEEKS:][::-1]
+    if not rows:
+        return missing("no week decided yet: no loop row")
+    weeks = [_loop_week(r, now, today) for r in rows]
+    out = envelope({"weeks": weeks}, "self_report", _age_h(rows[0].get("decided_at"), now))
+    out["label"] = _t1(f"latest week: {weeks[0]['decision']['value']}", "self_report")
+    return out
 
 
 def scorecard(path: Optional[Path], now: float) -> dict:

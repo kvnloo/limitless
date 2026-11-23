@@ -14,6 +14,7 @@ provides_tools:
   - limitless_rides
   - limitless_anki
   - limitless_sleep
+  - limitless_loop
   - limitless_naps
   - limitless_quiet
   - limitless_blocks

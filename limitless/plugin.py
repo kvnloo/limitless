@@ -112,6 +112,10 @@ def _propose(args, now):
     return tools.propose(_reader(), now, date.fromtimestamp(now), _bands())
 
 
+def _loop(args, now):
+    return tools.loop(state_dir(), now, date.fromtimestamp(now))
+
+
 def _handler(fn: Callable, name: str = "") -> Callable:
     def handler(args: dict, **kwargs) -> str:
         try:
@@ -194,6 +198,14 @@ TOOLS = {
                                                       "this habit, locking this prediction or writing this "
                                                       "receipt in this turn; otherwise leave it out."}}),
         _habit, "🌱"),
+    "limitless_loop": (_schema(
+        "limitless_loop",
+        "The closed loop of the last few habit weeks, newest first, one row per week written after the person \
+replied Keep or Drop to the week review: the habit, whether a prediction was locked, the outcome (the receipt's \
+verdict: supports, contradicts or inconclusive, with the receipt's own modality; missing when there was none), \
+what the stop rule picked at the week's start said (keep it, drop it, your call; it only suggested) and the \
+person's decision (kept or dropped, self-reported). Words only: no score, no streak, no advice. Read-only; \
+nothing is written or sent."), _loop, "🔁"),
     "limitless_scorecard": (_schema(
         "limitless_scorecard",
         "The north-star scorecard block for the weekly review: at most 5 plain lines with the green, amber "
