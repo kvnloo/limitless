@@ -554,6 +554,40 @@ def brief_flow_ledger(state_dir, now: float, env: Optional[Mapping[str, str]] = 
         return ""
 
 
+def brief_outage(state_dir, now: float, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                 write: bool = True) -> str:
+    """The wake brief's one input-outage line (outage.line): "Not recording: wearable (since about two days ago).
+    Open the app once to restart it." for each input that stopped recording and was not yet told, through
+    tier_audit.gate (hook ``brief:outage``); "" when none, off (config ``input_outage``) or unreadable. With
+    ``write`` (the default) this is a poll: it records each outage's start in outage.json and clears recovered
+    ones silently; ``write=False`` previews and writes no mark. Nothing is marked told here: the sender calls
+    brief_outage_told once the brief went out. It rides in the brief: no push or job of its own, and nothing is
+    restarted."""
+    from . import outage as _outage   # outage -> doctor -> card imports this module
+    try:
+        cfg = config(env, home)
+        new = (_outage.poll(state_dir, now, cfg) if write else
+               [o for o in _outage.current(state_dir, now, cfg)
+                if o["name"] not in _outage.load_mark(state_dir)["told"]])
+        return _gated("brief:outage", _outage.line(new, cfg, now), env, home)
+    except Exception:  # noqa: BLE001 - unreadable inputs must not stop the brief
+        return ""
+
+
+def brief_outage_told(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                      home: Optional[Path] = None) -> bool:
+    """Mark every current outage told (outage.tell), after a brief with the outage line went out, so it is said
+    at most once until the input records again. False when off or unreadable; never raises."""
+    from . import outage as _outage
+    try:
+        cfg = config(env, home)
+        if not _outage.enabled(cfg):
+            return False
+        return _outage.tell(state_dir, [o["name"] for o in _outage.current(state_dir, now, cfg)], now)
+    except Exception:  # noqa: BLE001 - a failed mark must not stop the sender
+        return False
+
+
 def week_naps(state_dir, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
               today: Optional[date] = None, tz: Optional[tzinfo] = None) -> str:
     """The week review's naps line (naps.week_line over the seven local days before ``today``), digit-free, through
