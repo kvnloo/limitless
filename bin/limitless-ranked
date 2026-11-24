@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""limitless-ranked: the ranked ledger's agent writes, and the counts row ten reads, in words.
+
+    limitless-ranked add <id> <open|built|verified> [--evidence TEXT] [--write]
+    limitless-ranked list [--raw]
+
+add appends one row {"id", "status", "by": "agent", "evidence"} to the private ranked ledger
+($LIMITLESS_RANKED_LEDGER, else "ranked_ledger" in $LIMITLESS_CONFIG; a relative path is in the state dir).
+verified without a non-empty --evidence is refused, and so is dropped: only the owner drops, by reply. An item the
+owner dropped is never brought back by an agent. Refused: exit 2, nothing written. Without --write it is a dry
+run. Append-only: mode 0600, under an exclusive flock, one JSON object per line; no old row is rewritten. With no
+ledger set it writes nothing and says so (exit 1 with --write).
+
+list prints row ten's label and each count as a share in words (all, most, some, few, none); --raw prints the
+counts as JSON instead. Output never names an id or evidence text. Nothing here sends.
+"""
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import ranked_ledger, scorecard  # noqa: E402
+from limitless.state_reader import config, state_dir  # noqa: E402
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):   # argparse would echo the bad value (an id or evidence text): words only here
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: refused: the arguments do not parse (see --help): nothing written", file=sys.stderr)
+        sys.exit(2)
+
+
+def _parser():
+    ap = _Parser(prog="limitless-ranked")
+    sub = ap.add_subparsers(dest="cmd", required=True, parser_class=_Parser)
+    a = sub.add_parser("add", help="append one agent row (dry run unless --write)")
+    a.add_argument("id")
+    a.add_argument("status", help="open, built or verified (dropped is the owner's, by reply)")
+    a.add_argument("--evidence", default=None, help="what shows it is verified (required for verified)")
+    a.add_argument("--write", action="store_true", help="append the row (default: dry run)")
+    li = sub.add_parser("list", help="row ten's counts in words")
+    li.add_argument("--raw", action="store_true", help="the counts as JSON")
+    return ap
+
+
+def _add(args, st, cfg) -> int:
+    try:
+        ranked_ledger.agent_row(args.id, args.status, args.evidence)
+    except ranked_ledger.Refused as e:
+        print(f"limitless-ranked: refused: {e}: nothing written", file=sys.stderr)
+        return 2
+    path = scorecard.ledger_path(st, cfg, os.environ)
+    if path is None:
+        print(f"limitless-ranked: {ranked_ledger.NO_LEDGER}: nothing written")
+        return 1 if args.write else 0
+    try:
+        row = ranked_ledger.add(path, args.id, args.status, args.evidence, write=args.write)
+    except ranked_ledger.Refused as e:
+        print(f"limitless-ranked: refused: {e}: nothing written", file=sys.stderr)
+        return 2
+    said = f"status {row['status']}, by agent, {'with' if row['evidence'] else 'without'} evidence"
+    if args.write:
+        print(f"appended one row: {said}")
+    else:
+        print(f"would append one row: {said}")
+        print("dry run: nothing written (--write appends it to the ranked ledger)")
+    return 0
+
+
+def _list(args, st, cfg) -> int:
+    label, counts = ranked_ledger.summary(st, cfg, os.environ)
+    if args.raw:
+        print(f"ranked ledger: {label}")
+        print(json.dumps(counts))
+        return 0
+    for line in ranked_ledger.list_lines(label, counts):
+        print(line)
+    return 0
+
+
+def main(argv):
+    args = _parser().parse_args(argv[1:])
+    st, cfg = state_dir(), config()
+    return {"add": _add, "list": _list}[args.cmd](args, st, cfg)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
