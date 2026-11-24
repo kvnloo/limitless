@@ -300,6 +300,130 @@ class Flow(Fixture):
             self.assertIsNone(DIGIT.search(self.row(6)["label"]), self.row(6))
 
 
+class Integrated(Fixture):
+    def glide_file(self, text='{"block": null, "queue": [], "resume": null, "nudged": ""}'):
+        path = self.root / "attention.json"
+        path.write_text(text)
+        self.set(glide_attention=str(path))
+        return path
+
+    def brief(self, age_s=600.0, name="call-brief.md"):
+        """A synthetic call brief file (config call_brief_file, relative: in the state dir), ``age_s`` old."""
+        path = self.st / name
+        path.write_text("<!-- limitless call brief; generated: synthetic -->\nTLDR: peak window\n")
+        os.utime(path, (NOW - age_s, NOW - age_s))
+        self.set(call_brief_file=name)
+        return path
+
+    def asks(self, rows=({"id": "a", "title": "Pick one", "cls": "decision"},)):
+        path = jsonl(self.root / "asks.jsonl", rows)
+        self.set(asks_path=str(path))
+        return path
+
+    def voice(self, sessions=True):
+        d = self.root / "sessions"
+        if sessions:
+            d.mkdir(exist_ok=True)
+        self.set(voice_miq="dry_run", voice_miq_sessions=str(d))
+
+    def all_live(self):
+        self.glide_file()
+        self.brief()
+        self.asks()
+        self.voice()
+
+    def test_row_eight_is_integrated(self):
+        m = self.row(8)
+        self.assertEqual(m["criterion_words"], "integrated")
+        self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
+
+    def test_nothing_set_up_is_unknown_never_met(self):
+        m, a = self.audits()[8]
+        self.assertEqual((m["goal"], m["label"]), ("unknown", "unknown: no local integration set up"))
+        self.assertIsNone(a)
+
+    def test_all_four_local_checks_live_is_met(self):
+        self.all_live()
+        m, a = self.audits()[8]
+        self.assertEqual(m["goal"], "met")
+        self.assertEqual(m["label"], "Glide, call brief, asks queue and voice MIQ all live")
+        self.assertEqual({k: a[k] for k in ("glide", "call_brief", "asks", "voice_miq")},
+                         {"glide": "live", "call_brief": "live", "asks": "live", "voice_miq": "live"})
+        self.assertEqual((a["live"], a["set_up"], a["checks"]), (4, 4, 4))
+
+    def test_the_z0_registry_is_never_measured_and_never_live(self):
+        self.all_live()
+        _m, a = self.audits()[8]
+        self.assertEqual(a["z0_registry"], "z0 registry: not measured here")
+        self.assertEqual(a["live"], 4)
+        self.assertNotIn("registry", self.row(8)["label"])
+
+    def test_a_stale_call_brief_is_not_met_and_named(self):
+        self.all_live()
+        self.brief(age_s=4 * H)
+        m, a = self.audits()[8]
+        self.assertEqual(m["goal"], "not met")
+        self.assertEqual(m["label"], "not live: call brief stale")
+        self.assertEqual(a["call_brief"], "stale")
+        self.brief(age_s=-H)                          # a future mtime is not fresh either
+        self.assertEqual(self.row(8)["label"], "not live: call brief stale")
+        self.brief(age_s=2 * H)
+        self.assertEqual(self.row(8)["goal"], "met")
+
+    def test_missing_files_are_not_met_and_named_in_order(self):
+        self.all_live()
+        (self.root / "attention.json").unlink()
+        (self.root / "asks.jsonl").unlink()
+        (self.st / "call-brief.md").unlink()
+        (self.root / "sessions").rmdir()
+        m = self.row(8)
+        self.assertEqual(m["goal"], "not met")
+        self.assertEqual(m["label"], "not live: Glide missing, call brief missing, asks queue missing, voice MIQ "
+                                     "missing")
+
+    def test_one_live_and_the_rest_not_set_up_is_not_met(self):
+        self.asks()
+        m, a = self.audits()[8]
+        self.assertEqual(m["goal"], "not met")
+        self.assertEqual(m["label"], "not live: Glide not set up, call brief not set up, voice MIQ not set up")
+        self.assertEqual((a["live"], a["set_up"]), (1, 1))
+
+    def test_an_unreadable_attention_file_is_missing_not_a_traceback(self):
+        self.all_live()
+        self.glide_file("{torn")
+        self.assertEqual(self.row(8)["label"], "not live: Glide missing")
+        self.glide_file("[1, 2]")                     # not an object
+        self.assertEqual(self.row(8)["label"], "not live: Glide missing")
+
+    def test_an_empty_asks_queue_is_still_readable_and_a_dir_is_not(self):
+        self.all_live()
+        self.asks(rows=())
+        self.assertEqual(self.row(8)["goal"], "met")
+        d = self.root / "asks-dir"
+        d.mkdir()
+        self.set(asks_path=str(d))
+        self.assertEqual(self.row(8)["label"], "not live: asks queue missing")
+
+    def test_env_paths_win_over_config(self):
+        self.all_live()
+        self.env["LIMITLESS_GLIDE_ATTENTION"] = str(self.root / "absent.json")
+        self.env["LIMITLESS_ASKS"] = str(self.root / "absent.jsonl")
+        self.assertEqual(self.row(8)["label"], "not live: Glide missing, asks queue missing")
+
+    def test_voice_miq_on_without_a_sessions_dir_is_missing(self):
+        self.all_live()
+        self.cfg.pop("voice_miq_sessions")
+        self.save()
+        self.assertEqual(self.row(8)["label"], "not live: voice MIQ missing")
+        self.set(voice_miq="off")
+        self.assertEqual(self.row(8)["label"], "not live: voice MIQ not set up")
+
+    def test_label_has_no_digit(self):
+        for setup in (lambda: None, self.asks, lambda: self.brief(age_s=5 * H), self.all_live):
+            setup()
+            self.assertIsNone(DIGIT.search(self.row(8)["label"]), self.row(8))
+
+
 class Layout(Fixture):
     """The weekly block: the self-reported counts line first, then the measured rows, at most five bullets."""
 

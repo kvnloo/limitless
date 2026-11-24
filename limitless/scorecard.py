@@ -370,13 +370,117 @@ def _flow_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
     return label, goal, audit
 
 
+INTEGRATED_ROW = 8
+INTEGRATED_WORDS = "integrated"
+LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
+INTEGRATIONS = (("glide", "Glide"), ("call_brief", "call brief"), ("asks", "asks queue"), ("voice_miq", "voice MIQ"))
+_STATE_WORDS = {STALE: "stale", MISSING: "missing", OFF: "not set up"}
+INTEGRATED_MET = "Glide, call brief, asks queue and voice MIQ all live"
+NOT_LIVE = "not live: "
+NO_INTEGRATION = "no local integration set up"
+Z0_REGISTRY = "z0 registry: not measured here"
+INTEGRATED_RAW_KEYS = ("glide", "call_brief", "asks", "voice_miq", "z0_registry", "live", "set_up", "checks")
+
+
+def _readable(path) -> bool:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            f.read()
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _glide_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """Glide's attention.json ($LIMITLESS_GLIDE_ATTENTION, else config glide_attention): live when it reads as a
+    JSON object (as glide_provider.attention reads it)."""
+    from . import glide_provider
+    path = env.get(glide_provider.ENV_KEY) or cfg.get(glide_provider.CONFIG_KEY)
+    if not isinstance(path, str) or not path:
+        return OFF
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return MISSING
+    return LIVE if isinstance(data, dict) else MISSING
+
+
+def _call_brief_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """The call brief (config call_brief_file; a relative path is in the state dir, as call_brief.out_path): live
+    when its mtime is at most call_brief.STALE_S old, z0live's own freshness rule."""
+    from . import call_brief
+    v = cfg.get(call_brief.CONFIG_KEY)
+    if not isinstance(v, str) or not v.strip():
+        return OFF
+    p = Path(v).expanduser()
+    p = p if p.is_absolute() else Path(state_dir) / p
+    try:
+        age = now - p.stat().st_mtime
+    except OSError:
+        return MISSING
+    if not p.is_file():
+        return MISSING
+    return LIVE if 0 <= age <= call_brief.STALE_S else STALE
+
+
+def _asks_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """The asks queue ($LIMITLESS_ASKS, else config asks_path, as asks.queue_path): live when it can be read."""
+    from . import asks
+    path = env.get(asks.ENV_KEY) or cfg.get(asks.CONFIG_KEY)
+    if not isinstance(path, str) or not path:
+        return OFF
+    return LIVE if _readable(path) else MISSING
+
+
+def _voice_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """The voice MIQ (config voice_miq, as the doctor's voice MIQ row): off by config, missing without an existing
+    call sessions dir (config voice_miq_sessions), else live. No call is read."""
+    from . import voice_miq   # voice_miq -> jobs_runner -> card
+    if voice_miq.mode(cfg) == voice_miq.OFF:
+        return OFF
+    sessions = voice_miq.sessions_dir(cfg)
+    return LIVE if sessions is not None and sessions.is_dir() else MISSING
+
+
+_INTEGRATION_CHECKS = {"glide": _glide_state, "call_brief": _call_brief_state, "asks": _asks_state,
+                       "voice_miq": _voice_state}
+
+
+def _integrated_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row eight: one sub-check per local integration the plugin can see (Glide's attention
+    file, the call brief, the asks queue, the voice MIQ), each live, stale, missing or off. The z0 registry cannot
+    be checked here and is never counted live. Met only when all four are live; unknown when none is set up."""
+    env = os.environ if env is None else env
+    states = {}
+    for key, _words in INTEGRATIONS:
+        try:
+            states[key] = _INTEGRATION_CHECKS[key](state_dir, cfg, now, env)
+        except Exception:  # noqa: BLE001 - one broken input is that check missing, never a traceback
+            states[key] = MISSING
+    set_up = sum(1 for v in states.values() if v != OFF)
+    live = sum(1 for v in states.values() if v == LIVE)
+    if not set_up:
+        return UNKNOWN_PREFIX + NO_INTEGRATION, "unknown", None
+    if live == len(INTEGRATIONS):
+        label, goal = INTEGRATED_MET, "met"
+    else:
+        label = NOT_LIVE + ", ".join(f"{words} {_STATE_WORDS[states[key]]}" for key, words in INTEGRATIONS
+                                     if states[key] != LIVE)
+        goal = "not met"
+    audit = dict(states, z0_registry=Z0_REGISTRY, live=live, set_up=set_up, checks=len(INTEGRATIONS),
+                 label={"label": label})
+    return label, goal, audit
+
+
 _READS = ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
           (HABIT_ROW, HABIT_WORDS, _habit_measured),
           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
           (FOUNDATION_ROW, FOUNDATION_WORDS, _foundation_measured),
           (FLOW_ROW, FLOW_WORDS, _flow_measured),
-          (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured))
+          (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured),
+          (INTEGRATED_ROW, INTEGRATED_WORDS, _integrated_measured))
 
 
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
