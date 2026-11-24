@@ -25,6 +25,7 @@ Stdlib only, Python 3.9+.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -85,6 +86,22 @@ def reply_profile(state_dir: "Path | str | None") -> Optional[str]:
     if not isinstance(name, str) or not PROFILE_ID.match(name.strip().lower()):
         return None
     return name.strip().lower()
+
+
+def reply_at(state_dir: "Path | str | None") -> Optional[float]:
+    """The epoch REPLY_FILE in ``state_dir`` records (``at``: when the owner's reply set the sender), only when the
+    file also names a profile kevin-push would use (reply_profile); else None. The sender confirmation's event
+    (jobs.sender_changed_verdict) reads it. Never raises; never returns the name."""
+    if reply_profile(state_dir) is None:
+        return None
+    try:
+        data = json.loads((Path(state_dir) / REPLY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    at = data.get("at") if isinstance(data, dict) else None
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not math.isfinite(at):
+        return None
+    return float(at)
 
 
 def profile(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
