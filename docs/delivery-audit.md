@@ -67,6 +67,41 @@ The numbers are T0 and stay in the audit dict. The T1 label is words with no dig
 - complaints: "no complaints this week", "some pushes drew a quiet or stop request", or "complaints: unknown,
   <why>" (for example "no Hermes DB set (config hermes_db), so replies cannot be read").
 
+## Why a wake brief was missed
+
+"Brief reached you on some wake days" says that a day was missed, not why. `delivery_audit.brief_misses(rows,
+wake_days, tz)` gives one reason for each known wake day with no delivered brief, from a fixed list, decided
+only from that day's rows titled `Wake-up brief`. Rows with other titles never lend their reason, and nothing
+is guessed from another day.
+
+| reason | the day's brief rows had `"how"` |
+| --- | --- |
+| held while Sleep mode was on | `"held (sleep mode)"` |
+| held by the quiet setting | `"log (quiet: ...)"` |
+| stopped as a repeat | `"log (duplicate)"`, `"log (already sent for this event)"` |
+| refused by the send gate | `"log (daily cap)"`, `"log (dropped)"` |
+| logged but not sent | `"log"`, `"folded (brief line)"`, `"log (telegram rc=N)"` (the transport failed) |
+| no brief attempt on that day | the day has rows, but none titled `Wake-up brief` |
+| unknown | a brief row whose `"how"` is none of the words above |
+
+- A delivered brief (`"telegram"`) on the day means no miss, whatever else was held or dropped that day.
+- Order of precedence (`MISS_ORDER`) when a day has several brief rows and none was delivered: held while
+  Sleep mode was on, held by the quiet setting, stopped as a repeat, refused by the send gate, logged but not
+  sent, unknown. The cause that stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the
+  event to a retry that the gate then stops as a repeat, refuses or only logs. Row order does not matter.
+- A wake day with no row at all is unknown, not zero, and never counted as missed (`unknown_wake_days`), as
+  in the brief verdict above. No known wake day, or an empty log, is "missed wake briefs: unknown".
+- T0, in the audit dict as `"misses"` (raw opt-in only in the tool): `missed`, `reasons` (a count for every
+  reason), `days` (local date to reason), `unknown_wake_days` and `top`, the most common reason (a tie goes to
+  the reason higher in the list above).
+- T1, words only (no digit, no date, no clock time): "missed wake briefs: held while Sleep mode was on (most),
+  no brief attempt on that day (some)", most common first; "all" when one reason covers every miss, "most"
+  for more than half, else "some"; "no wake brief was missed" when none was.
+- `delivery_audit.miss_clause(audit)` is "most common miss: <reason>" when the goal is not met and a brief was
+  missed, else nothing. The `limitless_delivery` label and the doctor's `delivery` row end with it, after
+  "; ". The audit's own label, the week review line and the scorecard's `Measured: delivery:` line do not
+  carry it, so that line stays one line within the weekly block's length rule.
+
 ## Where it shows
 
 - Tool `limitless_delivery`, read-only: `{value: {label}, modality: "measured", age_h, evidence_tier}` with the
@@ -74,11 +109,13 @@ The numbers are T0 and stay in the audit dict. The T1 label is words with no dig
   pushes with no reply line, skipped lines) appear only with the raw opt-in (`LIMITLESS_RAW_IN_PROMPT=1`, as
   `limitless_body`). Config `push_log` unset is value `null` with the reason "no push log set (config
   push_log)" and the label "unknown: no push log set": unknown, not zero. A missing or unreadable log and a
-  week with no row are `null` with a reason too. Reasons never echo the path.
+  week with no row are `null` with a reason too. Reasons never echo the path. When the goal is not met and a
+  wake brief was missed, the label ends with "; most common miss: <reason>" (see above).
 - `limitless-doctor` lists it like every tool: `tool limitless_delivery: off: no push log set (config
   push_log)` until `push_log` is set. Its own `delivery` row, right after the `uptime` row, is row two as the
   scorecard measures it, complaints included: off with no push log, live when the goal is met, stale when it
-  is not, missing when it is unknown; the reason is the same words, never a count.
+  is not, missing when it is unknown; the reason is the same words, never a count, and when stale with a
+  missed brief it ends with "; most common miss: <reason>".
 - The week review (`jobs_runner.week_review_body`) carries one line, `Pushes: <words>.`, through
   `tier_audit.gate` (hook `week_review:delivery`); an unknown brief clause and the complaints clause (no reply
   source is read there) are left out, and the line is empty when the log is unset, unreadable or has no row
@@ -106,7 +143,7 @@ A relative `push_log` or `hermes_db` is in the limitless state dir. There is no 
 
 `python3 -I scripts/delivery_audit_example.py` (synthetic rows in kevin-push's shape, three synthetic wake
 events, then a synthetic session DB and a synthetic `quiet.json`, a fixed clock, UTC, a temporary state dir;
-nothing sent):
+last a second synthetic week for `brief_misses`; nothing sent):
 
 ```text
 # no push log set
@@ -114,7 +151,7 @@ nothing sent):
 {"label": "unknown: no push log set", "tier": "T1", "modality": "measured"}
 
 # push_log set (relative: in the state dir); limitless_delivery, no raw opt-in
-{"value": {"label": "within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read"}, "modality": "measured", "age_h": 33.0, "evidence_tier": "stale"}
+{"value": {"label": "within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on"}, "modality": "measured", "age_h": 33.0, "evidence_tier": "stale"}
 
 # the same with the raw opt-in: T0 counts per day (None = no row that day: unknown)
 {"day": "2033-05-12", "rows": 0, "delivered": null, "over_cap": null, "wake_day": false, "brief": null, "no_action": 0, "action_unknown": 0}
@@ -126,6 +163,7 @@ nothing sent):
 {"day": "2033-05-18", "rows": 0, "delivered": null, "over_cap": null, "wake_day": false, "brief": null, "no_action": 0, "action_unknown": 0}
 {"delivered": 4, "known_days": 3, "cap": 6, "over_cap_days": [], "no_action": 2, "action_unknown": 0, "skipped": 1}
 {"wake_days": 3, "brief_delivered": 2, "unknown_wake_days": 0, "brief_share": 0.6666666666666666}
+{"known": true, "missed": 1, "reasons": {"held while Sleep mode was on": 1, "held by the quiet setting": 0, "stopped as a repeat": 0, "refused by the send gate": 0, "logged but not sent": 0, "no brief attempt on that day": 0, "unknown": 0}, "days": {"2033-05-15": "held while Sleep mode was on"}, "unknown_wake_days": 0, "top": "held while Sleep mode was on", "label": "missed wake briefs: held while Sleep mode was on (all)"}
 
 # week review line
 Pushes: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line.
@@ -134,13 +172,19 @@ Pushes: within the push limit on every logged day; brief reached you on most wak
 {"known": false, "quiet": null, "stop": null, "total": null, "why": "no Hermes DB set (config hermes_db), so replies cannot be read"}
 
 # hermes_db set: complaints from explicit signals only (counts with the raw opt-in)
-"within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request"
+"within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request; most common miss: held while Sleep mode was on"
 {"known": true, "quiet": 1, "stop": 1, "total": 2, "why": null}
 Measured: delivery: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request
 {"goal": "not met"}
-delivery: stale: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request
+delivery: stale: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request; most common miss: held while Sleep mode was on
 
 # the log is unchanged: 9 lines
+
+# why the wake briefs of a second synthetic week were missed (brief_misses)
+missed wake briefs: held while Sleep mode was on (most), held by the quiet setting (some), no brief attempt on that day (some)
+{"2033-05-12": "held while Sleep mode was on", "2033-05-13": "held while Sleep mode was on", "2033-05-14": "held by the quiet setting", "2033-05-16": "no brief attempt on that day", "2033-05-17": "held while Sleep mode was on"}
+{"missed": 5, "unknown_wake_days": 1, "top": "held while Sleep mode was on"}
+{"held while Sleep mode was on": 3, "held by the quiet setting": 1, "no brief attempt on that day": 1}
 ```
 
 On the fifteenth the brief was held by Sleep mode, so that wake day counts as not reached: two of three wake
@@ -150,3 +194,10 @@ The complaints: "Stop." ten minutes after the heads-up on the seventeenth counts
 `quiet.json` records on the fifteenth. The "stop" on the fourteenth came hours after that day's last delivery,
 and "I can't stop thinking about the build" has stop inside a sentence: neither counts. No reply text appears
 in any output.
+
+The goal is not met (a wake day had no delivered brief), so the tool's label and the doctor's row end with
+"most common miss: held while Sleep mode was on"; the scorecard line does not.
+
+In the second week, the twelfth had a Sleep hold and then a repeat: Sleep mode comes first. The fifteenth had a
+Sleep hold and then a delivered brief, so it is no miss. The sixteenth had only a held "Pick one" push, no
+brief row: "no brief attempt on that day". The eighteenth, a wake day with no row, is unknown and not counted.

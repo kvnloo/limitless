@@ -3,6 +3,7 @@
     rows, skipped = parse_lines(text)          # log.jsonl text -> valid rows, count of bad lines
     got = read_log(path)                       # (rows, skipped), or None when the file cannot be read
     audit(rows, days=7, wake_days=None, ...)   # -> dict: T0 counts per day plus one T1 label in words
+    brief_misses(rows, wake_days, tz)          # -> dict: why each known wake day had no delivered brief
 
 The log is the one bin/kevin-push appends, one row per call, and this module never changes how it is written:
 ``{"at": whole epoch seconds, "tag", "cls", "title", "body", "how"}``. The fields relied on:
@@ -39,6 +40,10 @@ Nothing else is read into it: no model, no sentiment. ``replies`` None (no Herme
 read) or a week with no row is unknown with a reason, never "no complaints". ``complaints`` keeps only the
 counts (T0); the text is never stored. Label: "no complaints this week" / "some pushes drew a quiet or stop
 request" / "complaints: unknown, <why>".
+Missed briefs (``brief_misses``, the audit's ``misses``): for each known wake day with rows and no delivered
+brief, one reason from MISS_REASONS, decided only from that day's brief rows (precedence MISS_ORDER; no brief
+row is MISS_NONE). Counts per reason are T0; the label is words only; ``miss_clause`` words the most common
+reason for the tool and the doctor when the goal is not met. See docs/delivery-audit.md.
 Pure: no clock, no file except read_log and signals, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -241,6 +246,104 @@ def stop_request(text) -> bool:
     return any(tuple(words[:len(s)]) == s for s in STOP_WORDS)
 
 
+# Why a wake day had no delivered brief (brief_misses): the fixed list, in words, no digit.
+MISS_SLEEP, MISS_QUIET = "held while Sleep mode was on", "held by the quiet setting"
+MISS_REPEAT, MISS_GATE = "stopped as a repeat", "refused by the send gate"
+MISS_LOGGED, MISS_NONE, MISS_UNKNOWN = "logged but not sent", "no brief attempt on that day", "unknown"
+MISS_REASONS = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_NONE, MISS_UNKNOWN)
+# Precedence when a day has several brief rows and none delivered: the first of these that any of them has.
+# The cause that stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the event for a
+# retry that the gate then stops as a repeat, refuses (cap) or only logs, so those come after it. A day with
+# no brief row at all is MISS_NONE; a brief row whose ``how`` is none of the known words is MISS_UNKNOWN.
+MISS_ORDER = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_UNKNOWN)
+MISSES_PREFIX, MISSES_NONE = "missed wake briefs: ", "no wake brief was missed"
+MISSES_UNKNOWN = MISSES_PREFIX + "unknown"
+MISS_CLAUSE = "most common miss: {}"
+_MISS_EXACT = {"held (sleep mode)": MISS_SLEEP, "log (duplicate)": MISS_REPEAT,
+               f"log ({send_gate.ONCE_DROP})": MISS_REPEAT, "log (daily cap)": MISS_GATE,
+               "log (dropped)": MISS_GATE, "log": MISS_LOGGED, "folded (brief line)": MISS_LOGGED}
+
+
+def miss_reason(how) -> str:
+    """The MISS_REASONS word for one undelivered brief row's ``how`` (bin/kevin-push's HOW, the quiet drop
+    ``log (quiet: ...)`` and a failed transport ``log (telegram rc=N)``); MISS_UNKNOWN for anything else."""
+    if not isinstance(how, str):
+        return MISS_UNKNOWN
+    if how in _MISS_EXACT:
+        return _MISS_EXACT[how]
+    if how.startswith("log (quiet:"):
+        return MISS_QUIET
+    if how.startswith("log (telegram rc="):
+        return MISS_LOGGED
+    return MISS_UNKNOWN
+
+
+def brief_misses(rows: Optional[Iterable], wake_days: Optional[Iterable], tz: Optional[tzinfo] = None, *,
+                 days: Optional[Iterable] = None) -> dict:
+    """Why the wake brief did not reach the person on each known wake day without a delivered one.
+
+    A wake day (``wake_days``, as audit takes them) is judged only when the log has rows that day, like audit;
+    ``days`` (optional) limits the judged days (audit passes its window). One reason a missed day, decided only
+    from that day's rows titled WAKE_TITLE: a delivered one means no miss; else the first reason in MISS_ORDER
+    any of them has (miss_reason); no such row at all is MISS_NONE. Other titles never lend their reason.
+    T0: ``{"known", "missed", "reasons": {reason: count for every MISS_REASONS}, "days": {iso day: reason},
+    "unknown_wake_days", "top", "label"}``; ``known`` is False (and nothing counted) when no wake day is known or
+    the log has no row. ``top`` is the most common reason (ties by MISS_REASONS order), None with no miss.
+    ``label`` is words only (``_miss_words``): each reason with a share word, most common first.
+    """
+    good = [r for r in rows or () if valid(r)]
+    wakes = _wake_set(wake_days) or set()
+    if days is not None:
+        wakes &= _wake_set(days) or set()
+    out = {"known": bool(good and wakes), "missed": 0, "reasons": {r: 0 for r in MISS_REASONS}, "days": {},
+           "unknown_wake_days": 0, "top": None, "label": MISSES_UNKNOWN}
+    if not out["known"]:
+        return out
+    by_day = {}
+    for r in good:
+        d = _day(r, tz)
+        if d in wakes:
+            by_day.setdefault(d, []).append(r)
+    for d in sorted(wakes):
+        got = by_day.get(d)
+        if not got:
+            out["unknown_wake_days"] += 1
+            continue
+        briefs = [r for r in got if r.get("title") == WAKE_TITLE]
+        if any(delivered(r) for r in briefs):
+            continue
+        seen = {miss_reason(r.get("how")) for r in briefs}
+        reason = next((m for m in MISS_ORDER if m in seen), MISS_NONE)
+        out["days"][d.isoformat()] = reason
+        out["reasons"][reason] += 1
+        out["missed"] += 1
+    if out["missed"]:
+        out["top"] = max(MISS_REASONS, key=lambda m: (out["reasons"][m], -MISS_REASONS.index(m)))
+    out["label"] = _miss_words(out)
+    return out
+
+
+def _miss_words(m: dict) -> str:
+    """"missed wake briefs: <reason> (all|most|some), ..." most common first, ties in MISS_REASONS order; "all"
+    when one reason covers every miss, "most" for more than half, else "some". No digit, date or clock time."""
+    n = m["missed"]
+    if not n:
+        return MISSES_NONE
+    used = sorted((r for r in MISS_REASONS if m["reasons"][r]), key=lambda r: (-m["reasons"][r],
+                                                                             MISS_REASONS.index(r)))
+    share = lambda c: "all" if c == n else "most" if c * 2 > n else "some"   # noqa: E731
+    return MISSES_PREFIX + ", ".join(f"{r} ({share(m['reasons'][r])})" for r in used)
+
+
+def miss_clause(a: Optional[dict]) -> str:
+    """"most common miss: <reason>" for an audit (``audit``'s dict) whose goal is not met and that has a missed
+    wake brief; "" otherwise (met, unknown, or not met for another reason). Words only."""
+    if not isinstance(a, dict) or goal(a) != GOAL_NOT_MET:
+        return ""
+    top = (a.get("misses") or {}).get("top")
+    return MISS_CLAUSE.format(top) if top else ""
+
+
 MUTING = (quiet.OFF, quiet.TONIGHT, quiet.SNOOZED)
 
 
@@ -328,6 +431,7 @@ def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None
     if wake["wake_days"]:
         wake["brief_share"] = wake["brief_delivered"] / wake["wake_days"]
     out["wake"] = wake
+    out["misses"] = brief_misses(good, wake_days, tz, days=window)
     out["complaints"] = _complaints(signals, good, set(window) if out["known_days"] else set(), tz)
     out["labels"] = {"push": _push_words(out, len(window)), "brief": _brief_words(wake),
                      "action": _action_words(out), "complaints": _complaint_words(out["complaints"])}
