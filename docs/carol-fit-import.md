@@ -52,6 +52,13 @@ Exports usually come in batches. Instead of running the importer per file, drop 
   words only, the mode and what the last pass did, e.g. `added two rides`, `nothing new`, `would add one ride`,
   `skipped one file: not a bike ride`, `more files wait for the next pass`. Never a file name, a path or a number
   from a ride.
+- **Brief line**: after a `write` pass added rides, the next delivered wake brief says so once, in words:
+  `Imported two bike rides from your CAROL exports.` (capped at `more than twenty`; no digit). The pass records
+  `added_at` (epoch seconds) and `added` (words, e.g. `two rides`, summed over passes not told yet) in the mark;
+  `fit_ingest_job.brief_fit_rides` reads only that, through the tier audit gate (hook `brief:fit_rides`), and
+  `bin/limitless-brief send` marks it told in `fit-rides-told.json` (`told`, `told_at`: epochs only, 0600) only
+  after a real delivery, so a held or failed send says it next time. A dry run, config `off`, or rides imported by
+  hand with `bin/limitless-import-fit` never make the line.
 - **Doctor**: the `fit import` row says `off`, or `dry run` / `write` with the last pass in words; `missing` when
   the folder is set but does not exist, `stale` with no folder set or before its first pass after a sync.
 - **Schedule card**: `fit_ingest`, on the `sync` event, sender `local`, budget zero

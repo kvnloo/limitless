@@ -24,7 +24,15 @@ hand (docs/carol-fit-import.md).
 The mark MARK (``fit-ingest.json``, atomic, 0600) holds epoch seconds (``row_at``: the sync row the pass acted on,
 ``ran_at``: the pass, ``read_to``) and words only: the mode and what the pass did ("added two rides", "nothing
 new", "skipped one file: not a bike ride", "more files wait for the next pass"); never a file name, a path or a
-number from a ride. Nothing is pushed or logged as sent; no process is started. Stdlib only, Python 3.9+.
+number from a ride. A write pass that added rides also records ``added_at`` (epoch seconds: that pass) and
+``added`` (words: the rides added since the brief last told them, "two rides", capped at "more than twenty
+rides"); a pass that added none keeps both. Counts of rides are not health numbers, but they stay words here.
+
+The wake brief reads them (brief_fit_rides): "Imported two bike rides from your CAROL exports." once while
+``added_at`` is not the one in TOLD_MARK (``fit-rides-told.json``: ``told``, ``told_at``, epochs only, 0600),
+in write mode only, through the tier audit gate (hook ``brief:fit_rides``); bin/limitless-brief send calls
+brief_fit_rides_told only after a real delivery. Rides imported by hand never touch the mark, so never the line.
+Nothing is pushed or logged as sent; no process is started. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
@@ -43,8 +51,11 @@ SUFFIX = ".fit"                           # matched without case: *.fit and *.FI
 NOTHING_NEW = "nothing new"
 MORE_WAIT = "more files wait for the next pass"
 MODE_WORDS = {jobs.FIT_DRY_RUN: "dry run", jobs.FIT_WRITE: "write"}
-_EPOCHS = ("row_at", "ran_at", "read_to")
-_WORD_KEYS = ("mode", "said")
+_EPOCHS = ("row_at", "ran_at", "read_to", "added_at")
+_WORD_KEYS = ("mode", "said", "added")
+TOLD_MARK = "fit-rides-told.json"         # {"told": the added_at last told in a brief, "told_at": when}, epochs only
+BRIEF_HOOK = "brief:fit_rides"
+_MORE_THAN = "more than "
 
 
 def drop_dir(state_dir, cfg: Optional[Mapping]) -> Optional[Path]:
@@ -140,15 +151,29 @@ def run_pass(state_dir, folder, rides_file, row_at: Optional[float], now: float,
     touches a source file; sends nothing."""
     from .jobs_runner import _write_mark    # late: jobs_runner imports this module inside run_once
     write = mode == jobs.FIT_WRITE
-    after = load_mark(state_dir).get("read_to")
+    old = load_mark(state_dir)
+    after = old.get("read_to")
     paths, more, read_to = listing(folder, after)
     out = fit_ride.run(paths, rides_file, write=write)
     mark = {"row_at": row_at, "ran_at": float(now), "mode": mode, "said": said(out, write, more)}
     keep = read_to if write and out.get("written") else after
     if keep is not None:
         mark["read_to"] = keep
+    mark.update(_added(state_dir, old, out["added"] if write and out.get("written") else 0, now))
     _write_mark(state_dir, MARK, mark)
     return mark
+
+
+def _added(state_dir, old: dict, n: int, now: float) -> dict:
+    """The mark's ``added_at`` (epoch: the last write pass that added a ride) and ``added`` (words: the rides
+    added since the brief last told, e.g. "two rides", "more than twenty rides"). A pass that added rides while
+    an earlier one is still untold adds them up; a pass that added none keeps what was there, so a sync between
+    the pass and the brief does not lose it. {} before any ride was added."""
+    if n <= 0:
+        return {k: old[k] for k in ("added_at", "added") if old.get(k) is not None}
+    if old.get("added_at") is not None and load_told(state_dir).get("told") != old["added_at"]:
+        n += count_of(old.get("added")) or 0
+    return {"added_at": float(now), "added": fit_ride.rides_words(n)}
 
 
 def _verdict(state_dir, cfg: Mapping, mode: str, now: float):
@@ -202,3 +227,84 @@ def state(state_dir, cfg: Mapping, now: float) -> tuple:
         return "not run", f"{on}: it has not run yet: {v.reason}"
     return "ran", (MODE_WORDS.get(mark.get("mode") or "", "unknown mode"), mark["ran_at"],
                    mark.get("said") or "unknown")
+
+
+def count_of(words) -> Optional[int]:
+    """fit_ride.rides_words read back: "two rides" -> two, "more than twenty rides" -> twenty-one (so a sum
+    stays past the cap); None for anything else."""
+    if not isinstance(words, str):
+        return None
+    w = words.strip()
+    over = w.startswith(_MORE_THAN)
+    head = (w[len(_MORE_THAN):] if over else w).split(" ")[0]
+    if head not in fit_ride._WORDS:
+        return None
+    n = fit_ride._WORDS.index(head)
+    return n + 1 if over else n
+
+
+def load_told(state_dir) -> dict:
+    """TOLD_MARK as ``{"told", "told_at"}`` (epoch seconds or None); {} when missing or malformed."""
+    try:
+        data = json.loads((Path(state_dir) / TOLD_MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for k in ("told", "told_at"):
+        v = data.get(k)
+        out[k] = float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    return out
+
+
+def untold(state_dir, now: float, cfg: Mapping) -> Optional[dict]:
+    """The mark of the last write pass that added rides, not yet told in a brief, or None: none, the import is
+    not in write mode (config ``fit_ingest``: a dry run never tells), the pass is after ``now``, or it was told.
+    Only the job's mark counts: rides added by hand with bin/limitless-import-fit never make the line."""
+    if jobs.fit_mode(cfg) != jobs.FIT_WRITE:
+        return None
+    mark = load_mark(state_dir)
+    at = mark.get("added_at")
+    if at is None or at > now or not count_of(mark.get("added")) or load_told(state_dir).get("told") == at:
+        return None
+    return mark
+
+
+def rides_line(added) -> str:
+    """"Imported two bike rides from your CAROL exports." from the mark's ``added`` words; digit-free, capped at
+    "more than twenty"."""
+    n = count_of(added) or 0
+    what = fit_ride.count_words(n, "bike ride") if n else "bike rides"
+    return f"Imported {what} from your CAROL exports."
+
+
+def brief_fit_rides(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                    home: Optional[Path] = None) -> str:
+    """The wake brief's one FIT import line (rides_line) once after write passes added rides not yet told,
+    through tier_audit.gate (hook ``brief:fit_rides``); "" when none, not write mode, told, or state is
+    unreadable. Read-only, like jobs_runner.brief_apps_set: the sender calls brief_fit_rides_told once the brief
+    went out. It rides in the brief: no push or job of its own."""
+    from .jobs_runner import _gated
+    try:
+        mark = untold(state_dir, now, config(env, home))
+        return _gated(BRIEF_HOOK, rides_line(mark["added"]), env, home) if mark else ""
+    except Exception:  # noqa: BLE001 - an unreadable mark must not stop the brief
+        return ""
+
+
+def brief_fit_rides_told(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                         home: Optional[Path] = None) -> bool:
+    """Mark the rides told (TOLD_MARK: ``{"told": the mark's added_at, "told_at": now}``, epochs only, atomic,
+    0600) after a delivered brief that carried brief_fit_rides's line, so they are said once and a later pass
+    that adds more is said again. False when there is nothing untold (or not write mode) or state is
+    unreadable; never raises."""
+    from .jobs_runner import _write_mark
+    try:
+        mark = untold(state_dir, now, config(env, home))
+        if mark is None:
+            return False
+        _write_mark(state_dir, TOLD_MARK, {"told": mark["added_at"], "told_at": float(now)})
+        return True
+    except Exception:  # noqa: BLE001 - a failed mark must not stop the sender
+        return False
