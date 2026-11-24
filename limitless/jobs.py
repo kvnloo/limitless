@@ -1,7 +1,7 @@
 """Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in,
 the week review, the break nudge; the NOOP export (NOOP_EXPORT), which sends nothing and wakes on a sync that
-copied the NOOP database (noop_export_verdict); and the apps ingest (APPS_INGEST), which sends nothing and wakes
-on any new sync row (apps_ingest_verdict).
+copied the NOOP database (noop_export_verdict); and the apps ingest (APPS_INGEST) and the ranked ingest
+(RANKED_INGEST), which send nothing and wake on any new sync row (apps_ingest_verdict, ranked_ingest_verdict).
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no
@@ -27,7 +27,7 @@ from .window import MAX_AWAKE_H
 # focus block in the activity data that ran as long as the person's usual long block (blocks.long_block_events).
 # noop_copy is a sync run whose runs.jsonl row says it copied the NOOP database (noop_copied); only the NOOP export
 # job (NOOP_EXPORT) wakes on it. sync is any sync run's runs.jsonl row that did not fail (sync_ran); only the apps
-# ingest job (APPS_INGEST) wakes on it.
+# ingest job (APPS_INGEST) and the ranked ingest job (RANKED_INGEST) wake on it.
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block", "noop_copy",
           "sync")
 TRIGGER_AFTER = ("", "short_on")
@@ -194,6 +194,41 @@ def apps_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], now:
     if mark_at is not None and t <= mark_at:
         return Verdict(DROP, "already ran after this sync", t)
     return Verdict(RUN, "a sync ran", t)
+
+
+# The ranked ingest sends nothing: it reads the owner's "drop: <id>[, <id>...]" replies from the Hermes session DB
+# and runs ranked_ledger.ingest (write mode appends owner drop rows to the ranked ledger and moves ranked-drops.json).
+# Like the apps ingest it is not in SPECS, no window holds it, and it wakes on any new sync row, never on a clock time.
+RANKED_INGEST = JobSpec("ranked_ingest", "sync", "anytime", "Ranked ingest", 1, "sync")
+RANKED_CONFIG = "ranked_ingest"
+RANKED_OFF, RANKED_DRY_RUN, RANKED_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
+RANKED_MODES = (RANKED_OFF, RANKED_DRY_RUN, RANKED_WRITE)
+RANKED_IS_OFF = f"off (config {RANKED_CONFIG})"
+RANKED_NO_LEDGER = "skipped: no ranked ledger set (LIMITLESS_RANKED_LEDGER or config ranked_ledger)"
+
+
+def ranked_mode(cfg: Any) -> str:
+    """Config ``ranked_ingest``: off (the default, and for any value that is not one of RANKED_MODES), dry_run or
+    write."""
+    v = cfg.get(RANKED_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in RANKED_MODES else RANKED_OFF
+
+
+def ranked_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], now: float,
+                          db_set: bool = True, ledger_set: bool = True) -> Verdict:
+    """Run, drop or not triggered for the ranked ingest. Pure: reads its inputs, runs and writes nothing.
+
+    Off unless ``mode`` is dry_run or write; skipped (RANKED_NO_LEDGER) with no ranked ledger set; then exactly the
+    apps ingest's rule (apps_ingest_verdict): a Hermes DB set, the newest runs.jsonl row a sync that did not fail,
+    not after ``now`` and newer than ``mark_at`` (the row the last pass acted on, from ranked-ingest.json). The same
+    row again is a drop: at most once per sync row.
+    """
+    if mode not in (RANKED_DRY_RUN, RANKED_WRITE):
+        return Verdict(NOT_TRIGGERED, RANKED_IS_OFF)
+    if not ledger_set:
+        return Verdict(NOT_TRIGGERED, RANKED_NO_LEDGER)
+    return apps_ingest_verdict(mode, last_run, mark_at, now, db_set=db_set)
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
