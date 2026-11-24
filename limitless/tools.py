@@ -561,7 +561,7 @@ def scorecard_measured(rows: list, state_dir, cfg: Optional[Mapping], now: float
     audit), ``[{n, criterion_words, label: T1, goal}]`` plus ``note`` when the hand row is green and the goal is
     not met. The audit's counts sit in ``counts`` only with ``raw``."""
     raw_keys = {_scorecard.UPTIME_ROW: UPTIME_RAW_KEYS, _scorecard.DELIVERY_ROW: DELIVERY_RAW_KEYS,
-                _scorecard.HABIT_ROW: _scorecard.HABIT_RAW_KEYS}
+                _scorecard.HABIT_ROW: _scorecard.HABIT_RAW_KEYS, _scorecard.EVIDENCE_ROW: _scorecard.EVIDENCE_RAW_KEYS}
     out = []
     for m, a in _scorecard.measured_audits(state_dir, cfg, now, tz, env=env, home=home):
         item = dict(m, label=_t1(m["label"], SCORECARD_MODALITY))

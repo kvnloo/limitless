@@ -249,6 +249,36 @@ def _habit_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple
     return label, goal, audit
 
 
+EVIDENCE_NEEDED = 2           # row four: at least two locked experiments judged by an outcome receipt
+JUDGED = ("supports", "contradicts", "inconclusive")   # prediction's receipt verdicts; pending is not judged
+EVIDENCE_MET = "two or more locked experiments have a judged outcome receipt"
+EVIDENCE_FEW = "fewer than two locked experiments have a judged outcome receipt"
+NO_LOCK = "no experiment locked"
+EVIDENCE_RAW_KEYS = ("locked", "judged", "not_judged", "needed")
+
+
+def _evidence_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row four from the locks and receipts in predictions.jsonl: each week's locked
+    prediction (prediction.locked: the first lock of a week) and its receipt (prediction.receipt_for: the one
+    written for that lock). Judged is a receipt whose verdict is supports, contradicts or inconclusive."""
+    from . import prediction
+    weeks = []
+    for r in prediction.rows(state_dir):
+        w = r.get("week_of")
+        if r.get("kind") == "prediction" and isinstance(w, str) and w not in weeks:
+            weeks.append(w)
+    if not weeks:
+        return UNKNOWN_PREFIX + NO_LOCK, "unknown", None
+    judged = 0
+    for w in weeks:
+        receipt = prediction.receipt_for(state_dir, w)
+        judged += isinstance(receipt, dict) and receipt.get("verdict") in JUDGED
+    label, goal = (EVIDENCE_MET, "met") if judged >= EVIDENCE_NEEDED else (EVIDENCE_FEW, "not met")
+    audit = {"locked": len(weeks), "judged": judged, "not_judged": len(weeks) - judged, "needed": EVIDENCE_NEEDED,
+             "label": {"label": label}}
+    return label, goal, audit
+
+
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
     """``[(row, audit)]`` for rows one, two, three, four and seven, in that order: ``row`` as measured() gives
@@ -258,7 +288,8 @@ def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[
     out = []
     for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
                            (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
-                           (HABIT_ROW, HABIT_WORDS, _habit_measured)):
+                           (HABIT_ROW, HABIT_WORDS, _habit_measured),
+                           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured)):
         try:
             label, goal, audit = read(state_dir, cfg, now, tz, env, home)
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review

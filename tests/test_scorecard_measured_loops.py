@@ -175,5 +175,64 @@ class HabitLoop(Fixture):
             self.assertIsNone(DIGIT.search(self.row(3)["label"]))
 
 
+class EvidenceLoop(Fixture):
+    def test_row_four_is_the_evidence_loop(self):
+        self.assertEqual(self.row(4)["criterion_words"], "evidence loop")
+
+    def test_no_lock_ever_is_unknown_never_met(self):
+        m, a = self.audits()[4]
+        self.assertEqual((m["goal"], m["label"]), ("unknown", "unknown: no experiment locked"))
+        self.assertIsNone(a)
+
+    def test_two_judged_receipts_are_met(self):
+        self.lock(3, "supports")
+        self.lock(2, "contradicts")
+        m, a = self.audits()[4]
+        self.assertEqual((m["goal"], m["label"]), ("met", sc.EVIDENCE_MET))
+        self.assertEqual((a["locked"], a["judged"]), (2, 2))
+
+    def test_inconclusive_is_judged(self):
+        self.lock(3, "inconclusive")
+        self.lock(2, "supports")
+        self.assertEqual(self.row(4)["goal"], "met")
+
+    def test_locks_with_pending_or_no_receipt_are_not_met(self):
+        self.lock(3, "supports")
+        self.lock(2, "pending")
+        self.lock(1)
+        m, a = self.audits()[4]
+        self.assertEqual((m["goal"], m["label"]), ("not met", sc.EVIDENCE_FEW))
+        self.assertEqual((a["locked"], a["judged"]), (3, 1))
+
+    def test_one_lock_without_a_receipt_is_not_met(self):
+        self.lock(1)
+        self.assertEqual(self.row(4)["goal"], "not met")
+
+    def test_a_receipt_for_another_lock_is_not_this_ones(self):
+        self.lock(3)
+        week = (TODAY - timedelta(days=21)).isoformat()
+        prediction._append(self.st, {"kind": "receipt", "week_of": week, "locked_at": "not this lock",
+                                     "verdict": "supports"})
+        self.lock(2, "supports")
+        self.assertEqual(self.audits()[4][1]["judged"], 1)
+
+    def test_loop_rows_are_not_locks(self):
+        self.week(1, "Keep")
+        self.assertEqual(self.row(4)["goal"], "unknown")
+
+    def test_a_torn_ledger_is_read_around(self):
+        self.lock(3, "supports")
+        with open(self.st / "predictions.jsonl", "a") as f:
+            f.write("{torn\n[1, 2]\n")
+        self.lock(2, "supports")
+        self.assertEqual(self.row(4)["goal"], "met")
+
+    def test_label_has_no_digit(self):
+        for setup in (lambda: None, lambda: self.lock(1), lambda: self.lock(2, "supports"),
+                      lambda: self.lock(3, "supports")):
+            setup()
+            self.assertIsNone(DIGIT.search(self.row(4)["label"]))
+
+
 if __name__ == "__main__":
     unittest.main()
