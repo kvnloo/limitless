@@ -39,6 +39,17 @@ def _age_h(at, now: float):
     return None if t is None else max(0.0, now - t) / 3600
 
 
+def window_state(reader: StateReader, now: float, bands: Optional[Mapping] = None,
+                 env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None):
+    """The window the asks plan sees: ``{"value": "asleep"}`` while Sleep mode is on, else the first known of
+    Glide (focus block, wind-down) and Sleep mode/unlocks, with focused mode (modes.py) holding asks like a
+    focus block. Shared by asks_view and the Hermes cron window provider (window_provider.py). Read-only."""
+    events = EventProvider.from_reader(reader, now, bands)
+    state = {"value": "asleep"} if events.asleep else first_known(GlideProvider.from_config(env, home, now=now),
+                                                                 events)
+    return _modes.apply(state, _modes.load(reader.path))   # focused holds non-urgent asks like a focus block
+
+
 def asks_view(reader: StateReader, now: float, bands: Optional[Mapping] = None,
               env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
     """The asks queue (asks.queue_path) planned against the window chain (Glide, then Sleep mode and unlocks):
@@ -46,10 +57,7 @@ def asks_view(reader: StateReader, now: float, bands: Optional[Mapping] = None,
     count against the one decision per peak window; focused mode (modes.py) holds them like a focus block.
     Read-only; nothing sends."""
     rows = _asks.read(_asks.queue_path(env, home))
-    events = EventProvider.from_reader(reader, now, bands)
-    state = {"value": "asleep"} if events.asleep else first_known(GlideProvider.from_config(env, home, now=now),
-                                                                 events)
-    state = _modes.apply(state, _modes.load(reader.path))   # focused holds non-urgent asks like a focus block
+    state = window_state(reader, now, bands, env, home)
     sent = _asks.delivered_since(rows, wake_at(reader.sleepmode()))
     todo = _asks.pending(rows)
     return _asks.summary(todo, _asks.plan(todo, state, sent))

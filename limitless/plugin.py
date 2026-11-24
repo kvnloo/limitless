@@ -6,7 +6,9 @@ ctx.register_command(name, handler, description="", args_hint="") for the ``/lim
 (schedule_cards.py; a proposed name, not in the published API yet) and, when the host has it,
 ctx.register_skill(name, path, description="", frontmatter=None) for the coach and learn skills (coach_skill.py) and,
 when the host has it, ctx.register_system_prompt_section(id, content, *, position, max_chars) for the static rules section
-(prompt_rules.py; config prompt_rules false turns it off). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
+(prompt_rules.py; config prompt_rules false turns it off) and, when the host has it,
+ctx.register_window_provider(provider) for Hermes' cron decision-window gate (window_provider.py; config
+window_provider off turns it off). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
 bedtime.py), pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args) and, when the
 host knows the name, transform_tool_result (result_tier.py: a listed health tool's numbers become words; off by
 default).
@@ -25,7 +27,8 @@ from typing import Callable
 
 from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs,
                jobs_runner, missed_brief,
-               labeler, modes, prompt_rules, result_tier, schedule_cards, scorecard, stop_rule, tier_audit, tools)
+               labeler, modes, prompt_rules, result_tier, schedule_cards, scorecard, stop_rule, tier_audit, tools,
+               window_provider)
 from .envelope import missing
 from .prediction import LAG_DAYS as _PREDICTION_LAGS
 from .state_reader import StateReader, config, state_dir
@@ -714,3 +717,6 @@ def register(ctx) -> None:
     # result tier (off until config t0_tools lists a health tool): every number in a listed tool's result
     # becomes "a number" before it enters context, when the host knows transform_tool_result (result_tier.py)
     result_tier.register(ctx, clock=lambda: time.time())
+    # the plugin's decision window as Hermes' cron window provider, when the host has register_window_provider
+    # and config window_provider is not off; held jobs wait for their window; never raises (window_provider.py)
+    window_provider.register(ctx)
