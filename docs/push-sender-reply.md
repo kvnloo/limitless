@@ -23,6 +23,16 @@ the row says `maybe: none left (one already failed to send)` and the words end `
 Telegram (one already failed to send)`; a ready profile is still named. Nothing new is stored for this: the
 profile is the one `push-sender.json` already holds and the flag is the mark's; the next applied reply clears it.
 
+### Settling an unknown sender
+
+A maybe can also be settled before anyone replies: the operator runs `bin/limitless-sender-probe --write`, which
+asks Hermes itself (`hermes -p <name> send --list telegram`, list only, never a send) for each `unknown:` candidate
+and saves the verdict in `sender-probe.json` with the profile's `config.yaml` / `.env` mtimes. While those files
+are unchanged, a profile Hermes found no Telegram target for is no longer a maybe (`push_sender.PROBED_NONE`), so
+neither the `sender candidates` row nor the `push recovery` words offer it; one that lists a target stays a maybe.
+Only the candidate lists read the record: the reply check below (`push_sender.readiness`) is files only as before.
+Details: [doctor.md](doctor.md#settling-an-unknown-sender).
+
 When the sender profile was deleted by Hermes (`hermes profile delete` writes the marker file
 `<Hermes home>/profiles/.deleted/<name>`, a tombstone; `clear_named_profile_deleted` removes it on restore), even
 if the dir is still there beside it (Hermes' `named_profile_is_live` refuses a tombstoned dir), the simplest fix is
