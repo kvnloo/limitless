@@ -142,6 +142,9 @@ The same gate stores two fields on a recurring cron job: `window_class` and `sta
 longer ago than that is dropped, not sent late). `limitless.jobs.to_cron_fields(spec)` reads both from the
 job's own spec through one table, `CRON_WINDOW` (`peak`, `trough`, `anytime` and `wind_down` map to the
 same host class); a spec with no window gives no fields. Both need a cron or interval schedule on the host.
+The schedule card (`jobs.to_schedule_card`) reads its `window` line and its `stale` line ("dropped if more than
+three hours late", in number words) from these same two fields, so the card says the window and expiry the
+gate enforces.
 
 | job | `window_class` | `stale_after_s` |
 | --- | --- | --- |

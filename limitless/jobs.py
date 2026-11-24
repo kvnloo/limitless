@@ -710,12 +710,45 @@ def _at_most(n: int) -> str:
     return "at most " + {1: "once", 2: "twice"}.get(n, f"{_NUM[n] if n < len(_NUM) else 'a few'} times")
 
 
+_ONES = _NUM + ("eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+                "nineteen")
+_TENS = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+_UNITS = ((86400, "day"), (3600, "hour"), (60, "minute"), (1, "second"))
+
+
+def _number_words(n: int) -> str:
+    """A whole number of zero or more in words ("sixty-two", "three thousand six hundred"); never a digit."""
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        return _TENS[n // 10] + ("" if n % 10 == 0 else "-" + _ONES[n % 10])
+    for size, word in ((10 ** 9, "billion"), (10 ** 6, "million"), (1000, "thousand"), (100, "hundred")):
+        if n >= size:
+            head, rest = divmod(n, size)
+            return f"{_number_words(head)} {word}" + ("" if rest == 0 else " " + _number_words(rest))
+    raise AssertionError(n)  # unreachable: n >= 100 here
+
+
+def _span_words(seconds: int) -> str:
+    """Whole seconds as the largest unit that says them exactly: "an hour", "three hours", "ninety minutes"."""
+    size, unit = next((s, u) for s, u in _UNITS if seconds % s == 0)
+    n = seconds // size
+    return ("an " if unit == "hour" else "a ") + unit if n == 1 else f"{_number_words(n)} {unit}s"
+
+
 def to_schedule_card(spec: JobSpec) -> dict:
-    """The plain-words fields a Hermes "Schedule this job?" card could show for this job. No internal ids."""
+    """The plain-words fields a Hermes "Schedule this job?" card could show for this job. No internal ids.
+
+    ``window`` and ``stale`` say what the cron gate enforces: both are read from to_cron_fields(spec), so the
+    card can never name a window or an expiry the gate does not hold. ``stale`` ("dropped if more than three
+    hours late") is there only when the job has an expiry; a job without one keeps the card it always had."""
+    cron = to_cron_fields(spec)
     when = "when you are back from a nap" if spec.trigger_after == "short_on" else _SPEAKS[spec.trigger_event]
     card = {"name": spec.send_title, "speaks": f"{when}, {_at_most(spec.max_per_window)}",
-            "window": _IN_WINDOW[spec.window_class], "ends": _ENDS[spec.expires],
+            "window": _IN_WINDOW[cron["window_class"]], "ends": _ENDS[spec.expires],
             "delivery": "you, through the send gate; this job never sends by itself"}
+    if "stale_after_s" in cron:
+        card["stale"] = f"dropped if more than {_span_words(cron['stale_after_s'])} late"
     if spec.answers:
         card["answers"] = f"{', '.join(spec.answers[:-1])} or {spec.answers[-1]} in one tap; no answer stays unlogged"
     return card

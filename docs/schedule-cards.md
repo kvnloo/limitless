@@ -40,7 +40,7 @@ the card uses its own name, listed here.
 | `budget` | none (`repeat` is a run count over the job's life, not a daily cap) | `send_gate.DAILY_CAP` | the send gate's per-day cap, shared by every limitless push |
 | `per_window` | none | `JobSpec.max_per_window` | how often this job may speak per trigger |
 | `sender` | none (`deliver` says where a result lands, not who sends it) | `jobs_runner.external_jobs` | `plugin` (limitless-jobs sends it), `external` (its own sender has the content) or `local` (the idea ledger: runs on this machine, sends nothing) |
-| `words` | none | `jobs.to_schedule_card` | the plain lines: speaks, window, ends, delivery (and answers) |
+| `words` | none | `jobs.to_schedule_card` | the plain lines: speaks, window, ends, delivery (and stale, answers) |
 
 The habit check-in and the week review follow this week's habit cue (`habit.json` `cue`), the same way
 `jobs_runner.run_once` picks them. `jobs.wake_brief(decision=True)` is a `peak` card. The default spec is
@@ -157,7 +157,8 @@ and `age_h` is null. Nothing is written, sent, scheduled or registered.
     "speaks": "when you wake up, at most once",
     "window": "any time you are awake",
     "ends": "when Sleep mode goes on",
-    "delivery": "you, through the send gate; this job never sends by itself"
+    "delivery": "you, through the send gate; this job never sends by itself",
+    "stale": "dropped if more than three hours late"
   }
 }
 ```

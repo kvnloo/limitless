@@ -45,7 +45,7 @@ class ScheduleCard(unittest.TestCase):
 
     def test_card_is_plain_data(self):
         c = jobs.to_schedule_card(jobs.SPECS["nap"])
-        self.assertEqual(set(c), {"name", "speaks", "window", "ends", "delivery"})
+        self.assertEqual(set(c), {"name", "speaks", "window", "ends", "delivery", "stale"})
         self.assertTrue(all(re.fullmatch(r"[^\n]+", v) for v in c.values()))
 
 
