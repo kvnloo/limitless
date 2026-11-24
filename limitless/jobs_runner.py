@@ -1261,8 +1261,10 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     ranked = ranked_ingest_row(state_dir, now, dry_run, env, home)    # sends nothing; None (no row) when off
     from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
     sender = _sender.run(state_dir, now, dry_run=dry_run, env=env, home=home)
+    from . import sender_confirm_job as _confirm   # uses _push and _write_mark from here; None (no row) when off
+    confirm, _confirmed = _confirm.run_pass(state_dir, now, push=push, dry_run=dry_run, env=env, home=home)
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
     recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz)   # None when off
-    return rows + [r for r in (noop, apps, ranked, sender, voice, recap) if r is not None]
+    return rows + [r for r in (noop, apps, ranked, sender, confirm, voice, recap) if r is not None]
