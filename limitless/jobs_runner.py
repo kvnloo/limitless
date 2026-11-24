@@ -110,12 +110,14 @@ from . import anki as _anki, aw_desktop, aw_reader, blocks as _blocks, body_cali
     wind_down
 from . import apps_reply as _apps_reply, glide_provider, habit_replies as _habit_replies, mock_guard, \
     noop_export as _noop_export, ranked_ledger as _ranked, scorecard as _scorecard
+from . import cron_spec as _cron_spec   # all_specs: the job names; cron_spec imports only jobs
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
 from .window_chain import EventProvider, first_known
 
 SENT_LOG = "jobs-sent.jsonl"
+JOB_NAMES = tuple(s.name for s in _cron_spec.all_specs())   # what run_once(only=...) and limitless-jobs --job take
 EXTERNAL_ENV = "LIMITLESS_EXTERNAL_JOBS"
 EXTERNAL_CONFIG = "external_jobs"
 OWN_SENDER = "sent by its own sender, not by limitless-jobs"
@@ -1224,7 +1226,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
              external: Optional[Iterable[str]] = None, brief: Optional[Callable[[], object]] = None,
-             ingest: bool = False, confirm: bool = False) -> list:
+             ingest: bool = False, confirm: bool = False, only: Optional[str] = None) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``.
 
     A triggered habit check-in drops outside a started habit week (jobs.habit_week_gate); ``today``
@@ -1236,7 +1238,16 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     ``confirm`` (only with ``ingest``) lets that pass send the one sender confirmation and the outage recap through
     ``push`` as a pass that is not a dry run would (each in its own write mode only; the recap waits a pass after a
     confirmation push); every other job still stays as ``dry_run`` says. Without ``ingest`` it changes nothing.
+    ``only`` (one of JOB_NAMES) runs the pass for that one job: the same gates, marks and sends, and every other job
+    is skipped (no row, no mark, no ingest). It drives ``limitless-jobs --job <name>``, the script of one host cron
+    job (cron_spec.script_body). An unknown name is a ValueError before anything is read or written.
     """
+    if only is not None and only not in JOB_NAMES:
+        raise ValueError(f"unknown job {only!r}; one of: {', '.join(JOB_NAMES)}")
+
+    def runs(name: str) -> bool:
+        return only is None or only == name
+
     external = set(external_jobs(env, home) if external is None else external)
     p = _read_pass(state_dir, now, env=env, home=home)
     today = datetime.fromtimestamp(now, tz).date() if today is None else today
@@ -1244,6 +1255,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     proxy_at = {e["at"] for e in p.evs if e.get("source") == "screen"}   # screen wakes and their habit cues
     rows = []
     for spec in p.specs:
+        if not runs(spec.name):
+            continue
         v = jobs.should_fire(spec, p.evs, p.window, sent, now)
         gate = jobs.habit_week_gate(p.habit, today) if spec.name == jobs.HABIT_CHECKIN.name else None
         if gate is not None and v.action != jobs.NOT_TRIGGERED:
@@ -1285,22 +1298,33 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
             else:
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
-    noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
+    noop = apps = ranked = sender = fit = confirm_row = voice = recap = None   # skipped by ``only``: no row
+    if runs(jobs.NOOP_EXPORT.name):
+        noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
     dry_ingest = dry_run and not ingest                               # --ingest: the reply ingests run for real
-    apps = apps_ingest_row(state_dir, now, dry_ingest, env, home)     # sends nothing; None (no row) when off
-    ranked = ranked_ingest_row(state_dir, now, dry_ingest, env, home)  # sends nothing; None (no row) when off
-    from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
-    sender = _sender.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
-    from . import fit_ingest_job as _fit   # sends nothing; None (no row) when off
-    fit = _fit.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
+    if runs(jobs.APPS_INGEST.name):
+        apps = apps_ingest_row(state_dir, now, dry_ingest, env, home)     # sends nothing; None (no row) when off
+    if runs(jobs.RANKED_INGEST.name):
+        ranked = ranked_ingest_row(state_dir, now, dry_ingest, env, home)  # sends nothing; None (no row) when off
+    if runs(jobs.SENDER_INGEST.name):
+        from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
+        sender = _sender.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
+    if runs(jobs.FIT_INGEST.name):
+        from . import fit_ingest_job as _fit   # sends nothing; None (no row) when off
+        fit = _fit.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
     from . import sender_confirm_job as _confirm   # uses _push and _write_mark from here; None (no row) when off
     # the confirmation and the recap are pushes: a plain --ingest pass leaves them a dry run; --ingest --confirm (the
     # timer's pass, often the host's only sender) or --send sends them, the recap on the pass after a confirmation
     dry_confirm = dry_run and not (ingest and confirm)
-    confirm_row, _confirmed = _confirm.run_pass(state_dir, now, push=push, dry_run=dry_confirm, env=env, home=home)
-    from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
-    voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
-    from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
-    recap = _recap.run(state_dir, now, push=push, dry_run=dry_confirm, env=env, home=home, tz=tz,   # None when off
-                       wait=_confirm.RECAP_WAITS if _confirmed else None)   # never two pushes in one pass
+    _confirmed = False
+    if runs(jobs.SENDER_CONFIRM.name):
+        confirm_row, _confirmed = _confirm.run_pass(state_dir, now, push=push, dry_run=dry_confirm, env=env,
+                                                    home=home)
+    if only is None:   # the voice MIQ is no cron_spec job (it sends nothing and has no spec): full pass only
+        from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
+        voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
+    if runs(jobs.OUTAGE_RECAP.name):
+        from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
+        recap = _recap.run(state_dir, now, push=push, dry_run=dry_confirm, env=env, home=home, tz=tz,   # None when off
+                           wait=_confirm.RECAP_WAITS if _confirmed else None)   # never two pushes in one pass
     return rows + [r for r in (noop, apps, ranked, sender, fit, confirm_row, voice, recap) if r is not None]

@@ -17,7 +17,13 @@ neither ``hermes cron create`` nor the cronjob tool takes them; the Python job A
 
 A job that sends nothing (the NOOP export and the ingests, SENDS_NOTHING) gets ``{}``: it has no message to hold
 for a window, so it needs no gated host job; ``limitless-jobs --ingest`` runs it as before.
+
+``script_body(spec)`` is the text of that ``limitless-<job>.sh``: a POSIX sh script that execs
+``limitless-jobs --job <job> --send`` (``--send`` is the flag the systemd unit in docs/limitless-jobs-systemd.md
+runs today) from the checkout ``$LIMITLESS_PLUGIN_DIR`` names. ``bin/limitless-cron-spec --scripts <dir>`` writes
+one per sending job into the directory it is given; nothing here writes.
 """
+import re
 from typing import Any
 
 from limitless import jobs
@@ -81,6 +87,37 @@ def plan_line(spec: Any) -> str:
 
 def plan_lines() -> list:
     return [plan_line(s) for s in all_specs()]
+
+
+PLUGIN_DIR_ENV = "LIMITLESS_PLUGIN_DIR"    # the limitless checkout on the host; set in the host job's env
+JOB_FLAGS = "--send"                      # the systemd unit's flags (docs/limitless-jobs-systemd.md), no new ones
+_PLAIN = re.compile(r"[a-z][a-z_]*")
+_SCRIPT = """#!/bin/sh
+# limitless-{name}.sh: one pass of the limitless job {name} ({title}) for the host cron job limitless-{name}.
+# Written by bin/limitless-cron-spec --scripts. The cron interval only polls for events; the plugin's own gates
+# (decision window, quiet, send gate, --once key) decide whether anything is sent.
+set -eu
+if [ -z "${{{env}:-}}" ]; then
+    echo "limitless-{name}.sh: set {env} to the limitless checkout" >&2
+    exit 2
+fi
+exec "${{{env}}}/bin/limitless-jobs" --job {name} {flags}
+"""
+
+
+def script_body(spec: Any) -> str:
+    """The text of the ``limitless-<job>.sh`` the host job for ``spec`` runs. Pure; a name that is not a plain
+    lowercase word is a ValueError (it goes into a shell command)."""
+    name = getattr(spec, "name", None)
+    if not isinstance(name, str) or not _PLAIN.fullmatch(name):
+        raise ValueError(f"job name {name!r} is not a plain word")
+    title = re.sub(r"[^A-Za-z ?-]", "", str(getattr(spec, "send_title", "")))   # a comment line: words only
+    return _SCRIPT.format(name=name, title=title, env=PLUGIN_DIR_ENV, flags=JOB_FLAGS)
+
+
+def scripts() -> dict:
+    """``{script file name: script_body}`` for every sending job, in all_specs order."""
+    return {p["script"]: script_body(s) for s, p in ((s, job_spec(s)) for s in all_specs()) if p}
 
 
 def payloads() -> list:

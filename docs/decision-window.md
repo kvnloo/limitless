@@ -163,7 +163,8 @@ The event that ends a job (`expires`, e.g. Sleep mode going on) has no cron fiel
 
 `bin/limitless-cron-spec` prints the Hermes cron job each plugin job would be: one line per job in words (host
 job name, title, the window it waits for, how long until a held occurrence is stale), or with `--json` the
-payloads. It is a dry run: it never calls Hermes, creates no job, writes no file and sends nothing.
+payloads. It is a dry run: it never calls Hermes, creates no job and sends nothing, and without `--scripts` it
+writes no file.
 
 On the fork branch (`up/cron-decision-window-gate-r2`) the two fields can only be set through the Python job
 API or a job record in `cron/jobs.json`. `hermes cron create` has no `--window-class` or `--stale-after-s`
@@ -184,10 +185,22 @@ Jobs that send nothing (the NOOP export and the ingests) get no payload: they ha
 is fixed when the job is created, while the brief only becomes `peak` when it carries a decision, so the
 plugin's own gate still holds that case.
 
-`limitless-jobs` has no single-job mode yet, so nothing in this repo fills the `limitless-<job>.sh` scripts.
-Until it does, keep the systemd timer as the sender ([docs/limitless-jobs-systemd.md](limitless-jobs-systemd.md)).
-The payloads show what the host jobs will look like, and the host accepts each one (`tests/test_cron_spec.py`
-runs them through copies of the fork's own rules).
+Each host job's script runs one plugin job: `limitless-jobs --job <job>` makes the pass for that job alone, with
+the same gates, marks and dry-run default as the full pass, sends only with `--send`, and prints the line the full
+pass prints for that job. No other job gets a line, a mark or an ingest. An unknown name exits 2 with a usage line
+that lists the names; a job that sends nothing (`--job fit_ingest`) works the same way.
+
+To fill the scripts, run `bin/limitless-cron-spec --scripts <the host's scripts dir>`. It writes one
+`limitless-<job>.sh` per payload (mode 0700, through a temp file and a rename) into that directory only. Each
+script is POSIX sh and execs `"$LIMITLESS_PLUGIN_DIR/bin/limitless-jobs" --job <job> --send`, where `--send` is
+the flag the systemd unit runs ([docs/limitless-jobs-systemd.md](limitless-jobs-systemd.md)). Set
+`LIMITLESS_PLUGIN_DIR` to the checkout in the host job's environment; when it is unset the script exits 2 and
+runs nothing. Then create each job with `cron.jobs.create_job(**payload)`.
+
+Once the host jobs send, the systemd timer can drop `--send` and run `limitless-jobs --ingest`, so the ingests
+(which have no host job) keep running. The voice MIQ is not a host job either and runs only in a full pass.
+If both run anyway, a job still speaks at most once per event: the `--once` key and `jobs-sent.jsonl` see to it.
+The host accepts each payload (`tests/test_cron_spec.py` runs them through copies of the fork's own rules).
 
 ## Open questions
 

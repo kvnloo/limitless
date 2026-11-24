@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""limitless-jobs [--send | --ingest [--confirm]]: one pass over the event-triggered jobs; prints one line per job.
+"""limitless-jobs [--job <name>] [--send | --ingest [--confirm]]: one pass over the event-triggered jobs; prints one
+line per job.
+
+With --job <name> (a name from limitless-cron-spec, e.g. nap or fit_ingest) the pass runs for that one job only: the
+same gates, marks, dry-run default and flags, and every other job is skipped (no line, no mark, no ingest). It prints
+the line the full pass prints for that job (none for a job whose config mode is off). This is what the script of one
+host cron job runs (cron_spec.script_body). An unknown name is a usage error (exit 2) that lists the names; nothing
+is read or written.
 
 Without --send it is a dry run: verdicts only, nothing is pushed or written.
 With --ingest (the timer's pass) the reply ingests (apps, ranked, sender) and the FIT import (each by its own config
@@ -112,11 +119,20 @@ def limitless_brief():
     return how
 
 
-USAGE = "usage: limitless-jobs [--send | --ingest [--confirm]]"
+USAGE = ("usage: limitless-jobs [--job <name>] [--send | --ingest [--confirm]]; <name> is one of: "
+         + ", ".join(jobs_runner.JOB_NAMES))
 
 
 def main(argv):
     args = argv[1:]
+    only = None
+    if "--job" in args:
+        i = args.index("--job")
+        only = args[i + 1] if i + 1 < len(args) else None
+        if only not in jobs_runner.JOB_NAMES:
+            print(USAGE, file=sys.stderr)
+            return 2
+        args = args[:i] + args[i + 2:]
     send, ingest, confirm = "--send" in args, "--ingest" in args, "--confirm" in args
     if any(a not in ("--send", "--ingest", "--confirm") for a in args) or (confirm and not ingest and not send):
         print(USAGE, file=sys.stderr)
@@ -124,7 +140,7 @@ def main(argv):
     confirm = confirm and ingest and not send   # --send with anything is --send
     rows = jobs_runner.run_once(state_dir(), time.time(), push=kevin_push if send or confirm else None,
                                 dry_run=not send, brief=limitless_brief if send else None, ingest=ingest,
-                                confirm=confirm)
+                                confirm=confirm, only=only)
     for r in rows:
         print(f"{r['job']}: {r['action']}: {r['reason']}")
     return 0
