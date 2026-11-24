@@ -333,5 +333,33 @@ class Cli(unittest.TestCase):
         self.assertNotIn(BOTH, second)
 
 
+class Doctor(Base):
+    def doc_row(self, now):
+        from limitless import doctor
+        from limitless.state_reader import StateReader, config
+        r = doctor.apps_ingest_row(StateReader(self.st), config(self.env, self.dir), now, env=self.env)
+        self.assertEqual((r["name"], r["status"]), ("job apps ingest", "live"), r)
+        self.assertNotRegex(r["reason"], r"\d")
+        self.assertWordsOnly(r["reason"])
+        return r["reason"]
+
+    def test_after_a_write_not_told_yet_then_told_in_a_brief(self):
+        self.ingest()
+        self.assertTrue(self.doc_row(NOW + H).endswith("wrote the app lists; not told yet"))
+        self.told(NOW + H)
+        self.assertTrue(self.doc_row(NOW + H).endswith("wrote the app lists; told in a brief"))
+
+    def test_a_later_run_with_nothing_new_still_says_whether_the_write_was_told(self):
+        self.ingest()
+        self.runs(sync(NOW - 60), sync(NOW + H))
+        self.once(NOW + 2 * H)
+        self.assertTrue(self.doc_row(NOW + 2 * H).endswith("no new apps reply; not told yet"))
+
+    def test_no_write_says_neither(self):
+        self.ingest(mode="dry_run")
+        reason = self.doc_row(NOW + H)
+        self.assertNotIn("told", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

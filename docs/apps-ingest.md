@@ -172,7 +172,7 @@ apps-ingest.json (mode 0o600):
 apps.json mode 0o600, lists: work_apps, feed_apps
 
 $ limitless-doctor   (the job row)
-job apps ingest: live: write mode: ran under an hour ago after a sync: no new apps reply
+job apps ingest: live: write mode: ran under an hour ago after a sync: no new apps reply; not told yet
 
 schedule card:
 Schedule "Apps ingest" (after each sync run, at most once; asleep or awake: it sends nothing, so no window holds it): ends at the next sync run; nothing is sent; it reads your work apps or feed apps reply and, in write mode, sets the app lists from it
