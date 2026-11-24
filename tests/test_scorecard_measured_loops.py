@@ -234,5 +234,60 @@ class EvidenceLoop(Fixture):
             self.assertIsNone(DIGIT.search(self.row(4)["label"]))
 
 
+class Privacy(Fixture):
+    def test_row_seven_is_privacy(self):
+        self.assertEqual(self.row(7)["criterion_words"], "privacy")
+
+    def test_no_audit_log_set_is_unknown(self):
+        m, a = self.audits()[7]
+        self.assertEqual((m["goal"], m["label"]), ("unknown", "unknown: " + sc.NO_AUDIT_LOG))
+        self.assertIsNone(a)
+
+    def test_an_absent_or_empty_log_is_unknown(self):
+        self.cfg["audit_path"] = str(self.root / "absent.jsonl")
+        self.assertEqual(self.row(7)["label"], "unknown: " + sc.NO_AUDIT_ROWS)
+        self.audit_log()
+        self.assertEqual(self.row(7)["goal"], "unknown")
+
+    def test_rows_only_older_than_the_week_are_unknown(self):
+        self.audit_log("allowed", "leaked", age_days=8)
+        self.assertEqual(self.row(7)["goal"], "unknown")
+
+    def test_allowed_and_blocked_rows_are_met(self):
+        self.audit_log("allowed", "blocked", "opted")
+        m, a = self.audits()[7]
+        self.assertEqual((m["goal"], m["label"]), ("met", sc.PRIVACY_MET))
+        self.assertEqual((a["injections"], a["blocked"], a["t0_without_opt_in"]), (2, 1, 0))
+
+    def test_only_blocked_rows_are_still_met(self):
+        self.audit_log("blocked")
+        self.assertEqual(self.row(7)["goal"], "met")
+
+    def test_a_leaked_digit_bearing_row_is_not_met(self):
+        self.audit_log("allowed", "blocked", "leaked")
+        m, a = self.audits()[7]
+        self.assertEqual((m["goal"], m["label"]), ("not met", sc.PRIVACY_LEAK))
+        self.assertEqual(a["t0_without_opt_in"], 1)
+
+    def test_the_env_audit_path_wins_over_config(self):
+        path = self.audit_log("allowed", "leaked")
+        self.cfg["audit_path"] = str(self.root / "absent.jsonl")
+        self.env[tier_audit.ENV_KEY] = str(path)
+        self.assertEqual(self.row(7)["goal"], "not met")
+
+    def test_a_broken_log_is_unknown_not_a_traceback(self):
+        path = self.root / "audit.jsonl"
+        path.write_bytes(b"\xff\xfe{torn\n[]\n")
+        self.cfg["audit_path"] = str(path)
+        self.assertEqual(self.row(7)["goal"], "unknown")
+        self.cfg["audit_path"] = str(self.root)          # a directory, not a file
+        self.assertEqual(self.row(7)["goal"], "unknown")
+
+    def test_label_has_no_digit(self):
+        for kinds in ((), ("allowed",), ("leaked",), ("blocked", "opted")):
+            self.audit_log(*kinds)
+            self.assertIsNone(DIGIT.search(self.row(7)["label"]))
+
+
 if __name__ == "__main__":
     unittest.main()

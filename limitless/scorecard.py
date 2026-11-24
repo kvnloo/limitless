@@ -279,6 +279,30 @@ def _evidence_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tu
     return label, goal, audit
 
 
+PRIVACY_WINDOW_DAYS = 7       # row seven: the tier audit log over the last seven days
+PRIVACY_MET = "nothing with raw numbers went out without the opt-in this week"
+PRIVACY_LEAK = "something with raw numbers went out without the opt-in this week"
+NO_AUDIT_LOG = "no audit log set"
+NO_AUDIT_ROWS = "no audit rows this week"
+PRIVACY_RAW_KEYS = ("injections", "t0_with_opt_in", "t0_without_opt_in", "blocked", "window_days")
+
+
+def _privacy_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row seven: tier_audit.check over the audit log ($LIMITLESS_AUDIT, else config
+    ``audit_path``, as tier_audit.audit_path reads it) for the last seven days. A blocked row was stopped and is
+    fine; a digit-bearing row that went out without the opt-in is a leak."""
+    from . import tier_audit
+    env = os.environ if env is None else env
+    v = env.get(tier_audit.ENV_KEY) or cfg.get(tier_audit.CONFIG_KEY)
+    if not isinstance(v, str) or not v.strip():
+        return UNKNOWN_PREFIX + NO_AUDIT_LOG, "unknown", None
+    counts = tier_audit.check(Path(v).expanduser(), since=now - PRIVACY_WINDOW_DAYS * 86400)
+    if not counts["injections"] + counts["blocked"]:
+        return UNKNOWN_PREFIX + NO_AUDIT_ROWS, "unknown", None
+    label, goal = (PRIVACY_LEAK, "not met") if counts["t0_without_opt_in"] else (PRIVACY_MET, "met")
+    return label, goal, dict(counts, window_days=PRIVACY_WINDOW_DAYS, label={"label": label})
+
+
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
     """``[(row, audit)]`` for rows one, two, three, four and seven, in that order: ``row`` as measured() gives
@@ -289,7 +313,8 @@ def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[
     for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
                            (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
                            (HABIT_ROW, HABIT_WORDS, _habit_measured),
-                           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured)):
+                           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
+                           (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured)):
         try:
             label, goal, audit = read(state_dir, cfg, now, tz, env, home)
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
