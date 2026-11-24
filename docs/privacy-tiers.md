@@ -89,6 +89,6 @@ the model says an allowed word: local label: ok
 the model says no allowed word: local label: short (the rule label)
 the model says a digit: local label: short (the rule label)
 the model runs past the timeout: local label: short (the rule label)
-local labeler: live: set: the command, the model binary and the model file exist (the model is not run here)
+local labeler: live: set: not checked yet (no check file is set, so none is required); the command, the model binary and the model file exist (the model is not run here)
 local labeler: missing: broken: the model binary or the model file does not exist; the rule labels are used
 ```

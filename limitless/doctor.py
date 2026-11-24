@@ -220,9 +220,29 @@ def local_labeler_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> 
     its model binary and model file ($LIMITLESS_T1_BIN / $LIMITLESS_T1_MODEL, else config ``t1_bin`` /
     ``t1_model``) exist too; broken (status missing) when the command cannot be read or a file is missing. Only
     checks that files exist: the model is never run and no process is started. Words only: never the command, a
-    path or a digit. Kind ``labeler``: --strict does not count it."""
-    status, reason = LOCAL_WORDS[_local_verdict(cfg, os.environ if env is None else env)]
+    path or a digit. Kind ``labeler``: --strict does not count it.
+
+    A set row also says whether a passing local model check (bin/limitless-t1-check) is on file: "set: checked,
+    <its verdict words>" or "set: not checked yet". With config t1_check_file set, a missing or failing check
+    makes the row off: the labeler keeps the rule labels then. Only the small saved file is read."""
+    env = os.environ if env is None else env
+    verdict = _local_verdict(cfg, env)
+    status, reason = LOCAL_WORDS[verdict]
+    if verdict in ("set", "set other"):
+        status, reason = _checked(cfg if isinstance(cfg, Mapping) else {}, env, status, reason[len("set: "):])
     return _row(LOCAL_LABELER_ROW, "labeler", status, reason)
+
+
+def _checked(cfg: Mapping, env: Mapping[str, str], status: str, files: str) -> tuple:
+    from . import t1_agreement as ta
+    if not ta.gated(cfg):
+        return status, f"set: not checked yet (no check file is set, so none is required); {files}"
+    words = ta.saved(cfg, env)
+    if words is None:
+        return OFF, f"set: not checked yet, so the rule labels are used until a passing check is on file; {files}"
+    if not ta.allowed(cfg, words):
+        return OFF, f"set: checked, {words}, below the minimum, so the rule labels are used; {files}"
+    return status, f"set: checked, {words}; {files}"
 
 
 NOOP_ROW = "job NOOP export"
