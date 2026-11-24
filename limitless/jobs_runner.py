@@ -46,6 +46,13 @@ runs.jsonl, a pass that is not a dry run reads the person's replies from the Her
 ``hermes_db``; none set: skipped) and runs apps_reply.ingest (write mode writes apps.json), then writes the mark
 ``apps-ingest.json`` in words only. A write adds the row's ``line`` (jobs.APPS_LINE) for a later brief; nothing is
 pushed or logged as sent. Off (the default): no row, nothing read.
+
+Ranked ingest: with config ``ranked_ingest`` dry_run or write, one more row (ranked_ingest_row), by the apps
+ingest's rule: once per new sync row in runs.jsonl, a pass that is not a dry run reads the owner's
+"drop: <id>[, <id>...]" replies from the Hermes session DB and runs ranked_ledger.ingest (write mode appends owner
+drop rows to the ranked ledger and moves ranked-drops.json), then writes ``ranked-ingest.json`` in words only. No
+ranked ledger or no Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing
+read.
 """
 from __future__ import annotations
 
@@ -68,7 +75,7 @@ from . import anki as _anki, aw_desktop, aw_reader, blocks as _blocks, body_cali
     presleep_hr as _presleep_hr, rides as _rides, send_gate, sleep as _sleep, stop_rule as _stop_rule, tier_audit, wake_proxy, weekly_target, \
     wind_down
 from . import apps_reply as _apps_reply, glide_provider, habit_replies as _habit_replies, mock_guard, \
-    noop_export as _noop_export
+    noop_export as _noop_export, ranked_ledger as _ranked, scorecard as _scorecard
 from .glide_provider import GlideProvider
 from .state_reader import StateReader, config, parse_ts
 from .window import MAX_AWAKE_H
@@ -1095,6 +1102,87 @@ def apps_ingest_label(state_dir) -> Optional[dict]:
     return {"label": line, "tier": "T1", "modality": "derived"} if line else None
 
 
+RANKED_MARK = "ranked-ingest.json"
+RANKED_ACTIONS = (_ranked.NOTHING, _ranked.IGNORE, _ranked.WOULD_WRITE, _ranked.WRITE)
+
+
+def load_ranked_mark(state_dir) -> dict:
+    """ranked-ingest.json as ``{"row_at", "ran_at", "mode", "action"}``; {} when missing or malformed. ``row_at`` and
+    ``ran_at`` are epoch seconds or None; ``mode`` is one of jobs.RANKED_MODES or None; ``action`` one of
+    RANKED_ACTIONS or None."""
+    try:
+        data = json.loads((Path(state_dir) / RANKED_MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {"row_at": _epoch(data.get("row_at")), "ran_at": _epoch(data.get("ran_at")),
+            "mode": data.get("mode") if data.get("mode") in jobs.RANKED_MODES else None,
+            "action": data.get("action") if data.get("action") in RANKED_ACTIONS else None}
+
+
+def _ranked_action(got: dict, mode: str) -> str:
+    """One word for a ranked_ledger.ingest result: nothing (no new owner message), ignore (no drop to append), would
+    write (a dry run with drops) or write."""
+    if got.get("mark") is None:
+        return _ranked.NOTHING
+    if not got.get("would_append"):
+        return _ranked.IGNORE
+    return _ranked.WRITE if mode == jobs.RANKED_WRITE else _ranked.WOULD_WRITE
+
+
+def run_ranked_ingest(state_dir, db, ledger, row_at: float, now: float, mode: str) -> tuple:
+    """Read the owner's messages after ranked-drops.json from the Hermes session DB ``db`` (read-only), run
+    ranked_ledger.ingest (appending owner drop rows to ``ledger`` and moving ranked-drops.json only in write mode)
+    and record the pass in ranked-ingest.json: the runs.jsonl row it acted on (``row_at``), this pass (``ran_at``),
+    the mode and the action word. Never an id, evidence or message text, never a count. Returns (mark, the ingest
+    result). Sends nothing."""
+    replies = _habit_replies.replies_from_hermes_db(db, _ranked.read_after(state_dir, now))
+    got = _ranked.ingest(state_dir, ledger, replies, now, write=mode == jobs.RANKED_WRITE)
+    mark = {"row_at": row_at, "ran_at": now, "mode": mode, "action": _ranked_action(got, mode)}
+    _write_mark(state_dir, RANKED_MARK, mark)
+    return mark, got
+
+
+def _ranked_said(action: str, n: int) -> str:
+    """What one pass did, in words; ``n`` (the owner drop rows appended or that would be) as a word, never a digit."""
+    rows = f"{_ranked.count_words(n)} owner drop row{'' if n == 1 else 's'}"
+    return {_ranked.NOTHING: "no new owner message: the ranked ledger stays as it is",
+            _ranked.IGNORE: "no owner drop to append: the ranked ledger stays as it is",
+            _ranked.WOULD_WRITE: f'would append {rows} (config {jobs.RANKED_CONFIG} "{jobs.RANKED_WRITE}" appends '
+                                 f'{"it" if n == 1 else "them"})',
+            _ranked.WRITE: f"appended {rows}"}[action]
+
+
+def ranked_ingest_row(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, str]] = None,
+                      home: Optional[Path] = None) -> Optional[dict]:
+    """The ranked ingest's ``{job, action, reason}`` row, or None when config ``ranked_ingest`` is off (no row,
+    nothing read). Due (jobs.ranked_ingest_verdict) and not ``dry_run``: runs it (run_ranked_ingest) and says what it
+    did in words; ``dry_run``: the verdict only, nothing read, run or written. Only the owner's drop replies ever
+    reach the ledger here (ranked_ledger.ingest): an agent row is never made dropped."""
+    cfg = config(env, home)
+    mode = jobs.ranked_mode(cfg)
+    if mode == jobs.RANKED_OFF:
+        return None
+    ledger = _scorecard.ledger_path(state_dir, cfg, os.environ if env is None else env)
+    db = _habit_replies.hermes_db_path(state_dir, env, home)
+    v = jobs.ranked_ingest_verdict(mode, StateReader(Path(state_dir)).last_run(),
+                                   load_ranked_mark(state_dir).get("row_at"), now, db_set=db is not None,
+                                   ledger_set=ledger is not None)
+    title = jobs.RANKED_INGEST.send_title
+    if v.action != jobs.RUN:
+        return {"job": title, "action": v.action, "reason": v.reason}
+    if dry_run:
+        return {"job": title, "action": v.action, "reason": f"{v.reason}; dry run of limitless-jobs: not run"}
+    try:
+        mark, got = run_ranked_ingest(state_dir, db, ledger, v.trigger_at, now, mode)
+    except OSError as e:
+        return {"job": title, "action": jobs.HOLD,
+                "reason": f"{v.reason}; a file was not written ({type(e).__name__}); the next run tries again"}
+    return {"job": title, "action": v.action,
+            "reason": f"{v.reason}; {_ranked_said(mark['action'], got.get('would_append', 0))}"}
+
+
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
@@ -1156,6 +1244,7 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
     noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
     apps = apps_ingest_row(state_dir, now, dry_run, env, home)        # sends nothing; None (no row) when off
+    ranked = ranked_ingest_row(state_dir, now, dry_run, env, home)    # sends nothing; None (no row) when off
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
-    return rows + [r for r in (noop, apps, voice) if r is not None]
+    return rows + [r for r in (noop, apps, ranked, voice) if r is not None]
