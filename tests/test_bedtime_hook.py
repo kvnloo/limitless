@@ -1,6 +1,7 @@
 """The post_gateway_admission hook: with bedtime_capture on, an admitted owner message in an asleep or
 wind_down window is written through capture.capture and answered "Saved for tomorrow." (the agent turn is
 skipped); everything else, and any error, passes the message through untouched. Synthetic state only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import logging
 import os

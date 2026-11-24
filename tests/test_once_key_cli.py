@@ -3,6 +3,7 @@
 Synthetic data only. Times are relative to the clock the CLI reads; only differences matter.
 Nothing sends: the CLI only reads, and a fake `hermes` on PATH would record any call.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -52,7 +53,7 @@ class Base(unittest.TestCase):
         self.tmp.cleanup()
 
     def cli(self, *args, env=None):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=env or self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(env or self.env),
                               capture_output=True, text=True, timeout=30)
 
     def awake_after_night(self, off):

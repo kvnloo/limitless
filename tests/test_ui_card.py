@@ -1,4 +1,5 @@
 """ui_card: the state card and the week review as one small self-contained HTML card (synthetic lines only)."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import re
 import sys

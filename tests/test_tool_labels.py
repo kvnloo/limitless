@@ -1,5 +1,6 @@
 """Every tool result keeps the evidence envelope; a T1 label sits next to the value only where the envelope
 allows it (a value to label, no label yet). Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

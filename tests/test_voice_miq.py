@@ -4,6 +4,7 @@ Synthetic transcripts only. The row shape is z0live's ``sessions/SESSION_ID.json
 ``POST /v1/events``; desktop/z0live_desktop/core.py ``export_events``): ``{"id", "session_id", "ts", "type",
 "text", "data"}``. Nothing sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

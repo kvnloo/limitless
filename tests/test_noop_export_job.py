@@ -4,6 +4,7 @@ NOOP database (its runs.jsonl row says so in ``noop``), once per such row, as co
 Synthetic runs.jsonl rows and the synthetic NOOP DB of tests/noop_fixture.py only. UTC stands in for the local
 zone. Nothing here sends, pushes or starts a process.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

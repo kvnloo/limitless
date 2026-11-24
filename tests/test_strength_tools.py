@@ -1,5 +1,6 @@
 """The ladder's word on limitless_experiment and limitless_loop: an optional ``strength`` key beside the
 envelope, never inside it; the envelope's four fields are as they were. Synthetic ledgers only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

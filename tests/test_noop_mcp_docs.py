@@ -1,5 +1,6 @@
 """docs/noop-mcp.md: the config key, a placeholder-only host mcp_servers snippet, why the result filter comes first,
 and every doctor row's words; the README points at it."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

@@ -1,4 +1,5 @@
 """Attention modes on the pre_llm_call card: one digit-free line, still through tier_audit.gate. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

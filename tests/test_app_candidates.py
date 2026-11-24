@@ -2,6 +2,7 @@
 
 Synthetic rows only: well-known public app ids and names, and made-up app names; no real person's data.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import re
 import sys

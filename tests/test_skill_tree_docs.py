@@ -1,5 +1,6 @@
 """docs/skill-tree.md shows the example script's real output, its committed card is the script's real card, and
 the README points at both the tool and the doc."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -13,7 +14,7 @@ CARD = ROOT / "docs" / "examples" / "skill-tree.html"
 
 
 def run(*args):
-    return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], capture_output=True, text=True, timeout=60)
+    return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], capture_output=True, text=True, timeout=60, env=child_env())
 
 
 class Docs(unittest.TestCase):

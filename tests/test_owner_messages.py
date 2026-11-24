@@ -5,6 +5,7 @@ The tables keep the columns the reader uses, with the types and indexes of NousR
 persistence/sqlite/_schema_ddl.py (0f602c5): sessions(id, source), messages(session_id, role, content,
 timestamp REAL NOT NULL) and idx_messages_session ON messages(session_id, timestamp).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sqlite3

@@ -3,6 +3,7 @@
 Done counts toward the target. No, Skip and a day with no answer are not failures: they never reduce
 anything, and nothing resets. No started week is unknown (None), never zero.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

@@ -1,5 +1,6 @@
 """limitless_result_tier: whether the result tier filter is on, how many tool globs are set and the raw-numbers
 opt-in, in words, with a digit-free T1 label; and its limitless-doctor row. Read-only. Synthetic globs only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

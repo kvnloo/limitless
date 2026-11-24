@@ -1,6 +1,7 @@
 """The week review's Anki line (anki.review_line, words only), last before the Keep / Drop line; empty when
 the week is unknown (no collection set, unreadable). Synthetic collections, a fake push, a fixed clock.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

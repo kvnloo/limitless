@@ -1,4 +1,5 @@
 """idea_ledger core: captures not yet in the one idea ledger, as append-only rows. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

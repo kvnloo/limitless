@@ -2,6 +2,7 @@
 
 Dry run unless written. Synthetic data only; nothing sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import sqlite3
@@ -133,7 +134,7 @@ class IngestCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                               capture_output=True, text=True, timeout=60)
 
     def test_no_db_configured_does_nothing_and_says_so(self):

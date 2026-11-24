@@ -1,4 +1,5 @@
 """limitless_window gains post_wake_peak (T1 words); the envelope is unchanged. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

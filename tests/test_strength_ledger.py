@@ -1,6 +1,7 @@
 """strength.habit_claim / habit_strength: a habit's rung read from the prediction ledger (predictions.jsonl:
 prediction and receipt rows written by prediction.lock and prediction.receipt, loop rows by stop_rule), read-only.
 Synthetic ledgers only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

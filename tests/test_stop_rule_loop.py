@@ -2,6 +2,7 @@
 week goes to the existing prediction ledger (predictions.jsonl): {week_of, habit, prediction, outcome, rule
 verdict, decision}. Nothing is written before the reply, a dry run writes nothing, and a week never gets a
 second row. Synthetic data only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import stat

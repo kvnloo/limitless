@@ -1,6 +1,7 @@
 """limitless_feed_reflex: the envelope, T0 counts only under the raw opt-in, unknown never zero, read-only.
 
 Synthetic ActivityWatch DBs only (made-up app names)."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import hashlib
 import json
 import os

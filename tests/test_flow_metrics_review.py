@@ -2,6 +2,7 @@
 
 Synthetic data only: a tiny ActivityWatch DB, made-up app names, a fake push, a fixed clock, UTC days.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

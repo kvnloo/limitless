@@ -1,4 +1,5 @@
 """flow_metrics.metrics: per-day fragmentation of work from app-activity rows. Synthetic rows only, UTC days."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

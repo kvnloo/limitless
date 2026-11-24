@@ -1,4 +1,5 @@
 """ui_card.write: atomic, 0600, named by a content hash (no date or clock); card_dir from env or config."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

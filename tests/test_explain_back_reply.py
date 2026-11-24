@@ -2,6 +2,7 @@
 when one is set. Never graded, never followed up; Later is not logged. ``unknowns`` holds only the person's own
 "I could not explain X" words, verbatim. Synthetic text only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import sys
 import tempfile

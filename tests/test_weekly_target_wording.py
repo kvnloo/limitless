@@ -1,6 +1,7 @@
 """Weekly target wording: the habit check-in may say "target reached this week"; nothing user-facing in the
 habit or week-review code says streak, missed, failed or broke. Synthetic habit weeks only; nothing sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import ast
 import inspect
 import itertools

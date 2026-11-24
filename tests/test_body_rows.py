@@ -3,6 +3,7 @@
 Synthetic rows only. One row per measurement visit: {"day", "bf_pct", "method", "calibrated"}. No file
 configured is no rows; a malformed row or a future day is skipped; nothing raises.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

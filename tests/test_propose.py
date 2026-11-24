@@ -1,5 +1,6 @@
 """propose(state): one small next action from a readable rule table, NO_SUGGESTION by default.
 Synthetic labels only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import itertools
 import os
 import re

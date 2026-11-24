@@ -1,6 +1,7 @@
 """The week review's experiment line: "Experiment: outcome pending (judged later)" when the habit week's locked
 prediction has a lag that has not passed (its receipt would be pending); otherwise nothing new. Digit-free,
 through tier_audit.gate, before the stop-rule line. Synthetic data only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

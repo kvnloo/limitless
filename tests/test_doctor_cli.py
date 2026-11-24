@@ -1,4 +1,5 @@
 """bin/limitless-doctor end to end: words only, never a raw value, exit 0 unless --strict. Synthetic state only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -45,7 +46,7 @@ class LimitlessDoctorCli(unittest.TestCase):
         cfg = self.home / ".config/limitless/config.json"
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(json.dumps(self.cfg))
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env), cwd=self.home,
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)), cwd=self.home,
                               capture_output=True, text=True, timeout=60)
 
     def test_text_is_one_line_per_row_with_words_only(self):

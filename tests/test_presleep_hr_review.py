@@ -3,6 +3,7 @@
 Words only, wearable rows only, through tier_audit.gate (hook week_review:presleep_hr); nothing when unknown.
 Synthetic rows, a fake push, a fixed clock, UTC as the local zone. No new job and no new push.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

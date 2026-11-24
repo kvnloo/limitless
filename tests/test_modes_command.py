@@ -1,4 +1,5 @@
 """/limitless mode [brainstorm|pm|copilot|focused|off]: sets or reads mode.json; never sends. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import socket
 import subprocess

@@ -3,6 +3,7 @@
 Synthetic app starts and synthetic app names only. NOW is an arbitrary epoch; only differences between
 times matter. Nothing here reads the clock or sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sqlite3

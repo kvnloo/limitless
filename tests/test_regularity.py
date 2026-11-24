@@ -4,6 +4,7 @@ Synthetic spans only, UTC as the local zone. A night is ``{"night", "wearable", 
 ``(start_s, end_s)`` span or None (sleep.timed_nights). Wearable and phone estimate are kept apart; fewer than
 min_nights spans of one source is unknown, never regular.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

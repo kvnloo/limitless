@@ -3,6 +3,7 @@
 Synthetic rows only. The file is the config key ``passive_habit_file`` (relative = the state dir); none by
 default, and no file or no rows is unknown, never "0 of 0".
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

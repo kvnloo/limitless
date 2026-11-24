@@ -3,6 +3,7 @@
 Rows are in the shape bin/kevin-push writes, one per decision: {"at", "tag", "cls", "title", "body", "how"};
 "how" is "telegram" only on a real delivery. Synthetic rows, a fixed clock, UTC. Nothing is written or sent.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -284,7 +285,7 @@ class RealShape(unittest.TestCase):
                                           ("asks", "Asks waiting on you", "A1: one", "decision"),
                                           ("limitless", jobs.WAKE_BRIEF.send_title, "Good morning.", "report")]:
                 r = subprocess.run([sys.executable, "-I", str(cli), tag, title, body], timeout=30,
-                                   env=dict(env, CIRCADIAN_CLASS=cls), capture_output=True, text=True)
+                                   env=child_env(dict(env, CIRCADIAN_CLASS=cls)), capture_output=True, text=True)
                 self.assertEqual(r.returncode, 0, r.stderr)
             got = da.read_log(home / ".local/state/kevin-push/log.jsonl")
         rows, skipped = got

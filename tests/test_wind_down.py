@@ -2,6 +2,7 @@
 
 Config ``wind_down_line`` picks the line ("off" disables it); Glide's own nudge already sent tonight
 (attention.json ``nudged`` == tonight's night date) means nothing more is said. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

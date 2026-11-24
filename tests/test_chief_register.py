@@ -1,6 +1,7 @@
 """register(ctx) offers all three of the plugin's skills, limitless:coach, limitless:learn and limitless:chief, to a
 host with register_skill, in that order; without it one content-free line in all; one call the host refuses never
 stops the others."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import logging
 import os
 import sys

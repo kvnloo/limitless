@@ -3,6 +3,7 @@
 Synthetic rows only. The default value gains ``regularity`` (regularity.label's T1 words, source named); the raw
 opt-in adds ``regularity_min`` (per-source spreads and drift in minutes, never a clock time).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

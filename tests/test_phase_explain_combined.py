@@ -1,5 +1,6 @@
 """The light line (phase) and the explain-back offer share one card without pushing each other out.
 Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import shutil
 import sys

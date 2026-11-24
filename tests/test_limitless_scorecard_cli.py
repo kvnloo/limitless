@@ -1,4 +1,5 @@
 """bin/limitless-scorecard end to end: prints the weekly-review block, never writes. Synthetic fixtures only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -31,7 +32,7 @@ class LimitlessScorecardCli(unittest.TestCase):
         self.env["HOME"] = str(self.home)
 
     def run_cli(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env), cwd=self.home,
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)), cwd=self.home,
                               capture_output=True, text=True, timeout=30)
 
     def test_path_argument_prints_the_block(self):

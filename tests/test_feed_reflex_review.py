@@ -3,6 +3,7 @@
 One optional, digit-free line through tier_audit.gate (hook week_review:feed_reflex); nothing when unknown.
 Synthetic ActivityWatch DB (made-up app names), a fake push, a fixed clock, UTC. No new job, no new push.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

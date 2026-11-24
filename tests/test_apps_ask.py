@@ -3,6 +3,7 @@ unset, at most once in seven days, the mark written only after a delivery.
 
 Synthetic phone DBs (the ActivityWatch schema) with well-known public app ids only; no real person's data.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import stat

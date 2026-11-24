@@ -1,5 +1,6 @@
 """limitless/prompt_rules.py: the plugin's standing rules as one short, static, data-free system prompt
 section (``limitless.rules``): no digit, no clock time, no dosing word, the same bytes every session."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import logging
 import os

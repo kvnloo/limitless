@@ -4,6 +4,7 @@ Synthetic rows only. The value is counts and the T1 label; per-night minutes onl
 modality is "measured" only when the wearable covers the newest night, else "proxy"; age is the newest datum's.
 No data is value None with a reason that never echoes the path. tier_audit logs the label.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

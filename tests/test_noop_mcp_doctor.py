@@ -1,6 +1,7 @@
 """limitless-doctor's NOOP MCP row: off without config noop_mcp; refused while t0_tools does not cover the server's
 tools; else set, to be added to the host's mcp_servers by hand (the host has no plugin API for it). Words only:
 no digit, no command, no env value and no server name. Starts no process. Synthetic config only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

@@ -1,4 +1,5 @@
 """flow_ledger.label: the day's ledger in plain, digit-free words, through tier_audit.gate. No score, no advice."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import re
 import sys

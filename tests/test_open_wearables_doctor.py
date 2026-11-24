@@ -2,6 +2,7 @@
 after a run that could not, in words only, from the mark open-wearables.json. It never calls the server.
 Synthetic state dirs only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

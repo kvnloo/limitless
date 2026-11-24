@@ -3,6 +3,7 @@
 Synthetic DBs only, built here with the ActivityWatch schema. NOW is an arbitrary epoch; only
 differences between times matter.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sqlite3

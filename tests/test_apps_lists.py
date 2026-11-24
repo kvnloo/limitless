@@ -3,6 +3,7 @@
 One shared helper (apps_reply.lists_for); flow_week.work_apps, feeds_evidence.feed_apps and the feed reflex
 all read through it. Synthetic app names only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

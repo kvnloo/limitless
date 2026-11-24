@@ -5,6 +5,7 @@ which the Glide provider opens from attention.json (path from the env or from co
 The nap's trigger is a Sleep-mode off after a short on. Synthetic data only. NOW is an arbitrary
 epoch; only differences between times matter. Nothing sends: the push is a fake.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

@@ -1,5 +1,6 @@
 """LocalModelLabeler: an optional small LOCAL model makes the T1 label; any error, timeout or out-of-set
 answer falls back to the rule label. A fake CLI script stands in for the model: no download, no network."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

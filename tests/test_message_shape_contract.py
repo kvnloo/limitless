@@ -1,6 +1,7 @@
 """Contract: every job's message, built from synthetic fixtures with every optional line present, is delivered
 by bin/kevin-push within the message_shape limits, TLDR first, still ending with its Reply line (then the one
 Why-now line). Fake `hermes` on PATH, temp HOME; synthetic data only, no real person's numbers."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -96,7 +97,7 @@ class Contract(unittest.TestCase):
             env = dict(os.environ, HOME=str(home), PATH=f"{fakebin}:{os.environ['PATH']}",
                        LIMITLESS_SLEEPMODE=str(home / "none.jsonl"), LIMITLESS_STATE=str(home / "state"),
                        LIMITLESS_CONFIG=str(home / "config.json"), CIRCADIAN_CLASS="decision")
-            r = subprocess.run([sys.executable, "-I", str(CLI), "limitless", title, text], env=env,
+            r = subprocess.run([sys.executable, "-I", str(CLI), "limitless", title, text], env=child_env(env),
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("telegram", r.stdout)

@@ -1,6 +1,7 @@
 """palace.offer: one optional line, "A short memory palace walk fits now." and the link, only in a trough when
 the person is awake, not in a focus block or focused mode, not muted, had no Anki offer in this trough and had
 no palace offer yet this wake day. Peak, unknown or any other state: None. Pure: synthetic inputs, no clock."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import unittest
 from pathlib import Path

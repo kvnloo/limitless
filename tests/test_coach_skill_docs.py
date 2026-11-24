@@ -1,5 +1,6 @@
 """docs/coach-skill.md and the README line: the doc names the host method and the exact log lines, links the
 skill, and its registration-test output names every test in test_coach_register.py."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

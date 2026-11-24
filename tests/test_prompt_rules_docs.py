@@ -1,5 +1,6 @@
 """docs/prompt-rules.md and the README line: the doc names the section id, the host method, the config key and
 the exact log lines, quotes the section verbatim, and its test output names every test in test_prompt_rules.py."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

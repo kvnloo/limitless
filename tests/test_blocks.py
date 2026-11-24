@@ -2,6 +2,7 @@
 
 Synthetic rows only; app names are made up. Times are epoch seconds picked for the test; nothing reads the clock.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import tempfile

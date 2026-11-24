@@ -1,5 +1,6 @@
 """The owner-message input: an evidence envelope {value: ISO time, modality: "messages", age_h, evidence_tier}
 with a digit-free T1 label, in limitless_state and the pre_llm_call card. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

@@ -3,6 +3,7 @@ source apps actually write (NOOP's demo seeders, Open Wearables' seed users) plu
 
 Synthetic ids only: no real device, model or serial.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import unittest
 from pathlib import Path

@@ -1,5 +1,6 @@
 """limitless_propose: the state dict built read-only from the existing tools' labels, one derived envelope.
 Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

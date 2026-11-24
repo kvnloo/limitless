@@ -5,6 +5,7 @@ failed run so the doctor never calls it live. All-real input reads exactly as be
 
 Synthetic JSON only; the http callable is injected, so nothing touches the network.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import io
 import json
 import sys

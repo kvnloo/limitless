@@ -2,6 +2,7 @@
 
 The state is a nap (a short Sleep-mode on, then off): limitless-jobs pushes "Back from nap" itself; the
 wake brief has its own sender (tests/test_job_owners_cli.py)."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -62,7 +63,7 @@ class LimitlessJobsCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                               capture_output=True, text=True, timeout=30)
 
     def push_calls(self):

@@ -1,6 +1,7 @@
 """bin/limitless-call-brief write [--out PATH]: the digit-free state card as a voice-call brief file, written
 atomically with mode 0600 and only when its content changed. Synthetic fixtures only; nothing sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -33,7 +34,7 @@ class CLITest(unittest.TestCase):
 
     def run_cli(self, *args):
         return subprocess.run([sys.executable, "-I", str(CLI), *args], capture_output=True, text=True,
-                              env=self.env, timeout=30)
+                              env=child_env(self.env), timeout=30)
 
     def assert_one_line(self, r):
         self.assertEqual(len(r.stdout.strip().splitlines()), 1, r.stdout)

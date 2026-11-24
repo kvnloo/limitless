@@ -1,5 +1,6 @@
 """limitless_habit's optional start: it writes only with confirm true, else it says what it would do.
 The result keeps the evidence envelope and a digit-free label. Synthetic fixtures only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

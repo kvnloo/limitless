@@ -3,6 +3,7 @@
 Synthetic rows only. The value is the label only; the T0 numbers appear only under LIMITLESS_RAW_IN_PROMPT=1.
 Too few nights is value None with the unknown words as the reason. tier_audit logs the label; nothing is written.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

@@ -4,6 +4,7 @@ Hermes session DB once per new sync row in runs.jsonl, as config ``apps_ingest``
 Synthetic runs.jsonl rows and the synthetic session DB of tests/hermes_db_fixture.py only. Nothing here sends,
 pushes or starts a process.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import stat

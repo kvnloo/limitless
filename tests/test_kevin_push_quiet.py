@@ -2,6 +2,7 @@
 
 Synthetic data only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -56,7 +57,7 @@ class KevinPushQuiet(unittest.TestCase):
         (self.state / "sleepmode-poll.json").write_text(json.dumps({"at": iso(self.now - 30), "ok": True}))
 
     def push(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                               capture_output=True, text=True, timeout=30)
 
     def bodies(self):

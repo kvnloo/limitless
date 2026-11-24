@@ -1,5 +1,6 @@
 """habit_card.record(card_state, day, reply) -> a new state. Done and No set the day's entry; Skip leaves the day
 with no entry (unlogged); no reply or any other word leaves the state as it was. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

@@ -1,6 +1,7 @@
 """limitless_habit gains ``target`` (weekly_target.progress of the week so far); the state card's habit line
 says "target reached this week" once it is. Synthetic state dirs only; nothing sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

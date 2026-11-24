@@ -3,6 +3,7 @@
 Synthetic phone DBs (the ActivityWatch schema) and synthetic desktop export files only: well-known public
 app ids and made-up app names; no real person's data.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

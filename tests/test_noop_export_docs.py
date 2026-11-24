@@ -1,4 +1,5 @@
 """docs/noop-export.md shows the real output of scripts/noop_export_example.py, and the README points at it."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -12,7 +13,7 @@ DOC = ROOT / "docs" / "noop-export.md"
 class Docs(unittest.TestCase):
     def test_the_doc_example_is_the_scripts_real_output(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "noop_export_example.py")],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         blocks = re.findall(r"```text\n(.*?)```", DOC.read_text(), re.S)
         self.assertIn(r.stdout, blocks)

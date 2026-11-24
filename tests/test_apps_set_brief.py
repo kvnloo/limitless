@@ -6,6 +6,7 @@ same write is never told twice, a later write is told again. Words only: never a
 Synthetic runs.jsonl rows, the synthetic session DB of tests/hermes_db_fixture.py, a temp config and HOME and a
 fake limitless_loop; nothing real. Nothing here sends, pushes or starts a process.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -265,7 +266,7 @@ class Cli(unittest.TestCase):
         apps_reply.write(self.st, dict(apps, since=apps_reply.iso(at - 60)))
 
     def run_cli(self, *args, **extra):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **extra),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **extra)),
                               capture_output=True, text=True, timeout=60)
 
     def sent(self):

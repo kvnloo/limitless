@@ -4,6 +4,7 @@ push of its own. The mark is written only after a real delivery.
 
 Synthetic phone DBs, a temp config and HOME, a fake limitless_loop; nothing real.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -127,7 +128,7 @@ class Cli(unittest.TestCase):
         self.env.update(HOME=str(self.home), LIMITLESS_AUDIT=str(self.audit))
 
     def run_cli(self, *args, **extra):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **extra),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **extra)),
                               capture_output=True, text=True, timeout=60)
 
     def sent(self):

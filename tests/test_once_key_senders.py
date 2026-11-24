@@ -3,6 +3,7 @@
 Both go through the real bin/kevin-push with a temp HOME and a fake `hermes` on PATH, so nothing
 really sends. The shell sender is the line docs/limitless-jobs-systemd.md shows. Synthetic data only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -63,10 +64,10 @@ class ShellAndRunner(unittest.TestCase):
         return f"miq:{datetime.fromtimestamp(wake, timezone.utc).date().isoformat()}"
 
     def shell_sender(self, line=SHELL_SENDER):
-        return subprocess.run(["sh", "-c", line], cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=60)
+        return subprocess.run(["sh", "-c", line], cwd=ROOT, env=child_env(self.env), capture_output=True, text=True, timeout=60)
 
     def jobs_cli(self):
-        return subprocess.run([sys.executable, "-I", str(JOBS), "--send"], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(JOBS), "--send"], env=child_env(self.env),
                               capture_output=True, text=True, timeout=60)
 
     def deliveries(self):
@@ -97,7 +98,7 @@ class ShellAndRunner(unittest.TestCase):
         self.assertEqual(self.claimed(), [key])
 
     def test_no_key_shell_sender_sends_as_before(self):
-        k = subprocess.run(["sh", "-c", "bin/limitless-once-key miq"], cwd=ROOT, env=self.env,
+        k = subprocess.run(["sh", "-c", "bin/limitless-once-key miq"], cwd=ROOT, env=child_env(self.env),
                            capture_output=True, text=True, timeout=60)
         self.assertEqual((k.returncode, k.stdout), (3, ""))
         s = self.shell_sender()

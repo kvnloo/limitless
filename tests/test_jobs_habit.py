@@ -1,4 +1,5 @@
 """Habit check-in answers: Done / No / Skip in one tap; a day with no answer is unlogged, never No."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import copy
 import os
 import re

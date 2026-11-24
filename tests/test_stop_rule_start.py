@@ -1,5 +1,6 @@
 """A stop rule is picked from a short fixed list when the habit week starts and stored in habit.json through
 habit_start's atomic 0600 write. No free text, no number, no clock time. Synthetic data only; nothing sends."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -114,11 +115,11 @@ class ToolAndCli(unittest.TestCase):
         env = {"HOME": self.tmp.name, "PATH": os.environ.get("PATH", ""), "LIMITLESS_STATE": str(self.st),
                "LIMITLESS_CONFIG": str(Path(self.tmp.name) / "none.json")}
         r = subprocess.run([sys.executable, "-I", str(CLI), "Synthetic habit", "--stop-rule", "not_a_chore", "--write"],
-                           env=env, capture_output=True, text=True, timeout=60)
+                           env=child_env(env), capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(self.hj.read_text())["stop_rule"], "not_a_chore")
         bad = subprocess.run([sys.executable, "-I", str(CLI), "Synthetic habit", "--stop-rule", "whenever"],
-                             env=env, capture_output=True, text=True, timeout=60)
+                             env=child_env(env), capture_output=True, text=True, timeout=60)
         self.assertNotEqual(bad.returncode, 0)
 
 

@@ -4,6 +4,7 @@ Label only; counts only under the raw opt-in. No runs.jsonl, or no run in the wi
 reason (unknown, not zero); fewer than a week of known days is the label "unknown" with a reason. Reasons never
 echo a path. Synthetic rows in the sync's shape, a fixed clock. Nothing is written or sent.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

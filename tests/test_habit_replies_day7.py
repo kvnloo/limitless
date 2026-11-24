@@ -1,4 +1,5 @@
 """Day 7: three synthetic replies (Done, No, Skip) to three check-ins give "1 of 2 logged days"."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

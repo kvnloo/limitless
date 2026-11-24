@@ -3,6 +3,7 @@
 Synthetic DBs only (built with tests/test_aw_reader.make_db). NOW is an arbitrary epoch; only
 differences between times matter.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

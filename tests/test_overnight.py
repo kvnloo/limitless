@@ -3,6 +3,7 @@
 Synthetic lane names only. Counts are words (labeler.count_word); no digit and no item name ever reaches
 a line or a label. No dir configured is unknown: no line, value None.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

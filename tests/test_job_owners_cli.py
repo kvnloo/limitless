@@ -2,6 +2,7 @@
 
 Nothing really sends: both senders are fakes in a temp HOME. Synthetic data only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -71,7 +72,7 @@ class JobOwnersCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args, **env):
-        r = subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        r = subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         return r

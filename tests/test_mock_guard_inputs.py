@@ -3,6 +3,7 @@ demo or sample device (limitless/mock_guard.py): an inputs.json name with a demo
 ``mock_device_patterns``, is state "demo" (no age, listed as unknown), never "recording". Real inputs read as
 before. Synthetic only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import sys
 import tempfile

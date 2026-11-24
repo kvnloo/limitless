@@ -3,6 +3,7 @@
 Synthetic rows only, UTC as the local zone. A night is the evening it began; the proxy is the longest
 screen-off gap that starts in the evening half (noon on) of that day. A night with neither is unknown, never zero.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

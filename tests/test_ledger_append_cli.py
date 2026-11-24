@@ -1,4 +1,5 @@
 """bin/limitless-ledger-append end to end, and its one schedule card. Synthetic fixtures only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -34,7 +35,7 @@ class Cli(unittest.TestCase):
         self.env.update(HOME=str(self.home), LIMITLESS_STATE=str(self.state))
 
     def run_cli(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env), cwd=self.home,
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)), cwd=self.home,
                               capture_output=True, text=True, timeout=30)
 
     def test_unset_ledger_does_nothing_and_says_why(self):

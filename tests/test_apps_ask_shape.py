@@ -1,6 +1,7 @@
 """message_shape keeps the app-lists ask whole: a long wake brief folds its middle lines, never the pre-filled
 "work apps: / feed apps:" reply at its end or the line that introduces it, and never cuts them. Synthetic text.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

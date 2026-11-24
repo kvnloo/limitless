@@ -1,4 +1,5 @@
 """register(ctx) offers every schedule card to a host that can take them (feature detection), else does nothing."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import logging
 import os
 import sys

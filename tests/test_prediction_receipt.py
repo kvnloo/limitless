@@ -1,6 +1,7 @@
 """prediction.receipt: after day seven, one append-only receipt judges the locked prediction against the
 week: supports, contradicts or inconclusive (fewer than three logged days is never contradicts).
 Synthetic fixtures only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

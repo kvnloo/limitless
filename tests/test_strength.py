@@ -1,6 +1,7 @@
 """strength.strength_of: how strong a claim is, on the person's evidential-strength ladder, in words.
 measured > derived > association > preregistered > repeated > replicated. No score, no digit in the words.
 Synthetic claims only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

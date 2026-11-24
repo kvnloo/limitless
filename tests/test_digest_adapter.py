@@ -1,5 +1,6 @@
 """The live sync writes digests as {builtAt, phoneProxy: {gapHours, ...}, noop: {...}}, not {at, metrics}.
 The reader must turn that shape into {at, metrics} so the card can label it. Synthetic values only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

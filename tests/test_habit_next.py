@@ -3,6 +3,7 @@ only after every other one was tried; None with a plain reason when the list is 
 
 Loop rows are the shape stop_rule.record_loop writes to predictions.jsonl. Synthetic only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import tempfile
 import unittest

@@ -4,6 +4,7 @@ Synthetic rows only. One line, the sleep_debt label, right under the sleep and r
 debt is unknown. The card goes through tier_audit.gate like every injection; without the raw opt-in it has no
 digit. Nothing is written or sent.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

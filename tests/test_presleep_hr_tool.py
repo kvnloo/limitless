@@ -4,6 +4,7 @@ Synthetic rows only. The beats per minute appear only under LIMITLESS_RAW_IN_PRO
 state card uses. No file, no row, phone-only rows or too few nights is value None with a reason: unknown,
 never zero.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

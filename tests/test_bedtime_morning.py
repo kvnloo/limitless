@@ -1,6 +1,7 @@
 """The morning after: the wake brief gets "Saved last night: N ideas" and the state card a digit-free
 "ideas saved last night", counting bedtime captures of the night that ended at the latest wake.
 Reuses brief_post.finalize, bin/limitless-brief and card.build: no new sender. Synthetic data only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -130,7 +131,7 @@ class BriefCli(unittest.TestCase):
             write_night(state, time.time())
             env = dict(os.environ, HOME=str(home), LIMITLESS_STATE=str(state),
                        LIMITLESS_CONFIG=str(home / "none.json"))
-            r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=env,
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=child_env(env),
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
             # the two synthetic nights are Sleep-mode rows yesterday with no short period: the naps line says none

@@ -4,6 +4,7 @@ The state is written relative to the real clock (the CLI reads it): a habit week
 today, two check-ins (one Done, one No, one Skipped) and a habit cue a minute ago. No kevin-push is on
 PATH and the dry run never pushes or writes.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -44,7 +45,7 @@ class WeekReviewDryRun(unittest.TestCase):
         self.tmp.cleanup()
 
     def dry_run(self):
-        r = subprocess.run([sys.executable, "-I", str(CLI)], env=self.env, capture_output=True, text=True, timeout=30)
+        r = subprocess.run([sys.executable, "-I", str(CLI)], env=child_env(self.env), capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return [ln for ln in r.stdout.splitlines() if ln.startswith("Week review: ")]
 

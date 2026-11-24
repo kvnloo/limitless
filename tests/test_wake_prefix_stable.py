@@ -4,6 +4,7 @@ Property (durations only, no time-of-day rule): for rows R and any cut time c, e
 ``events_from_screen(rows with ts <= c)`` emits is also emitted, with the same ``at`` and ``gap_from``,
 by ``events_from_screen(R)``. Synthetic rows only; T0 is an arbitrary epoch.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

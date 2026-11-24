@@ -4,6 +4,7 @@ The week review wakes on the first habit cue event on or after day seven of a st
 never a clock time), says the habit, "N of M logged days" and ends in "Reply: Keep / Drop", and goes out once
 per week (event key ``week_review:<week_of>``). Skipped and unlogged days stay out of M.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

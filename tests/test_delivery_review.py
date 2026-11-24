@@ -4,6 +4,7 @@ At most one line, "Pushes: <words>.", through tier_audit.gate (hook week_review:
 push log is unset, unreadable or has no row in the week (unknown, not zero). Synthetic rows in bin/kevin-push's
 log shape, a fake push, a fixed clock, UTC. No new job and no new push.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

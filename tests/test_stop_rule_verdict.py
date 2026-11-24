@@ -1,6 +1,7 @@
 """stop_rule.verdict(habit_week, rule) -> keep | drop | your call | unknown. Skipped and unanswered days are
 unlogged and never count against the habit; a week with no Done or No answer is unknown, never drop.
 Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import itertools
 import os
 import sys

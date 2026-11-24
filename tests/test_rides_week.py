@@ -3,6 +3,7 @@
 Synthetic rows only (the StateReader.ride_rows shape). No target, no score, no streak: a week with no
 ride is "none", never "missed". Unknown (no file) is no line, not zero.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import itertools
 import os
 import re

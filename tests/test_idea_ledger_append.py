@@ -1,4 +1,5 @@
 """idea_ledger.append and the configured ledger path: dry run by default, one atomic append, no default path."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import stat

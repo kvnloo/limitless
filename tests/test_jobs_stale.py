@@ -2,6 +2,7 @@
 
 Durations only (no time of day). Synthetic epochs; only differences matter.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

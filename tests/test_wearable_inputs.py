@@ -1,6 +1,7 @@
 """Which inputs.json names count as the wearable for the breathing choice's heart words: config
 ``wearable_inputs`` (a list of input names, default ["wearable"]); the freshest named input wins. A host whose
 sync names its inputs after each device would otherwise never be "with live heart data". Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import sys
 import unittest

@@ -1,6 +1,7 @@
 """noop_mcp: the NOOP agent MCP server's spec from config noop_mcp, and whether the result tier filter covers its
 tools. The host has no plugin API to register an MCP server, so nothing here registers one, and nothing here ever
 starts a process. Synthetic config only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import subprocess

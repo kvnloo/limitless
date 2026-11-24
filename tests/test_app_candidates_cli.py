@@ -2,6 +2,7 @@
 
 Synthetic phone DBs and desktop export files only (well-known public app ids, made-up app names).
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -45,7 +46,7 @@ class Cli(unittest.TestCase):
         desktop_export(self.st / "desk.json", [(now - 6 * H, now - 2 * H, "Code"), (now - 2 * H, now - H, "kitty")])
 
     def run_cli(self, env, *args):
-        return subprocess.run([sys.executable, "-I", str(BIN), *args], env=env, capture_output=True, text=True,
+        return subprocess.run([sys.executable, "-I", str(BIN), *args], env=child_env(env), capture_output=True, text=True,
                               timeout=60)
 
     def test_prints_the_reply_lines(self):

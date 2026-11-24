@@ -3,6 +3,7 @@
 Synthetic rows only, UTC as the local zone. A wearable row may carry optional ``start`` and ``end`` (ISO-8601 or
 epoch seconds); a valid pair becomes the row's ``span``. The phone's span is the same gap sleep.nights picks.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import sys
 import tempfile

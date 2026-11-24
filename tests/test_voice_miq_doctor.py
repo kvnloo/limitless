@@ -1,6 +1,7 @@
 """limitless-doctor's voice MIQ row: off by config, missing without the call sessions dir, else live with the
 mode and the last capture in words. Reads the mark voice-miq.json only; never reads a call. Synthetic only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

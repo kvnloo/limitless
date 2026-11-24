@@ -1,5 +1,6 @@
 """labeler.label: raw value -> T1 label made by code. The label never has a digit; unknown never guesses.
 Synthetic values only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import math
 import os
 import re

@@ -1,5 +1,6 @@
 """prediction.lock: one prediction per habit week, locked before the week has check-ins, never rewritten.
 Synthetic fixtures only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

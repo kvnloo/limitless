@@ -2,6 +2,7 @@
 
 Fake `hermes` on PATH and a temp HOME; nothing is really sent. Synthetic data only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -53,7 +54,7 @@ class KevinPushHeld(unittest.TestCase):
         self.tmp.cleanup()
 
     def push(self, *args, **env):
-        r = subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        r = subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                            capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip(), "kevin-push: held (sleep mode)")

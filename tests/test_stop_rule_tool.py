@@ -1,6 +1,7 @@
 """limitless_loop (read-only): the last few weekly loop rows as T1 words. The decision is an envelope with
 modality self_report; the outcome carries the receipt's own modality, or is missing with a reason. No
 digit, clock time, streak, missed, failed, must or should in any word. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

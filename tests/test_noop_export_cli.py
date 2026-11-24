@@ -3,6 +3,7 @@ sleep_file and presleep_hr_file atomically (0600), so a rerun is unchanged and b
 
 Synthetic DBs only (tests/noop_fixture.py). UTC stands in for the local zone. Nothing here sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import io
 import json
 import os
@@ -195,10 +196,10 @@ class Cli(Base):
         s, hr = nights(2)
         make_db(self.db, sessions=s, hr=hr)
         env = dict(self.env, PATH=os.environ.get("PATH", ""), HOME=str(self.dir), TZ="UTC")
-        r = subprocess.run([sys.executable, "-I", str(CLI)], env=env, capture_output=True, text=True, timeout=60)
+        r = subprocess.run([sys.executable, "-I", str(CLI)], env=child_env(env), capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("dry run: two nights of wearable sleep and two nights of pre-sleep heart rate", r.stdout)
-        r = subprocess.run([sys.executable, "-I", str(CLI), "--write"], env=env, capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-I", str(CLI), "--write"], env=child_env(env), capture_output=True, text=True,
                            timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.rows(self.sleep)), 2)

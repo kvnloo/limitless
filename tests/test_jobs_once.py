@@ -3,6 +3,7 @@
 NOW is an arbitrary epoch; only differences between times matter. Nothing really sends: the push
 is a fake, and the CLI tests put a fake `hermes` (or a fake kevin-push) on PATH.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -139,12 +140,12 @@ class TwoSenders(unittest.TestCase):
         self.tmp.cleanup()
 
     def jobs_cli(self):
-        return subprocess.run([sys.executable, "-I", str(CLI), "--send"], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), "--send"], env=child_env(self.env),
                               capture_output=True, text=True, timeout=30)
 
     def older_sender(self, body, key):
         return subprocess.run([sys.executable, "-I", str(KEVIN_PUSH), "limitless", "Back from nap", body,
-                               "--once", key], env=self.env, capture_output=True, text=True, timeout=30)
+                               "--once", key], env=child_env(self.env), capture_output=True, text=True, timeout=30)
 
     def deliveries(self):
         p = self.home / "hermes-calls"

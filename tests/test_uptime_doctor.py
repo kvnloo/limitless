@@ -3,6 +3,7 @@
 The row sits right after the last-sync row, kind source (--strict never counts it): live when the uptime goal
 was met, stale when it was not, missing when unknown. Synthetic state dirs only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -115,7 +116,7 @@ class Cli(unittest.TestCase):
         return dict(keep, LIMITLESS_CONFIG=str(p), LIMITLESS_STATE=str(self.st), HOME=str(self.dir), TZ="UTC")
 
     def run_cli(self, env, *args):
-        return subprocess.run([sys.executable, "-I", str(BIN), *args], env=env, capture_output=True, text=True,
+        return subprocess.run([sys.executable, "-I", str(BIN), *args], env=child_env(env), capture_output=True, text=True,
                               timeout=60)
 
     def test_prints_the_label(self):

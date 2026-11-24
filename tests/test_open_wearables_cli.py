@@ -4,6 +4,7 @@ One night held by another source (the NOOP export's row) keeps that row: Open We
 
 Synthetic JSON only; the http callable is injected, so nothing touches the network. UTC stands in for the local zone.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import io
 import json
 import os
@@ -171,7 +172,7 @@ class Write(Base):
     def test_the_bin_script_runs_and_is_off_without_config(self):
         env = {"PATH": os.environ.get("PATH", ""), "LIMITLESS_CONFIG": str(self.home / "none.json"),
                "LIMITLESS_STATE": str(self.state), "HOME": str(self.home)}
-        p = subprocess.run([sys.executable, "-I", str(CLI)], capture_output=True, text=True, env=env, timeout=60)
+        p = subprocess.run([sys.executable, "-I", str(CLI)], capture_output=True, text=True, env=child_env(env), timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stdout.strip(), "the Open Wearables export is off (config open_wearables_export)")
 

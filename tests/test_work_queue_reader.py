@@ -2,6 +2,7 @@
 
 Synthetic lane names only. The reader never opens an item file and never raises.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import builtins
 import json
 import os

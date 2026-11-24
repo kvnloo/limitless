@@ -2,6 +2,7 @@
 
 Synthetic AW DBs and synthetic app names only. NOW is an arbitrary epoch; only differences matter.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

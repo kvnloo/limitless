@@ -1,4 +1,5 @@
 """bin/kevin-push end to end with a fake `hermes` on PATH and a temp HOME. Synthetic data only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -33,7 +34,7 @@ class KevinPushCli(unittest.TestCase):
         env = dict(self.env, CIRCADIAN_CLASS=cls)
         if strict:
             env["KEVIN_PUSH_STRICT"] = "1"
-        return subprocess.run([sys.executable, "-I", str(CLI), tag, title, body], env=env,
+        return subprocess.run([sys.executable, "-I", str(CLI), tag, title, body], env=child_env(env),
                               capture_output=True, text=True, timeout=30)
 
     def last_log(self):

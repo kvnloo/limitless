@@ -2,6 +2,7 @@
 
 L14: typed prompts got no answers; one tap or one spoken word did. Synthetic text only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

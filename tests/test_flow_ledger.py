@@ -2,6 +2,7 @@
 
 Pure core (flow_ledger.ledger) on synthetic rows; no score, no ranking, no target. UTC as the local zone.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import re
 import sys

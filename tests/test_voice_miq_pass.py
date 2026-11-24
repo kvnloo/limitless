@@ -3,6 +3,7 @@
 Synthetic state and synthetic z0live session files only (the sessions/SESSION_ID.jsonl export shape).
 Config ``voice_miq``: off (default) | dry_run | write. Nothing sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

@@ -1,4 +1,5 @@
 """limitless_phase: the phase in digit-free words, an evidence envelope, read-only. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

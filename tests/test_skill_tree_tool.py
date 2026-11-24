@@ -1,5 +1,6 @@
 """limitless_skill_tree (read-only): the four layers and a state word per habit as one derived envelope with a
 digit-free T1 label. Nothing is written, sent or started. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

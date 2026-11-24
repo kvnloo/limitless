@@ -5,6 +5,7 @@ doctor row; all-real input counts exactly as before.
 
 Synthetic DBs only (tests/noop_fixture.py). UTC stands in for the local zone. Nothing here sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import io
 import json
 import sys

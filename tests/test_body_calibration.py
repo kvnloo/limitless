@@ -3,6 +3,7 @@
 Synthetic rows only. A reference row has a method in ``body_reference_methods`` (default dxa); every other
 row the scale wrote with ``calibrated: false`` is a scale row.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

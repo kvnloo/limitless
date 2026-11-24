@@ -1,5 +1,6 @@
 """docs/result-tier.md shows the real output of scripts/result_tier_example.py, names the Hermes contract and
 the MCP tool name spelling it relies on, and the README points at it."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -13,7 +14,7 @@ DOC = ROOT / "docs" / "result-tier.md"
 class Docs(unittest.TestCase):
     def test_the_doc_example_is_the_scripts_real_output(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "result_tier_example.py")],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         blocks = re.findall(r"```text\n(.*?)```", DOC.read_text(), re.S)
         self.assertIn(r.stdout, blocks)
@@ -21,7 +22,7 @@ class Docs(unittest.TestCase):
 
     def test_the_example_shows_no_reading_after_the_filter(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "result_tier_example.py")],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=child_env())
         after = [ln for ln in r.stdout.splitlines() if ln.startswith("after:")]
         self.assertTrue(after)
         for ln in after:

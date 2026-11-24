@@ -2,6 +2,7 @@
 
 Synthetic rows only; the fixture clock is 2030-01-15T12:00:00Z (epoch 1894708800).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

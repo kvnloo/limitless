@@ -1,4 +1,5 @@
 """limitless_window gains asks: {deliver, hold, fold} and a digit-free T1 label. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys
