@@ -22,7 +22,8 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `last sync run` | run | the last valid row of `runs.jsonl` is at most `STALE_H` old and did not fail | older, or it failed | no timestamped row | |
 | `uptime`, right after the last sync run | source | every input was fresh on at least config `uptime_target` of the last `uptime_days` local days of `runs.jsonl` (the uptime goal met); the reason is `limitless_uptime`'s words, never a count | the goal was not met, even counting every unknown day as fresh | no `runs.jsonl`, no run in the window, fewer than a week of runs that name their stale inputs, or too many unknown days to tell ([uptime-audit.md](uptime-audit.md)) | |
 | `delivery`, right after the uptime row | source | north-star row two met as the scorecard measures it (`delivery_audit.goal` over config `push_log`, complaints from config `hermes_db` and `quiet.json`); the reason is `limitless_delivery`'s words, never a count or a reply | the goal was not met (over the push limit, a missed brief, a push with no reply line, or a quiet or stop request) | the goal is unknown: an unreadable log, no row this week, unknown wake days, or complaints unknown (no Hermes DB set, or it cannot be read) ([delivery-audit.md](delivery-audit.md)) | no `push_log` set |
-| `local labeler`, right after the delivery row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
+| `push sender`, right after the delivery row | source | `set: the sender profile exists`: the Hermes profile `bin/kevin-push` sends through (`KEVIN_PUSH_PROFILE`, else config `push_profile`, else the default) is `default`, or its dir exists under the Hermes home's `profiles/` (the home as `hermes -p` resolves it: `HERMES_HOME`, or its grandparent when it is a `<root>/profiles/<name>` profile home, else `~/.hermes`); only the dir is checked, hermes is never run and nothing is sent | | `broken: the sender profile does not exist` (every send would fail and only be logged), or `unknown:` no Hermes home is set, it does not exist, or it cannot be read; never the profile name, the target or a path | |
+| `local labeler`, right after the push sender row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
 | `NOOP MCP`, right after the tools | mcp | | | config `noop_mcp` is set but malformed; `refused: t0_tools does not cover its tools`; or set and covered, to be added to the host's `mcp_servers` by hand (the host has no plugin API for it; the doctor cannot see `mcp_servers`) | `noop_mcp` is unset (the default) ([noop-mcp.md](noop-mcp.md)) |
 | `desktop AW`, after the NOOP MCP row | source | config `desktop_aw_url` (or `desktop_aw_export`) is set and shows active app time within `STALE_H`, its age in words | it answers with no active app time in that time | `unreachable:` it does not answer, or what it sends cannot be used (no window bucket, no afk bucket, not ActivityWatch data); the plain reason | neither is set (the default); nothing is called ([desktop-aw.md](desktop-aw.md)) |
@@ -49,7 +50,8 @@ front of its reason. A tool that raises is `missing` with the exception's type o
   `write=False`: rendered only) and not an audit line (the tool calls run inside `tier_audit.held`, which pauses
   the audit log; a digit is still blocked). A test runs the whole report on a synthetic state dir and checks
   every file's mtime and bytes.
-- It never sends, never pushes and never starts a job.
+- It never sends, never pushes and never starts a job. The `push sender` row never runs hermes: it only checks
+  that the profile dir exists (a test fails if any process is started).
 - It never runs the local T1 model: the `local labeler` row only checks that files exist and reads the saved
   check words, and the tool rows label with the rules only (`labeler.rules_only`), even when `t1_model_cmd` is
   set. The local model check runs only when `bin/limitless-t1-check` is called.
@@ -62,7 +64,8 @@ front of its reason. A tool that raises is `missing` with the exception's type o
 ## Example (synthetic)
 
 The real output of `python3 -I scripts/doctor_example.py`: the synthetic fixture state
-(`tests/fixtures/state`: six inputs, one down, a sync run log) plus a made-up idea ledger, at the fixture clock.
+(`tests/fixtures/state`: six inputs, one down, a sync run log) plus a made-up idea ledger and a made-up Hermes
+home that holds the default sender profile's dir, at the fixture clock.
 
 ```text
 $ limitless-doctor
@@ -76,6 +79,7 @@ input wearable: live: recording: updated within the last day
 last sync run: live: the last sync run was about an hour ago and finished ok
 uptime: missing: fewer than a week of sync runs name their stale inputs
 delivery: off: no push log set (config push_log)
+push sender: live: set: the sender profile exists
 local labeler: off: no local model command set, so the rule labels are used
 tool limitless_status: live: answers from direct evidence
 tool limitless_state: live: answers from a proxy

@@ -121,8 +121,8 @@ class Report(Base):
         names = [r["name"] for r in rows]
         self.assertEqual(names.count(doctor.LOCAL_LABELER_ROW), 1)
         at = names.index(doctor.LOCAL_LABELER_ROW)
-        self.assertEqual(names[at - 1], doctor.DELIVERY_ROW)
-        self.assertEqual(names[at - 2], doctor.UPTIME_ROW)
+        self.assertEqual(names[at - 2:at], [doctor.DELIVERY_ROW, doctor.PUSH_SENDER_ROW])
+        self.assertEqual(names[at - 3], doctor.UPTIME_ROW)
         self.assertEqual(names[at + 1], "tool " + doctor.manifest_tools()[0])
         self.assertEqual(rows[at]["status"], doctor.LIVE)
         self.assertNotIn("labeler", doctor.STRICT_KINDS)

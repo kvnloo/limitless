@@ -7,7 +7,9 @@ input named in inputs.json against the stale threshold limitless_status already 
 last sync run's age in words from runs.jsonl, then the uptime row (uptime_audit over runs.jsonl: live when the
 uptime goal was met, stale when not, missing when unknown; kind source, words only), the delivery row
 (north-star row two as the scorecard measures it, complaints included: off with no push log, live when met,
-stale when not, missing when unknown; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
+stale when not, missing when unknown; kind source, words only), the push sender row (whether kevin-push's
+Hermes profile directory exists, push_sender.check: live when it does, missing when it does not or cannot be
+told; hermes is never run; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
@@ -175,6 +177,22 @@ def delivery_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Ma
         return _row(DELIVERY_ROW, "source", OFF, da.NO_LOG_REASON)
     clause = da.miss_clause(a) if goal == da.GOAL_NOT_MET else ""
     return _row(DELIVERY_ROW, "source", _DELIVERY_STATUS.get(goal, MISSING), f"{label}; {clause}" if clause else label)
+
+
+PUSH_SENDER_ROW = "push sender"
+
+
+def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
+                    hermes_home: "Path | str | None" = None) -> dict:
+    """Whether bin/kevin-push's sender profile can exist (push_sender.check: $KEVIN_PUSH_PROFILE, else config
+    ``push_profile``, else the default; ``default`` or ``<Hermes home>/profiles/<name>`` is a directory): live
+    when it does, missing when it does not (``broken: ...``) or cannot be told (``unknown: ...``). Only checks
+    that a directory exists: hermes is never run, no process is started and nothing is sent. Words only: never
+    the profile name, the target or a path. Kind ``source``: --strict does not count it."""
+    from . import push_sender
+    words = push_sender.check(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
+                              hermes_home)
+    return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.SET else MISSING, words)
 
 
 LOCAL_LABELER_ROW = "local labeler"
@@ -674,8 +692,8 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), north-star row
-    two (delivery_row), the local labeler (local_labeler_row), each tool in plugin.yaml, the context packet
-    (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
+    two (delivery_row), kevin-push's sender profile (push_sender_row), the local labeler (local_labeler_row),
+    each tool in plugin.yaml, the context packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
@@ -692,7 +710,7 @@ def report(cfg: Mapping, now: float) -> list:
     path = state_path(cfg)
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
-    rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), local_labeler_row(cfg)]
+    rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
