@@ -131,13 +131,20 @@ def _bullets(lines: List[str], strike: bool) -> List[str]:
 
 
 def weekly_block(lines: List[str], measured_lines: Optional[List[str]] = None) -> str:
-    """The weekly review's titled block: the title, then up to five lines as ``- `` bullets (six lines in
+    """The weekly review's titled block: the title, then at most five lines as ``- `` bullets (six lines in
     all). Self-reported counts are not proof, so the words "met" and "achieved" are struck from every
-    summary line. ``measured_lines`` (measured_lines(): what the audits measured, and any disagreement note)
-    follow the summary and keep their words; they stay inside the five lines by replacing the lowest-priority
-    summary lines (the last ones). Blank lines are skipped; no lines left gives ""."""
-    extra = _bullets(measured_lines or [], strike=False)[:MAX_LINES]
-    bullets = _bullets(lines, strike=True)[:MAX_LINES - len(extra)] + extra
+    summary line. The first bullet is always the summary's self-reported counts line. ``measured_lines``
+    (measured_lines(): what the audits measured, and any disagreement note) keep their words and follow the
+    summary; they stay inside the five lines by replacing the lower-priority summary lines (the last ones), never
+    the counts line. Measured lines past the room left fold into "More measured rows in limitless_scorecard."
+    Blank lines are skipped; no lines left gives ""."""
+    summary = _bullets(lines, strike=True)[:MAX_LINES]
+    head = summary[:1]
+    room = MAX_LINES - len(head)
+    extra = _bullets(measured_lines or [], strike=False)
+    if len(extra) > room:
+        extra = extra[:room - 1] + [f"- {MORE_LINE}"]
+    bullets = head + summary[1:][:room - len(extra)] + extra
     return "\n".join([WEEKLY_TITLE] + bullets) if bullets else ""
 
 
@@ -354,13 +361,14 @@ def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
     return DISAGREE_LINE.format(_name(row["criterion"]))
 
 
-def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
-    """The weekly block's measured lines, digit-free and at most MAX_LINES: "Measured: <row words>: <label>" for
-    rows one, two, three, four and seven (at most one each, in that order whatever the input order), each
-    followed by "Row <name> says green but the measurement says not met." when the hand-kept row with that
-    number is green and the goal is not met. When they would pass five lines, whole rows (a row with its note)
-    are kept in that order and the rest fold into one line, "More measured rows in limitless_scorecard." Only
-    words: no status is changed here, and code never marks a row green."""
+def measured_lines(rows: List[dict], measured_rows: List[dict], limit: int = MAX_LINES - 1) -> List[str]:
+    """The weekly block's measured lines, digit-free and at most ``limit`` (default four: the block's first line
+    is the self-reported counts line): "Measured: <row words>: <label>" for every measured row (at most one each,
+    in row order, MEASURED_ROWS, whatever the input order), each followed by "Row <name> says green but the
+    measurement says not met." when the hand-kept row with that number is green and the goal is not met. When
+    they would pass ``limit``, whole rows (a row with its note) are kept in that order and the rest fold into one
+    line, "More measured rows in limitless_scorecard." Only words: no status is changed here, and code never
+    marks a row green."""
     first = {}
     for m in measured_rows or ():
         n = m.get("n") if isinstance(m, dict) else None
@@ -374,11 +382,11 @@ def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
             groups.append([_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label")))]
                           + ([note] if note else []))
     out = [ln for g in groups for ln in g]
-    if len(out) <= MAX_LINES:
+    if len(out) <= limit:
         return out
     out = []
     for g in groups:
-        if len(out) + len(g) > MAX_LINES - 1:
+        if len(out) + len(g) > limit - 1:
             break
         out += g
     return out + [MORE_LINE]
