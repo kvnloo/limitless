@@ -208,5 +208,130 @@ class Told(Base):
         self.assertFalse(jobs_runner.brief_apps_set_told(self.dir / "nowhere", NOW, self.env, self.dir))
 
 
+class Finalize(unittest.TestCase):
+    def test_the_line_goes_before_the_apps_ask_and_after_the_outage_line(self):
+        out = brief_post.finalize("State: synthetic", None, NOW, outage="Not recording: wearable.",
+                                  apps_set=BOTH, apps_ask="Reply with this:\nwork apps: a\nfeed apps: b")
+        self.assertEqual(out.splitlines()[1:3], ["Not recording: wearable.", BOTH])
+        self.assertEqual(out.splitlines()[3], "Reply with this:")
+        self.assertEqual(brief_post.finalize("State: synthetic", None, NOW, apps_set=""), "State: synthetic")
+
+    def test_message_shape_keeps_the_line(self):
+        body = brief_post.finalize("State: synthetic", None, NOW, overnight="Overnight: a few done.",
+                                   work="Yesterday's work: two long blocks.", naps="Naps yesterday: none.",
+                                   outage="Not recording: wearable.", apps_set=BOTH)
+        body = "\n".join([body.splitlines()[0]] + [f"Line {w}." for w in ("one", "two", "three", "four")]
+                          + body.splitlines()[1:])
+        text, folded, _ = message_shape.fit("Wake-up brief", body)
+        self.assertTrue(folded)
+        self.assertEqual(text.splitlines()[-1], BOTH)
+        self.assertEqual(text.splitlines()[0], "State: synthetic")
+        self.assertEqual(message_shape.shape("Wake-up brief", f"State: synthetic\n{BOTH}"), f"State: synthetic\n{BOTH}")
+
+
+class Cli(unittest.TestCase):
+    """bin/limitless-brief: send carries the line once (marked only after a real delivery); build only previews."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name)
+        lib = self.home / ".local/lib"
+        lib.mkdir(parents=True)
+        (lib / "limitless_loop.py").write_text(FAKE_LOOP)
+        (self.home / ".local/state/kevin-push").mkdir(parents=True)
+        self.st = self.home / ".local/state/limitless"
+        self.st.mkdir(parents=True)
+        self.cfg = self.home / ".config/limitless/config.json"
+        self.cfg.parent.mkdir(parents=True)
+        self.config("write")
+        from test_apps_ask_brief import aw_rows      # app candidates, so the ask would show while no list is set
+        aw_rows(self.st, time.time())
+        self.wrote_at = time.time() - H
+        self.write(self.wrote_at, ["work", "feed"], {"work_apps": ["editor", "terminal"], "feed_apps": ["scrollerapp"]})
+        self.audit = self.home / "audit.jsonl"
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("LIMITLESS_", "KEVIN_PUSH"))}
+        self.env.update(HOME=str(self.home), LIMITLESS_AUDIT=str(self.audit))
+
+    def config(self, mode):
+        self.cfg.write_text(json.dumps({"aw_db": "aw.db", "apps_ingest": mode, "hermes_db": "hermes.db"}))
+
+    def write(self, at, wrote, apps):
+        """A synthetic apps-ingest write: the mark limitless-jobs leaves and the apps.json it wrote."""
+        (self.st / jobs_runner.APPS_MARK).write_text(json.dumps(
+            {"row_at": at - 60, "ran_at": at, "mode": "write", "action": "write", "wrote_at": at, "wrote": wrote}))
+        apps_reply.write(self.st, dict(apps, since=apps_reply.iso(at - 60)))
+
+    def run_cli(self, *args, **extra):
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **extra),
+                              capture_output=True, text=True, timeout=60)
+
+    def sent(self):
+        p = self.home / "delivered.txt"
+        return [b.strip() for b in p.read_text().split("---") if b.strip()] if p.exists() else []
+
+    def told(self):
+        p = self.st / SET_MARK
+        return json.loads(p.read_text()) if p.exists() else None
+
+    def test_send_says_it_once(self):
+        for _ in range(2):
+            r = self.run_cli("send")
+            self.assertEqual(r.returncode, 0, r.stderr)
+        got = self.sent()
+        self.assertEqual(got, [f"State: synthetic\n{BOTH}", "State: synthetic"])
+        self.assertEqual(self.told()["told"], self.wrote_at)
+        for n in NAMES:
+            self.assertNotIn(n, "\n".join(got))
+            self.assertNotIn(n, self.audit.read_text())
+        self.assertNotRegex(got[0].splitlines()[-1], r"\d")
+
+    def test_a_failed_send_keeps_it_untold(self):
+        r = self.run_cli("send", FAKE_FAIL="1")
+        self.assertEqual(json.loads(r.stdout)["notify_rc"], 1)
+        self.assertIsNone(self.told())
+        self.run_cli("send")
+        self.assertEqual(self.sent(), [f"State: synthetic\n{BOTH}"])
+        self.assertIsNotNone(self.told())
+
+    def test_a_second_write_later_is_told_again(self):
+        self.run_cli("send")
+        self.write(time.time() - 60, ["work"], {"work_apps": ["otherworkapp"], "feed_apps": ["scrollerapp"]})
+        self.run_cli("send")
+        self.run_cli("send")
+        self.assertEqual(self.sent(), [f"State: synthetic\n{BOTH}", f"State: synthetic\n{WORK_ONLY}",
+                                       "State: synthetic"])
+
+    def test_build_previews_without_marking(self):
+        r = self.run_cli("build")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(json.loads(r.stdout)["notif_text"].endswith(BOTH))
+        self.assertIsNone(self.told())
+        self.assertEqual(self.sent(), [])
+
+    def test_dry_run_mode_never_produces_the_line(self):
+        self.config("dry_run")
+        self.run_cli("send")
+        self.assertEqual(self.sent(), ["State: synthetic"])
+        self.assertIsNone(self.told())
+
+    def test_with_a_list_set_the_apps_ask_never_comes_with_it(self):
+        self.run_cli("send")
+        self.run_cli("send")
+        for got in self.sent():
+            self.assertNotIn("work apps:", got)
+            self.assertNotIn("Reply with this", got)
+        self.assertFalse((self.st / "apps-ask.json").exists())
+
+    def test_a_write_that_cleared_both_lists_holds_the_ask_for_that_brief(self):
+        self.write(time.time() - 60, ["work", "feed"], {"work_apps": [], "feed_apps": []})
+        self.run_cli("send")
+        self.run_cli("send")
+        first, second = self.sent()
+        self.assertEqual(first, f"State: synthetic\n{BOTH}")
+        self.assertIn("work apps:", second)              # told: the ask comes back on the next brief
+        self.assertNotIn(BOTH, second)
+
+
 if __name__ == "__main__":
     unittest.main()
