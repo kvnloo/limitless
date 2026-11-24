@@ -72,14 +72,16 @@ def specs(habit: Optional[dict] = None) -> list:
 
 
 def cards(external: Iterable[str] = (), habit: Optional[dict] = None, ledger: bool = False,
-          noop: bool = False, apps: bool = False) -> list:
+          noop: bool = False, apps: bool = False, ranked: bool = False) -> list:
     """One card per job spec, in jobs.SPECS order. ``external``: job names another sender owns
     (jobs_runner.external_jobs); ``habit``: habit.json, whose ``cue`` moves the two habit cards; ``ledger``
     (an idea ledger is configured) adds ledger_card(); ``noop`` (config ``noop_export`` is not off) adds
-    noop_export_card(); ``apps`` (config ``apps_ingest`` is not off) adds apps_ingest_card() last."""
+    noop_export_card(); ``apps`` (config ``apps_ingest`` is not off) adds apps_ingest_card(); ``ranked`` (config
+    ``ranked_ingest`` is not off) adds ranked_ingest_card() last."""
     ext = set(external or ())
     return [card_for(s, ext) for s in specs(habit)] + ([ledger_card()] if ledger else []) + \
-        ([noop_export_card()] if noop else []) + ([apps_ingest_card()] if apps else [])
+        ([noop_export_card()] if noop else []) + ([apps_ingest_card()] if apps else []) + \
+        ([ranked_ingest_card()] if ranked else [])
 
 
 LEDGER_ID = "idea_ledger"
@@ -133,6 +135,24 @@ def apps_ingest_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=NOOP_WINDOW, delivery=APPS_DOES, runs=NOOP_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {APPS_DOES}'
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+            "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
+            "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
+            "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
+
+
+RANKED_DOES = ("nothing is sent; it reads your drop replies and, in write mode, marks those ranked items dropped by "
+               "you in the ranked ledger")
+
+
+def ranked_ingest_card() -> dict:
+    """The ranked ingest's one card (jobs.RANKED_INGEST): limitless-jobs reads the owner's drop replies once per sync
+    run (a new runs.jsonl row), the same event as apps_ingest_card. Not a jobs.SPECS job: it pushes nothing (budget
+    zero), no decision window holds it and it has no clock time. Never an item id."""
+    spec = jobs.RANKED_INGEST
+    w = jobs.to_schedule_card(spec)
+    w.update(window=NOOP_WINDOW, delivery=RANKED_DOES, runs=NOOP_RUNS)
+    desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {RANKED_DOES}'
     return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,

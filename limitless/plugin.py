@@ -658,7 +658,9 @@ def _register_cards(ctx) -> None:
         ledger = _reader().idea_ledger_path() is not None
         noop = jobs.noop_mode(config()) != jobs.NOOP_OFF
         apps = jobs.apps_mode(config()) != jobs.APPS_OFF
-        for c in schedule_cards.cards(external=jobs_runner.external_jobs(), ledger=ledger, noop=noop, apps=apps):
+        ranked = jobs.ranked_mode(config()) != jobs.RANKED_OFF
+        for c in schedule_cards.cards(external=jobs_runner.external_jobs(), ledger=ledger, noop=noop, apps=apps,
+                                      ranked=ranked):
             method(c)
     except Exception:  # noqa: BLE001 - a host's card API must never break plugin registration
         logger.warning(schedule_cards.HOST_FAILED)
