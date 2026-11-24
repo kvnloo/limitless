@@ -32,7 +32,7 @@ import math
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
-from . import jobs, push_sender, send_gate
+from . import delivery_audit as _da, jobs, push_sender, send_gate
 from .state_reader import config
 
 OFF, DRY_RUN, WRITE = jobs.SENDER_CONFIRM_OFF, jobs.SENDER_CONFIRM_DRY_RUN, jobs.SENDER_CONFIRM_WRITE
@@ -181,3 +181,72 @@ def _run(state_dir, now: float, push, dry: bool, m: str, env) -> tuple:
     if outcome == FAILED:
         return _row(jobs.HOLD, f"{v.reason}; {NOT_REACHED}: {said}; the next pass tries again"), True
     return _row(jobs.HOLD, f"{v.reason}; not delivered: {said}; the next pass tries again"), True
+
+
+BODY_FIRST = BODY.split(". ")[0] + "."   # how the confirmation's log row starts (kevin-push logs the shaped text)
+
+
+def _log_rows(state_dir, cfg) -> Optional[list]:
+    """kevin-push's log rows (config ``push_log``), or None when no log is set or it cannot be read."""
+    path = _da.log_path(cfg, state_dir)
+    got = _da.read_log(path) if path is not None else None
+    return None if got is None else got[0]
+
+
+def is_confirmation(r: Mapping, reply_at: float) -> bool:
+    """True for a kevin-push log row of this sender change's confirmation: its title, its first words, logged at
+    or after the reply."""
+    body = r.get("body")
+    return (_da.valid(r) and r.get("title") == TITLE_SENT and isinstance(body, str)
+            and body.startswith(BODY_FIRST) and float(r["at"]) >= int(reply_at))
+
+
+def logged(rows, reply_at: float) -> Optional[tuple]:
+    """(state, epoch) from the newest confirmation row kevin-push logged after the reply: told when delivered,
+    failed when the send failed (delivery_audit.send_failed), held for a Sleep-mode hold, waiting for the daily
+    cap, dropped for anything else (quiet, a repeat, the once key); None when there is no such row."""
+    mine = [r for r in rows or () if isinstance(r, dict) and is_confirmation(r, reply_at)]
+    if not mine:
+        return None
+    r = max(mine, key=lambda x: float(x["at"]))
+    at = float(r["at"])
+    if _da.delivered(r):
+        return S_TOLD, at
+    if _da.send_failed(r):
+        return S_FAILED, at
+    if r["how"].startswith(_HELD):
+        return S_HELD, at
+    if r["how"].startswith(_CAP):
+        return S_WAITING, at
+    return S_DROPPED, at
+
+
+_FROM_MARK = {TOLD: S_TOLD, FAILED: S_FAILED, HELD: S_HELD, DROPPED: S_DROPPED}
+
+
+def state(state_dir, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> tuple:
+    """(one of STATES, the epoch it happened or None) for the doctor. The confirmation's own delivery result is
+    the proof: the newest confirmation row in kevin-push's log for this reply (logged); with no push log set, or
+    no such row, the mark's outcome for this reply; else waiting (or nothing, once the change is older than
+    jobs.SENDER_CONFIRM_STALE_S: ``late`` is then True in the doctor's words). Read-only; never raises."""
+    import os
+    env = os.environ if env is None else env
+    if mode(cfg) == OFF:
+        return S_OFF, None
+    try:
+        reply_at = push_sender.reply_at(state_dir)
+        if reply_at is None:
+            return S_NOTHING, None
+        if env_wins(env):
+            return S_ENV, None
+        got = logged(_log_rows(state_dir, cfg), reply_at)
+        if got is not None:
+            return got
+        mark = load_mark(state_dir)
+        if mark.get("reply_at") == reply_at and mark.get("outcome") in _FROM_MARK:
+            return _FROM_MARK[mark["outcome"]], mark.get("ran_at")
+        if now - reply_at > jobs.SENDER_CONFIRM_STALE_S:
+            return S_NOTHING, reply_at
+        return S_WAITING, None
+    except Exception:  # noqa: BLE001
+        return S_NOTHING, None
