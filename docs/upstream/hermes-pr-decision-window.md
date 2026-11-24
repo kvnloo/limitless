@@ -1,9 +1,10 @@
 # Upstream PR text: the cron decision-window gate
 
 This file holds the title and body for one pull request into NousResearch/hermes-agent `main`. It
-is text only. The code is already on the public fork branch `up/cron-decision-window-gate`
-(head `16a9936`, 6 commits on upstream merge base `0f602c5`). The PR is opened from that branch,
-by hand, after review here.
+is text only. The code is on the public fork branch `up/cron-decision-window-gate-r2`
+(head `a910662`, the same 6 commits rebased on upstream `fe9a4b5`, no conflicts). The older branch
+`up/cron-decision-window-gate` (head `16a9936`, on `0f602c5`) is kept as it was. The PR is opened from
+the `-r2` branch, by hand, after review here.
 
 The body follows the upstream `.github/PULL_REQUEST_TEMPLATE.md` sections, plus a "Not in this PR"
 list. It covers one concern: holding a due cron job until its decision window is open. Every
