@@ -20,7 +20,7 @@ OLD = {"block": None, "queue": [], "resume": None, "nudged": ""}   # what an old
 
 
 def newer(**kw):
-    return dict(OLD, wind_down=None, **kw)
+    return dict(OLD, **dict({"wind_down": None}, **kw))
 
 
 class Case(unittest.TestCase):

@@ -18,7 +18,9 @@ stands, from kevin-push's log, push-sender.json and the sender confirm and outag
 for a sender reply, the confirmation not delivered yet, the recap waiting, or recap sent / settled; missing with
 no push log; kind source, words only, the two reply stages ending with the candidates), the Sleep mode row (sleepmode.jsonl's last row as
 kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
-or unknown; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
+or unknown; kind source, words only), the glide source row (glide_provider.path_status: live with ok and
+the words, missing when not configured, the file is missing or unreadable, or Glide is older; kind source,
+words only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
@@ -344,6 +346,24 @@ def sleep_mode_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = 
         return _row(SLEEP_MODE_ROW, "source", STALE, f"{SLEEP_STALE}; {SLEEP_HELD if held else SLEEP_NOT_HELD}")
     tail = "" if held else f"; {SLEEP_NOT_HELD}"
     return _row(SLEEP_MODE_ROW, "source", LIVE, f"on since {age_words(age_h)}{tail}")
+
+
+GLIDE_SOURCE_ROW = "glide source"
+GLIDE_HINT = "set glide_attention to Glide's <profile>/glide/attention.json"
+
+
+def glide_source_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """Whether Glide's attention file is wired in (glide_provider.path_status over the path GlideProvider
+    reads: $LIMITLESS_GLIDE_ATTENTION, else config ``glide_attention``): live with the ``ok: ...`` words (a
+    focus block running, wind-down open or ended, or no wind-down yet); missing with ``not configured: <hint
+    naming the config key>``, ``file missing``, ``unreadable`` or ``older Glide (no wind-down event key)``.
+    Words only: never the path or a time. Kind ``source``: --strict does not count it. Read-only."""
+    from . import glide_provider as gp
+    env = os.environ if env is None else env
+    got = gp.path_status(gp.attention_path(env, cfg if isinstance(cfg, Mapping) else {}), now)
+    if got == gp.NOT_CONFIGURED:
+        return _row(GLIDE_SOURCE_ROW, "source", MISSING, f"{got}: {GLIDE_HINT}")
+    return _row(GLIDE_SOURCE_ROW, "source", LIVE if got.startswith("ok: ") else MISSING, got)
 
 
 LOCAL_LABELER_ROW = "local labeler"
@@ -933,7 +953,8 @@ def report(cfg: Mapping, now: float) -> list:
     two (delivery_row), kevin-push's sender profile (push_sender_row), the profiles that could be the sender
     (sender_candidates_row), where a push-outage recovery stands
     (push_recovery_row), phone Sleep mode as kevin-push's hold
-    reads it (sleep_mode_row), the local labeler (local_labeler_row), each tool in plugin.yaml, the context
+    reads it (sleep_mode_row), whether Glide's attention file is wired in (glide_source_row), the local labeler
+    (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
@@ -953,7 +974,8 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
              sender_candidates_row(cfg, state_dir=reader.path),
-             push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), local_labeler_row(cfg)]
+             push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), glide_source_row(cfg, now),
+             local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
