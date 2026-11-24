@@ -86,7 +86,7 @@ class Measured(Fixture):
         self.assertEqual([m["n"] for m in got], list(sc.MEASURED_ROWS))
         self.assertEqual([m["criterion_words"] for m in got],
                          ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "flow", "privacy",
-                          "integrated"])
+                          "integrated", "top items"])
         for m in got:
             self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
 

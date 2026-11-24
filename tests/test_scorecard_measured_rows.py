@@ -424,6 +424,102 @@ class Integrated(Fixture):
             self.assertIsNone(DIGIT.search(self.row(8)["label"]), self.row(8))
 
 
+class TopItems(Fixture):
+    def ledger(self, rows, name="ranked.jsonl"):
+        path = jsonl(self.root / name, rows)
+        self.set(ranked_ledger=str(path))
+        return path
+
+    @staticmethod
+    def item(i, status, by="owner", evidence="a synthetic receipt"):
+        return {"id": f"item-{i}", "status": status, "by": by, "evidence": evidence}
+
+    def test_row_ten_is_top_items(self):
+        m = self.row(10)
+        self.assertEqual(m["criterion_words"], "top items")
+        self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
+
+    def test_no_ledger_set_missing_or_empty_is_unknown(self):
+        m, a = self.audits()[10]
+        self.assertEqual((m["goal"], m["label"]), ("unknown", "unknown: no ranked ledger set"))
+        self.assertIsNone(a)
+        self.set(ranked_ledger=str(self.root / "absent.jsonl"))
+        self.assertEqual(self.row(10)["label"], "unknown: the ranked ledger is missing or cannot be read")
+        self.ledger([])
+        self.assertEqual(self.row(10)["label"], "unknown: the ranked ledger has no rows")
+        self.ledger(["{torn", "[1, 2]", {"id": "", "status": "verified"}, {"id": "x", "status": "shipped"}])
+        self.assertEqual(self.row(10)["goal"], "unknown")
+
+    def test_every_item_verified_with_evidence_or_dropped_by_the_owner_is_met(self):
+        self.ledger([self.item(1, "verified"), self.item(2, "dropped", evidence=""), self.item(3, "verified")])
+        m, a = self.audits()[10]
+        self.assertEqual(m["goal"], "met")
+        self.assertEqual(m["label"], "all of the ranked items verified or dropped by the owner")
+        self.assertEqual({k: a[k] for k in sc.TOP_RAW_KEYS},
+                         {"items": 3, "verified": 2, "owner_dropped": 1, "not_counted": 0, "open": 0})
+
+    def test_verified_without_evidence_and_dropped_by_an_agent_never_count(self):
+        self.ledger([self.item(1, "verified", evidence=""), self.item(2, "verified", evidence="   "),
+                     self.item(3, "dropped", by="agent"), self.item(4, "verified")])
+        m, a = self.audits()[10]
+        self.assertEqual(m["goal"], "not met")
+        self.assertEqual(m["label"], "some of the ranked items verified or dropped by the owner")   # one of four
+        self.assertEqual((a["verified"], a["owner_dropped"], a["not_counted"]), (1, 0, 3))
+
+    def test_the_newest_row_per_id_wins(self):
+        self.ledger([self.item(1, "open"), self.item(2, "verified"), self.item(1, "built"), self.item(1, "verified"),
+                     self.item(2, "open")])
+        m, a = self.audits()[10]
+        self.assertEqual(m["goal"], "not met")
+        self.assertEqual((a["items"], a["verified"], a["open"]), (2, 1, 1))
+        self.assertEqual(m["label"], "some of the ranked items verified or dropped by the owner")
+        self.ledger([self.item(1, "verified", evidence=""), self.item(1, "verified")])
+        self.assertEqual(self.row(10)["goal"], "met")
+
+    def test_quantity_words(self):
+        for done, n, word in ((0, 4, "none"), (1, 10, "few"), (2, 10, "some"), (5, 10, "some"), (6, 10, "most"),
+                              (9, 10, "most"), (10, 10, "all")):
+            self.ledger([self.item(i, "verified" if i < done else "open") for i in range(n)])
+            m = self.row(10)
+            self.assertEqual(m["label"], f"{word} of the ranked items verified or dropped by the owner", (done, n))
+            self.assertEqual(m["goal"], "met" if done == n else "not met")
+
+    def test_the_env_path_wins_over_config(self):
+        self.ledger([self.item(1, "verified")])
+        other = jsonl(self.root / "other.jsonl", [self.item(1, "open")])
+        self.env["LIMITLESS_RANKED_LEDGER"] = str(other)
+        self.assertEqual(self.row(10)["goal"], "not met")
+
+    def test_a_relative_path_is_in_the_state_dir(self):
+        jsonl(self.st / "ranked.jsonl", [self.item(1, "verified")])
+        self.set(ranked_ledger="ranked.jsonl")
+        self.assertEqual(self.row(10)["goal"], "met")
+
+    def test_a_broken_ledger_is_unknown_not_a_traceback(self):
+        d = self.root / "ledger-dir"
+        d.mkdir()
+        self.set(ranked_ledger=str(d))
+        self.assertEqual(self.row(10)["goal"], "unknown")
+        (self.root / "bin.jsonl").write_bytes(b"\xff\xfe\x00garbage\n")
+        self.set(ranked_ledger=str(self.root / "bin.jsonl"))
+        self.assertEqual(self.row(10)["goal"], "unknown")
+
+    def test_ids_and_evidence_never_reach_the_label(self):
+        self.ledger([{"id": "secret-card-id", "status": "verified", "by": "owner", "evidence": "private receipt text"},
+                     {"id": "other-id", "status": "open", "by": "owner", "evidence": ""}])
+        for m in self.measured():
+            self.assertNotIn("secret-card-id", m["label"])
+            self.assertNotIn("private receipt", m["label"])
+        _m, a = self.audits()[10]
+        self.assertNotIn("secret-card-id", json.dumps(a))
+        self.assertNotIn("private receipt", json.dumps(a))
+
+    def test_label_has_no_digit(self):
+        for rows in ([], [self.item(1, "open")], [self.item(i, "verified") for i in range(25)]):
+            self.ledger(rows)
+            self.assertIsNone(DIGIT.search(self.row(10)["label"]), self.row(10))
+
+
 class Layout(Fixture):
     """The weekly block: the self-reported counts line first, then the measured rows, at most five bullets."""
 

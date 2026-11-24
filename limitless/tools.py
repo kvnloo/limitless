@@ -564,7 +564,7 @@ def scorecard_measured(rows: list, state_dir, cfg: Optional[Mapping], now: float
                 _scorecard.HABIT_ROW: _scorecard.HABIT_RAW_KEYS, _scorecard.EVIDENCE_ROW: _scorecard.EVIDENCE_RAW_KEYS,
                 _scorecard.PRIVACY_ROW: _scorecard.PRIVACY_RAW_KEYS,
                 _scorecard.FOUNDATION_ROW: SLEEP_COVERAGE_RAW_KEYS, _scorecard.FLOW_ROW: _scorecard.FLOW_RAW_KEYS,
-                _scorecard.INTEGRATED_ROW: _scorecard.INTEGRATED_RAW_KEYS}
+                _scorecard.INTEGRATED_ROW: _scorecard.INTEGRATED_RAW_KEYS, _scorecard.TOP_ROW: _scorecard.TOP_RAW_KEYS}
     out = []
     for m, a in _scorecard.measured_audits(state_dir, cfg, now, tz, env=env, home=home):
         item = dict(m, label=_t1(m["label"], SCORECARD_MODALITY))

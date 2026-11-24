@@ -473,6 +473,90 @@ def _integrated_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> 
     return label, goal, audit
 
 
+TOP_ROW = 10
+TOP_WORDS = "top items"
+LEDGER_ENV, LEDGER_CONFIG = "LIMITLESS_RANKED_LEDGER", "ranked_ledger"
+LEDGER_STATUSES = ("open", "built", "verified", "dropped")
+OWNER = "owner"
+TOP_LABEL = "{} of the ranked items verified or dropped by the owner"
+NO_LEDGER = "no ranked ledger set"
+LEDGER_UNREADABLE = "the ranked ledger is missing or cannot be read"
+LEDGER_EMPTY = "the ranked ledger has no rows"
+TOP_RAW_KEYS = ("items", "verified", "owner_dropped", "not_counted", "open")
+
+
+def ledger_path(state_dir, cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """The private ranked ledger: $LIMITLESS_RANKED_LEDGER, else config ``ranked_ledger`` (a relative path is in
+    the state dir); None when neither names a path. The repo ships none."""
+    env = os.environ if env is None else env
+    v = env.get(LEDGER_ENV) or cfg.get(LEDGER_CONFIG)
+    if not isinstance(v, str) or not v.strip():
+        return None
+    p = Path(v).expanduser()
+    return p if p.is_absolute() else Path(state_dir) / p
+
+
+def _ledger_rows(text: str) -> dict:
+    """The newest valid row per id (file order: a later row wins). A row is a JSON object with a non-empty string
+    ``id`` and a ``status`` in LEDGER_STATUSES; anything else (a torn line, another shape) is skipped."""
+    newest = {}
+    for line in text.splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(r, dict) and isinstance(r.get("id"), str) and r["id"].strip() \
+                and r.get("status") in LEDGER_STATUSES:
+            newest[r["id"].strip()] = r
+    return newest
+
+
+def _counts(r: Mapping) -> str:
+    """How one newest row counts: verified (with a non-empty evidence string), owner_dropped (``by`` is the
+    owner), not_counted (verified without evidence, dropped by anyone else) or open (open, built)."""
+    status = r.get("status")
+    if status == "verified":
+        ev = r.get("evidence")
+        return "verified" if isinstance(ev, str) and ev.strip() else "not_counted"
+    if status == "dropped":
+        return "owner_dropped" if r.get("by") == OWNER else "not_counted"
+    return "open"
+
+
+def share_word(k: int, n: int) -> str:
+    """``k`` of ``n`` in words: all, most (over half), some (at least a fifth), few, none."""
+    if k >= n:
+        return "all"
+    if k <= 0:
+        return "none"
+    if 2 * k > n:
+        return "most"
+    return "some" if 5 * k >= n else "few"
+
+
+def _top_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row ten from the optional ranked ledger (ledger_path; JSONL rows ``{id, status,
+    by, evidence}``). Met when every id's newest row is verified with evidence or dropped by the owner. Ids and
+    evidence text are never read into the label or the audit: only counts and words."""
+    path = ledger_path(state_dir, cfg, env)
+    if path is None:
+        return UNKNOWN_PREFIX + NO_LEDGER, "unknown", None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        return UNKNOWN_PREFIX + LEDGER_UNREADABLE, "unknown", None
+    newest = _ledger_rows(text)
+    if not newest:
+        return UNKNOWN_PREFIX + LEDGER_EMPTY, "unknown", None
+    audit = {"items": len(newest), "verified": 0, "owner_dropped": 0, "not_counted": 0, "open": 0}
+    for r in newest.values():
+        audit[_counts(r)] += 1
+    done = audit["verified"] + audit["owner_dropped"]
+    label = TOP_LABEL.format(share_word(done, len(newest)))
+    audit["label"] = {"label": label}
+    return label, "met" if done == len(newest) else "not met", audit
+
+
 _READS = ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
           (HABIT_ROW, HABIT_WORDS, _habit_measured),
@@ -480,7 +564,8 @@ _READS = ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
           (FOUNDATION_ROW, FOUNDATION_WORDS, _foundation_measured),
           (FLOW_ROW, FLOW_WORDS, _flow_measured),
           (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured),
-          (INTEGRATED_ROW, INTEGRATED_WORDS, _integrated_measured))
+          (INTEGRATED_ROW, INTEGRATED_WORDS, _integrated_measured),
+          (TOP_ROW, TOP_WORDS, _top_measured))
 
 
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
