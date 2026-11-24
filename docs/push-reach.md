@@ -53,6 +53,14 @@ the hint asks to restore it first, and still offers a ready profile after it:
 | its name has no digit | `Reply restore <name> to bring it back.` |
 | its name holds a digit | `Restore the deleted sender profile to bring it back.` |
 | and one / several ready profiles | `... to bring it back or reply push via <a>.` / `... or reply push via one of: <a>, <b>.` |
+| the owner already replied `restore <name>` | `Restore asked; it will be done by the operator.` |
+
+The last row is the acknowledgement of the restore reply ([push-sender-reply.md](push-sender-reply.md#a-restore-reply)):
+once the sender ingest job recorded a whole `restore <name>` message for the deleted sender in
+`restore-request.json`, and while that request is at or after the open outage's first failed row and the sender is
+still tombstoned, the hint is only `Restore asked; it will be done by the operator.` (no digit, no path, no name).
+The plugin never restores the profile; the operator does. When the profile is live again the request is stale and
+the line is today's words byte for byte.
 
 - A maybe is never offered as if it were sure; the sender that is failing is never offered; a name with a digit
   is never printed (if that leaves none, the generic words). Names are Hermes profile ids (no path, no host).
@@ -60,7 +68,8 @@ the hint asks to restore it first, and still offers a ready profile after it:
 - No hint for a pending, held or failed confirmation of a ready reply (the doctor's push recovery row says
   which), when no outage is open, or when no push log can be read.
 - Cached by the same key as the line: a profile added or removed changes the `profiles` dir mtime and rebuilds
-  the card, and a tombstone added or restored changes the `profiles/.deleted` dir mtime. A token added to an existing profile's files shows on the next rebuild (any other key change or the
+  the card, and a tombstone added or restored changes the `profiles/.deleted` dir mtime; a restore request
+  recorded changes the mtime of `restore-request.json`, which is in the key too. A token added to an existing profile's files shows on the next rebuild (any other key change or the
   next day). No new store and no new file.
 - `limitless_status`, `limitless_state`'s `delivery` item and the context packet keep the bare reason.
 
