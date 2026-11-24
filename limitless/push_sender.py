@@ -399,8 +399,8 @@ DELETED = "missing: the sender profile was deleted; restoring it should bring pu
 def tombstoned(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
                hermes_home: "Path | str | None" = None) -> bool:
     """True only when the sender profile (the name ``readiness`` resolves) is not a live profile (check is BROKEN)
-    and ``<hermes_home>/profiles/.deleted/<name>`` is a directory: ``hermes profile delete`` moved it there, so
-    restoring it brings the sender back. Presence only: no file inside is opened, no secret is read, hermes is
+    and ``<hermes_home>/profiles/.deleted/<name>`` exists: the marker file ``hermes profile delete`` writes (Hermes'
+    own check is ``.exists()``), so restoring the profile brings the sender back. Presence only: no file inside is opened, no secret is read, hermes is
     never run. ``default`` and names Hermes never resolves are never tombstoned. False on anything that cannot be
     read; never raises."""
     try:
@@ -411,7 +411,7 @@ def tombstoned(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
         root = Path(hermes_home) if hermes_home is not None else hermes_root(env)
         if root is None or check(cfg, env, root) != BROKEN:
             return False
-        return (root / "profiles" / DELETED_DIR / name).is_dir()
+        return (root / "profiles" / DELETED_DIR / name).exists()   # Hermes' marker file (named_profile_is_deleted)
     except Exception:  # noqa: BLE001 - unreadable is not deleted
         return False
 

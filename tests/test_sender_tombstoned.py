@@ -1,4 +1,4 @@
-"""A tombstoned sender profile (Hermes' ``hermes profile delete`` moves it to ``<home>/profiles/.deleted/<name>``) is
+"""A tombstoned sender profile (Hermes' ``hermes profile delete`` writes a marker file ``<home>/profiles/.deleted/<name>``) is
 named as deleted, with restoring it as the fix: push_sender.tombstoned, the doctor's push sender row, push_reach's
 reason and hint, and the push recovery WAITING_REPLY words. Every other case keeps today's words byte for byte.
 
@@ -90,9 +90,11 @@ class Base(unittest.TestCase):
         return p
 
     def tombstone(self, name=None):
+        # Hermes' own format (hermes_constants.mark_named_profile_deleted): a marker FILE
+        # profiles/.deleted/<name> holding "deleted\n"; the profile dir itself is removed.
+        self.deleted.mkdir(parents=True, exist_ok=True)
         p = self.deleted / (name or self.sender_name)
-        p.mkdir(parents=True, exist_ok=True)
-        (p / ".env").write_text(READY_ENV)   # a deleted profile keeps its files; none is ever opened
+        p.write_text("deleted\n")
         return p
 
     def write_log(self, rows):
@@ -149,10 +151,15 @@ class Tombstoned(Base):
         self.tombstone()
         self.assertIs(self.tombstoned(), False)
 
-    def test_a_tombstone_that_is_a_file_is_not_a_dir(self):
+    def test_hermes_marker_file_is_a_tombstone(self):
+        # hermes_constants.named_profile_is_deleted is profile_tombstone_path(...).exists(): a file
         self.deleted.mkdir()
-        (self.deleted / SENDER).write_text("")
-        self.assertIs(self.tombstoned(), False)
+        (self.deleted / SENDER).write_text("deleted\n")
+        self.assertIs(self.tombstoned(), True)
+
+    def test_a_tombstone_dir_also_counts_like_hermes_exists(self):
+        (self.deleted / SENDER).mkdir(parents=True)
+        self.assertIs(self.tombstoned(), True)
 
     def test_no_hermes_home_is_false(self):
         self.tombstone()
@@ -171,14 +178,14 @@ class Tombstoned(Base):
 
     def test_an_unreadable_deleted_dir_is_false(self):
         self.tombstone()
-        real = Path.is_dir
+        real = Path.exists
 
-        def is_dir(p, *a, **k):
+        def exists(p, *a, **k):
             if p.parent.name == push_sender.DELETED_DIR:
                 raise PermissionError("unreadable")
             return real(p, *a, **k)
 
-        with mock.patch.object(Path, "is_dir", is_dir):
+        with mock.patch.object(Path, "exists", exists):
             self.assertIs(self.tombstoned(), False)
 
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root reads any dir")
@@ -343,7 +350,8 @@ class Cache(Base):
         self.write_log(FAILING_LAST)
         self.assertIn(PREFIX + DELETED_REASON + ". " + RESTORE, self.get())
         builds = self.c.builds
-        os.rename(self.deleted / SENDER, self.profiles / SENDER)
+        (self.deleted / SENDER).unlink()    # Hermes' restore: clear_named_profile_deleted + a live profile
+        self.live(SENDER)
         self.bump(self.deleted)
         self.assertNotIn(DELETED_REASON, self.get())
         self.assertEqual(self.c.builds, builds + 1)

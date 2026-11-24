@@ -14,7 +14,7 @@ and, while the owner's reply is what moves the outage on, the reply that fixes i
 
 | Reason | When |
 |---|---|
-| `the sender profile was deleted` | the sender profile is missing (below) and `hermes profile delete` left its tombstone at `<Hermes home>/profiles/.deleted/<profile>` (`push_sender.tombstoned`: a dir is there, nothing in it is opened); restoring it brings pushes back |
+| `the sender profile was deleted` | the sender profile is missing (below) and `hermes profile delete` left its tombstone at `<Hermes home>/profiles/.deleted/<profile>` (`push_sender.tombstoned`: Hermes' marker file exists; it is never opened); restoring it brings pushes back |
 | `the sender profile is missing` | `push_sender.check` is broken: kevin-push's profile (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json`, else config `push_profile`) is not `default` and `<Hermes home>/profiles/<profile>` is not a directory |
 | `the profile you named was set but could not send, so it may have no Telegram bot; reply push via another profile` | `push_recovery.stage` over the same log is `UNKNOWN_FAILED`: an outage is open, the owner's `push via <name>` reply was applied on an `unknown:` readiness answer (the ingest mark's `applied_unknown`, e.g. a token that may sit in a secret source) and its confirmation failed to send; held by Sleep mode or not sent yet says nothing new |
 | `the last pushes failed to send` | the delivery audit of config `push_log` over the last seven local days has `send_failures` failing: the window's last transport attempts are `delivery_audit.SEND_FAIL_RUN` or more `log (telegram rc=N)` rows in a row (`delivery_audit.SEND_FAILING`) |
