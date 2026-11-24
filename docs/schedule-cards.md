@@ -83,7 +83,14 @@ event ("after each sync run"), ending at the next sync run, sender `local`, budg
 `sender_ingest:<sync run time>`. It sends nothing and never names a profile
 ([push-sender-reply.md](push-sender-reply.md)).
 
-The three ingest cards (apps, ranked, sender) say `limitless-jobs --ingest or --send` (in `words.runs`): the
+## The FIT import's card
+
+When config `fit_ingest` is `dry_run` or `write`, `cards(fit=True)` adds one more card, right after the sender
+ingest's: `schedule_cards.fit_ingest_card()`, id `fit_ingest`, on the `sync` event ("after each sync run"), ending
+at the next sync run, sender `local`, budget zero, once-key `fit_ingest:<sync run time>`. It sends nothing, reads
+the drop folder's CAROL FIT files and never names a file ([carol-fit-import.md](carol-fit-import.md#drop-folder)).
+
+The three ingest cards (apps, ranked, sender) and the FIT import's say `limitless-jobs --ingest or --send` (in `words.runs`): the
 timer's `--ingest` pass runs them for real and sends nothing
 ([limitless-jobs-systemd.md](limitless-jobs-systemd.md#timer-the-reply-ingests-without-sending---ingest)).
 

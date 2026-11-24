@@ -61,8 +61,16 @@ push-sender.json, only for a profile push_sender.check says exists and push_send
 Telegram bot token or no chat), then writes ``push-sender-ingest.json`` in
 words only. No Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing read.
 
+FIT import: with config ``fit_ingest`` dry_run or write, one more row right after the sender ingest's
+(fit_ingest_job.run), by the apps ingest's rule: once per new sync row, a pass that is not a dry run lists the
+``*.fit`` files directly in the folder config ``fit_drop_dir`` names (oldest first, at most
+fit_ingest_job.FILES_PER_PASS) and runs fit_ride.run over them (write mode appends the new rides to the rides file;
+a source file is never touched), then writes ``fit-ingest.json`` in words and epochs only. No folder set, or not
+there: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing read.
+
 Ingest pass: ``run_once(..., dry_run=True, ingest=True)`` (bin/limitless-jobs --ingest, the timer's pass) runs only
-these three reply ingests as a pass that is not a dry run would (each still by its own config mode), and every other
+these three reply ingests and the FIT import as a pass that is not a dry run would (each still by its own config
+mode), and every other
 job as a dry run: nothing is pushed, ``push`` and ``brief`` are never called and nothing is logged as sent.
 ``run_once(..., dry_run=True, ingest=True, confirm=True)`` (bin/limitless-jobs --ingest --confirm) is that pass plus
 the two recovery sends, at most one per pass: the sender confirmation, and on a later pass the outage recap, may go
@@ -1223,8 +1231,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     is the date of ``now`` in ``tz`` (default: local zone) unless the caller passes one.
     ``external`` (default: external_jobs(env, home)) names jobs another sender owns: verdict only, no
     push, no sent log. ``brief``, when given, sends the wake brief in place of ``push`` (no placeholder).
-    ``ingest`` runs the three reply ingests (apps, ranked, sender) for real even in a dry run, exactly as a pass that
-    is not a dry run runs them; they send nothing, so every other job stays as ``dry_run`` says.
+    ``ingest`` runs the three reply ingests (apps, ranked, sender) and the FIT import for real even in a dry run,
+    exactly as a pass that is not a dry run runs them; they send nothing, so every other job stays as ``dry_run`` says.
     ``confirm`` (only with ``ingest``) lets that pass send the one sender confirmation and the outage recap through
     ``push`` as a pass that is not a dry run would (each in its own write mode only; the recap waits a pass after a
     confirmation push); every other job still stays as ``dry_run`` says. Without ``ingest`` it changes nothing.
@@ -1283,6 +1291,8 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     ranked = ranked_ingest_row(state_dir, now, dry_ingest, env, home)  # sends nothing; None (no row) when off
     from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
     sender = _sender.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
+    from . import fit_ingest_job as _fit   # sends nothing; None (no row) when off
+    fit = _fit.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
     from . import sender_confirm_job as _confirm   # uses _push and _write_mark from here; None (no row) when off
     # the confirmation and the recap are pushes: a plain --ingest pass leaves them a dry run; --ingest --confirm (the
     # timer's pass, often the host's only sender) or --send sends them, the recap on the pass after a confirmation
@@ -1293,4 +1303,4 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
     recap = _recap.run(state_dir, now, push=push, dry_run=dry_confirm, env=env, home=home, tz=tz,   # None when off
                        wait=_confirm.RECAP_WAITS if _confirmed else None)   # never two pushes in one pass
-    return rows + [r for r in (noop, apps, ranked, sender, confirm_row, voice, recap) if r is not None]
+    return rows + [r for r in (noop, apps, ranked, sender, fit, confirm_row, voice, recap) if r is not None]

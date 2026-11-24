@@ -95,12 +95,13 @@ class Report(unittest.TestCase):
         self.assertEqual(names[at + 2], doctor.FEED_REFLEX_ROW)  # then the apps lists, the apps ask,
         self.assertEqual(names[at + 3], doctor.APPS_ROW)         # the apps ingest job, the ranked ledger,
         self.assertEqual(names[at + 4], doctor.APPS_ASK_ROW)     # the ranked ingest job, the sender ingest job,
-        self.assertEqual(names[at + 5], doctor.APPS_INGEST_ROW)  # the sender confirm job, then voice MIQ
+        self.assertEqual(names[at + 5], doctor.APPS_INGEST_ROW)  # the FIT import, the sender confirm job, voice MIQ
         self.assertEqual(names[at + 6], doctor.RANKED_ROW)
         self.assertEqual(names[at + 7], doctor.RANKED_INGEST_ROW)
         self.assertEqual(names[at + 8], doctor.SENDER_INGEST_ROW)
-        self.assertEqual(names[at + 9], doctor.SENDER_CONFIRM_ROW)
-        self.assertEqual(names[at + 10], doctor.VOICE_MIQ_ROW)
+        self.assertEqual(names[at + 9], doctor.FIT_IMPORT_ROW)
+        self.assertEqual(names[at + 10], doctor.SENDER_CONFIRM_ROW)
+        self.assertEqual(names[at + 11], doctor.VOICE_MIQ_ROW)
         self.assertEqual(rows[at]["status"], doctor.MISSING)
         self.assertNotIn("mcp", doctor.STRICT_KINDS)
         for r in rows:
