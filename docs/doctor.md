@@ -23,7 +23,8 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `uptime`, right after the last sync run | source | every input was fresh on at least config `uptime_target` of the last `uptime_days` local days of `runs.jsonl` (the uptime goal met); the reason is `limitless_uptime`'s words, never a count, including when the loop itself stopped (config `loop_gap_limit_s`; these words never change the status, and they come before the unknown reason too) | the goal was not met, even counting every unknown day as fresh | no `runs.jsonl`, no run in the window, fewer than a week of runs that name their stale inputs, or too many unknown days to tell ([uptime-audit.md](uptime-audit.md)) | |
 | `delivery`, right after the uptime row | source | north-star row two met as the scorecard measures it (`delivery_audit.goal` over config `push_log`, complaints from config `hermes_db` and `quiet.json`); the reason is `limitless_delivery`'s words, never a count or a reply | the goal was not met (over the push limit, a missed brief, a push with no reply line, a quiet or stop request, or "the last pushes failed to send") | the goal is unknown: an unreadable log, no row this week, unknown wake days, or complaints unknown (no Hermes DB set, or it cannot be read) ([delivery-audit.md](delivery-audit.md)) | no `push_log` set |
 | `push sender`, right after the delivery row | source | `ready`: the Hermes profile `bin/kevin-push` sends through (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json` ([push-sender-reply.md](push-sender-reply.md)), else config `push_profile`, else the default) exists (`default`, or its dir under the Hermes home's `profiles/`, the home as `hermes -p` resolves it: `HERMES_HOME`, or its grandparent when it is a `<root>/profiles/<name>` profile home, else `~/.hermes`), has a non-empty `TELEGRAM_BOT_TOKEN`, and has a chat for the target (`KEVIN_PUSH_TO`, else config `push_to`, else the default) ([below](#push-sender-row)); files only, hermes is never run, nothing is sent and no secret value is read | | `missing: the sender profile does not exist` (every send would fail and only be logged), `no Telegram bot token in the sender profile`, `no Telegram chat set for the sender profile`, or `unknown:` no Hermes home is set, it does not exist or cannot be read, the target is not Telegram, or the token may sit in a secret source; never a value, the profile name, the target or a path | |
-| `Sleep mode`, right after the push sender row | source | the last row of `sleepmode.jsonl` (`LIMITLESS_SLEEPMODE`, else the state dir; the file kevin-push's Sleep hold reads) is `off`, or `on since <age in words>`; an on row adds "the Sleep mode poll is not fresh, so pushes are not held" while `sleepmode-poll.json` is not ok or older than kevin-push's limit (it fails open) | `left on, ignored since the owner was seen up`: the last row is the poller's inferred off row with `left_on`; or `stale: on far longer than a night; pushes are being held`: on longer than `sleepmode.NIGHT_H` with no such row ([below](#sleep-mode-row)) | `unknown:` no file, it cannot be read, no row with a time and an on or off, or the last row is in the future | |
+| `push recovery`, right after the push sender row | source | no outage (`no outage: pushes are reaching you`: none open in kevin-push's log, config `push_log`, and none closed within the outage recap's stale window), or pushes are back and the recap was sent or settled (`pushes are back; recap sent`, `pushes are back; settled without a recap`, from `outage-recap.json`) ([below](#push-recovery-row)) | the owner's `push via <name>` reply set the sender (`push-sender.json`) but its confirmation has not been delivered yet (held while Sleep mode was on, failed to send, or not sent yet: kevin-push's log, else `sender-confirm.json`); or pushes are back and the recap waits for the next pass (or the recap is off, or in dry run mode) | `pushes are failing; waiting for a sender reply`, or `unknown:` no `push_log` set or it cannot be read; never a digit, a path or the profile name | |
+| `Sleep mode`, right after the push recovery row | source | the last row of `sleepmode.jsonl` (`LIMITLESS_SLEEPMODE`, else the state dir; the file kevin-push's Sleep hold reads) is `off`, or `on since <age in words>`; an on row adds "the Sleep mode poll is not fresh, so pushes are not held" while `sleepmode-poll.json` is not ok or older than kevin-push's limit (it fails open) | `left on, ignored since the owner was seen up`: the last row is the poller's inferred off row with `left_on`; or `stale: on far longer than a night; pushes are being held`: on longer than `sleepmode.NIGHT_H` with no such row ([below](#sleep-mode-row)) | `unknown:` no file, it cannot be read, no row with a time and an on or off, or the last row is in the future | |
 | `local labeler`, right after the Sleep mode row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
 | `NOOP MCP`, right after the tools | mcp | | | config `noop_mcp` is set but malformed; `refused: t0_tools does not cover its tools`; or set and covered, to be added to the host's `mcp_servers` by hand (the host has no plugin API for it; the doctor cannot see `mcp_servers`) | `noop_mcp` is unset (the default) ([noop-mcp.md](noop-mcp.md)) |
@@ -134,6 +135,54 @@ push sender: missing: missing: the sender profile does not exist
 push sender: missing: unknown: the send target is not a Telegram chat
 ```
 
+## Push recovery row
+
+During a push outage the recovery runs in stages across several `limitless-jobs --ingest --confirm` passes:
+pushes fail and the owner is asked to reply `push via <name>`; the sender ingest applies the reply
+(`push-sender.json`); the sender confirmation goes out once through the new sender (its row in kevin-push's
+log, else `sender-confirm.json`); the outage recap goes out a pass later, or is settled without one
+(`outage-recap.json`). The `push recovery` row reads those files and names the one stage that holds
+(`push_recovery.stage`), so nobody has to read four files:
+
+- `no outage: pushes are reaching you` (live): no outage is open (`outage_recap.outage`: two or more failed
+  sends in a row with no delivery after), and none closed within the recap's stale window.
+- `pushes are failing; waiting for a sender reply` (missing): an outage is open and no reply set the sender
+  after it began.
+- `sender set from your reply; the confirmation has not been delivered yet (...)` (stale): `held while Sleep
+  mode was on`, `failed to send`, `not sent yet`, or `the confirmation is off` (config `sender_confirm`).
+- `pushes are back; the recap waits for the next pass` (stale), or `the recap is off` / `the recap is in dry
+  run mode` from config `outage_recap`.
+- `pushes are back; recap sent` or `pushes are back; settled without a recap` (live).
+- `unknown: no push log set (config push_log)` or `unknown: the push log could not be read` (missing): never a
+  guess.
+
+It only reads: no file is written, nothing is sent and no process is started. Words only: never a digit, a
+time stamp, a path or the profile name. Kind `source`: `--strict` never counts it.
+
+The real output of `python3 -I scripts/push_recovery_example.py` (a made-up state dir, made-up log rows, a
+made-up profile name that is never printed):
+
+```text
+# pushes reach the owner
+push recovery: live: no outage: pushes are reaching you
+# two pushes failed in a row; no reply yet
+push recovery: missing: pushes are failing; waiting for a sender reply
+# the reply set the sender; the next pass sends the confirmation
+push recovery: stale: sender set from your reply; the confirmation has not been delivered yet (not sent yet)
+# Sleep mode held the confirmation
+push recovery: stale: sender set from your reply; the confirmation has not been delivered yet (held while Sleep mode was on)
+# the confirmation failed to send
+push recovery: stale: sender set from your reply; the confirmation has not been delivered yet (failed to send)
+# the confirmation was delivered; the recap waits a pass
+push recovery: stale: pushes are back; the recap waits for the next pass
+# the same, config outage_recap off
+push recovery: stale: pushes are back; the recap is off
+# the recap was sent
+push recovery: live: pushes are back; recap sent
+# no push_log set
+push recovery: missing: unknown: no push log set (config push_log)
+```
+
 ## What it never does
 
 - It never writes: not a state file, not a capture, not a card file (`limitless_card_view` is called with
@@ -173,6 +222,7 @@ last sync run: live: the last sync run was about an hour ago and finished ok
 uptime: missing: fewer than a week of sync runs name their stale inputs
 delivery: off: no push log set (config push_log)
 push sender: live: ready
+push recovery: missing: unknown: no push log set (config push_log)
 Sleep mode: live: off
 local labeler: off: no local model command set, so the rule labels are used
 tool limitless_status: live: answers from direct evidence

@@ -184,9 +184,10 @@ class ToolRows(DoctorCase):
         self.assertEqual(rows[run_at + 1]["name"], "uptime")
         self.assertEqual(rows[run_at + 2]["name"], "delivery")
         self.assertEqual(rows[run_at + 3]["name"], "push sender")
-        self.assertEqual(rows[run_at + 4]["name"], "Sleep mode")
-        self.assertEqual(rows[run_at + 5]["name"], "local labeler")
-        self.assertEqual(rows.index(tools_[0]), run_at + 6)
+        self.assertEqual(rows[run_at + 4]["name"], "push recovery")
+        self.assertEqual(rows[run_at + 5]["name"], "Sleep mode")
+        self.assertEqual(rows[run_at + 6]["name"], "local labeler")
+        self.assertEqual(rows.index(tools_[0]), run_at + 7)
 
     def test_a_null_value_is_missing_with_the_envelopes_own_reason(self):
         r = self.tool("limitless_habit")

@@ -91,10 +91,10 @@ class InTheReport(NoProcess):
         with mock.patch.dict(os.environ, clean, clear=True):
             return doctor.report(cfg, NOW)
 
-    def test_right_after_the_delivery_row_and_before_the_sleep_mode_row(self):
+    def test_right_after_the_delivery_row_and_before_the_push_recovery_row(self):
         names = [r["name"] for r in self.rows({})]
         self.assertEqual(names[names.index("delivery") + 1], "push sender")
-        self.assertEqual(names[names.index("push sender") + 1], "Sleep mode")
+        self.assertEqual(names[names.index("push sender") + 1], "push recovery")
         self.assertEqual(names.count("push sender"), 1)
 
     def test_the_report_reads_the_same_config_and_env_kevin_push_does(self):
