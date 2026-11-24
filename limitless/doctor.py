@@ -21,7 +21,9 @@ live, or unknown as status missing; words only, never its value), then the apps 
 set from the environment, from config or from a reply; never an app name), then the apps ask row (the wake
 brief's app-lists ask: off, waiting, told recently or not needed; words only), then the apps ingest job's row,
 then the ranked ledger's row (scorecard row ten's private ledger, config ranked_ledger: off, live with row ten's
-words, or broken as status missing; never an id or evidence text).
+words, or broken as status missing; never an id or evidence text), then the ranked ingest job's row (config
+ranked_ingest, its status file ranked-ingest.json: off, live with the mode and the last result in words, stale,
+or broken as status missing).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -213,6 +215,44 @@ def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional
     said = "" if told is None else f"; {APPS_TOLD if told else APPS_NOT_TOLD}"
     return _row(APPS_INGEST_ROW, "job", LIVE,
                 f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}{said}")
+
+
+RANKED_INGEST_ROW = "job ranked ingest"
+_RANKED_DID = {"nothing": "no new owner message", "ignore": "no owner drop to append",
+               "would write": "would append owner drop rows", "write": "appended owner drop rows"}
+
+
+def ranked_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The ranked ingest job (jobs.RANKED_INGEST, config ``ranked_ingest``) from runs.jsonl and its status file
+    ranked-ingest.json: off by config; broken (status missing) with no ranked ledger set, a ledger that is missing or
+    cannot be read, or no Hermes DB set; stale before any sync run or while the newest sync is one it has not run
+    after; else live, with the mode and what the last pass did in words. Never an id, evidence or message text, a
+    count or a path; read-only."""
+    from . import habit_replies, jobs, jobs_runner, ranked_ledger as rl, scorecard
+    mode = jobs.ranked_mode(cfg)
+    if mode == jobs.RANKED_OFF:
+        return _row(RANKED_INGEST_ROW, "job", OFF, f"the ranked ingest job is {jobs.RANKED_IS_OFF}")
+    env = os.environ if env is None else env
+    on = f"on ({_NOOP_MODE_WORDS[mode]})"
+    ledger = scorecard.ledger_path(reader.path, cfg, env)
+    db = habit_replies.hermes_db_from(reader.path, cfg, env)
+    mark = jobs_runner.load_ranked_mark(reader.path)
+    v = jobs.ranked_ingest_verdict(mode, reader.last_run(), mark.get("row_at"), now, db_set=db is not None,
+                                   ledger_set=ledger is not None)
+    if v.reason in (jobs.RANKED_NO_LEDGER, jobs.APPS_NO_DB):
+        return _row(RANKED_INGEST_ROW, "job", MISSING, f"broken: {on}, but {v.reason[len('skipped: '):]}")
+    if rl.read(ledger) is None:
+        return _row(RANKED_INGEST_ROW, "job", MISSING, f"broken: {on}, but the ranked ledger is missing or cannot be "
+                                                       "read")
+    if v.action == jobs.RUN:
+        return _row(RANKED_INGEST_ROW, "job", STALE, "a sync ran and the ranked ingest has not run after it yet "
+                                                     "(limitless-jobs --send runs it)")
+    if mark.get("ran_at") is None:
+        return _row(RANKED_INGEST_ROW, "job", STALE, f"{on}, but it has not run yet: {v.reason}")
+    ago = age_words(max(0.0, now - mark["ran_at"]) / 3600)
+    did = _RANKED_DID.get(mark.get("action"), "unknown")
+    return _row(RANKED_INGEST_ROW, "job", LIVE,
+                f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}")
 
 
 RANKED_ROW = "ranked ledger"
@@ -542,7 +582,8 @@ def report(cfg: Mapping, now: float) -> list:
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
-    then the ranked ledger's (ranked_ledger_row), then the voice MIQ's row (voice_miq_row) just before the context
+    then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the voice
+    MIQ's row (voice_miq_row) just before the context
     packet's, and the sleep coverage audit
     (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
     the sleep file.
@@ -556,7 +597,8 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
-             apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), voice_miq_row(reader, cfg, now)]
+             apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
+             voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
              noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]

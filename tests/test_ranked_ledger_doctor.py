@@ -90,12 +90,13 @@ class Row(unittest.TestCase):
         after = sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in self.root.rglob("*"))
         self.assertEqual(after, before)
 
-    def test_the_report_has_it_after_the_apps_ingest_row_and_before_the_voice_miq_row(self):
+    def test_the_report_has_it_after_the_apps_ingest_row_and_before_the_ranked_ingest_row(self):
         self.seed({"id": A, "status": "verified", "by": "agent", "evidence": EVIDENCE})
         rows = doctor.report({"state": str(self.st), "ranked_ledger": str(self.ledger)}, NOW)
         names = [r["name"] for r in rows]
         self.assertEqual(names.index(doctor.RANKED_ROW), names.index(doctor.APPS_INGEST_ROW) + 1)
-        self.assertEqual(names.index(doctor.VOICE_MIQ_ROW), names.index(doctor.RANKED_ROW) + 1)
+        self.assertEqual(names.index(doctor.RANKED_INGEST_ROW), names.index(doctor.RANKED_ROW) + 1)
+        self.assertEqual(names.index(doctor.VOICE_MIQ_ROW), names.index(doctor.RANKED_INGEST_ROW) + 1)
         self.assertEqual(rows[names.index(doctor.RANKED_ROW)]["status"], doctor.LIVE)
         for secret in (A, EVIDENCE):
             self.assertNotIn(secret, json.dumps(rows))

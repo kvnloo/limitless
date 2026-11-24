@@ -68,6 +68,13 @@ When config `apps_ingest` is `dry_run` or `write`, `cards(apps=True)` adds one m
 next sync run, sender `local`, budget zero, once-key `apps_ingest:<sync run time>`. It sends nothing and never
 names an app ([apps-ingest.md](apps-ingest.md#as-an-event-job)).
 
+## The ranked ingest's card
+
+When config `ranked_ingest` is `dry_run` or `write`, `cards(ranked=True)` adds one more card last:
+`schedule_cards.ranked_ingest_card()`, id `ranked_ingest`, on the `sync` event ("after each sync run"), ending at
+the next sync run, sender `local`, budget zero, once-key `ranked_ingest:<sync run time>`. It sends nothing and never
+names an item ([ranked-ledger.md](ranked-ledger.md#as-an-event-job)).
+
 ## Host registration
 
 `register(ctx)` checks the host for a schedule-card method with
