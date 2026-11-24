@@ -251,6 +251,9 @@ MISS_REASONS = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MIS
 # retry that the gate then stops as a repeat, refuses (cap) or only logs, so those come after it. A day with
 # no brief row at all is MISS_NONE; a brief row whose ``how`` is none of the known words is MISS_UNKNOWN.
 MISS_ORDER = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_UNKNOWN)
+MISSES_PREFIX, MISSES_NONE = "missed wake briefs: ", "no wake brief was missed"
+MISSES_UNKNOWN = MISSES_PREFIX + "unknown"
+MISS_CLAUSE = "most common miss: {}"
 _MISS_EXACT = {"held (sleep mode)": MISS_SLEEP, "log (duplicate)": MISS_REPEAT,
                f"log ({send_gate.ONCE_DROP})": MISS_REPEAT, "log (daily cap)": MISS_GATE,
                "log (dropped)": MISS_GATE, "log": MISS_LOGGED, "folded (brief line)": MISS_LOGGED}
@@ -279,15 +282,16 @@ def brief_misses(rows: Optional[Iterable], wake_days: Optional[Iterable], tz: Op
     from that day's rows titled WAKE_TITLE: a delivered one means no miss; else the first reason in MISS_ORDER
     any of them has (miss_reason); no such row at all is MISS_NONE. Other titles never lend their reason.
     T0: ``{"known", "missed", "reasons": {reason: count for every MISS_REASONS}, "days": {iso day: reason},
-    "unknown_wake_days", "top"}``; ``known`` is False (and nothing counted) when no wake day is known or the
-    log has no row. ``top`` is the most common reason (ties by MISS_REASONS order), None with no miss.
+    "unknown_wake_days", "top", "label"}``; ``known`` is False (and nothing counted) when no wake day is known or
+    the log has no row. ``top`` is the most common reason (ties by MISS_REASONS order), None with no miss.
+    ``label`` is words only (``_miss_words``): each reason with a share word, most common first.
     """
     good = [r for r in rows or () if valid(r)]
     wakes = _wake_set(wake_days) or set()
     if days is not None:
         wakes &= _wake_set(days) or set()
     out = {"known": bool(good and wakes), "missed": 0, "reasons": {r: 0 for r in MISS_REASONS}, "days": {},
-           "unknown_wake_days": 0, "top": None}
+           "unknown_wake_days": 0, "top": None, "label": MISSES_UNKNOWN}
     if not out["known"]:
         return out
     by_day = {}
@@ -310,7 +314,29 @@ def brief_misses(rows: Optional[Iterable], wake_days: Optional[Iterable], tz: Op
         out["missed"] += 1
     if out["missed"]:
         out["top"] = max(MISS_REASONS, key=lambda m: (out["reasons"][m], -MISS_REASONS.index(m)))
+    out["label"] = _miss_words(out)
     return out
+
+
+def _miss_words(m: dict) -> str:
+    """"missed wake briefs: <reason> (all|most|some), ..." most common first, ties in MISS_REASONS order; "all"
+    when one reason covers every miss, "most" for more than half, else "some". No digit, date or clock time."""
+    n = m["missed"]
+    if not n:
+        return MISSES_NONE
+    used = sorted((r for r in MISS_REASONS if m["reasons"][r]), key=lambda r: (-m["reasons"][r],
+                                                                             MISS_REASONS.index(r)))
+    share = lambda c: "all" if c == n else "most" if c * 2 > n else "some"   # noqa: E731
+    return MISSES_PREFIX + ", ".join(f"{r} ({share(m['reasons'][r])})" for r in used)
+
+
+def miss_clause(a: Optional[dict]) -> str:
+    """"most common miss: <reason>" for an audit (``audit``'s dict) whose goal is not met and that has a missed
+    wake brief; "" otherwise (met, unknown, or not met for another reason). Words only."""
+    if not isinstance(a, dict) or goal(a) != GOAL_NOT_MET:
+        return ""
+    top = (a.get("misses") or {}).get("top")
+    return MISS_CLAUSE.format(top) if top else ""
 
 
 MUTING = (quiet.OFF, quiet.TONIGHT, quiet.SNOOZED)
@@ -400,6 +426,7 @@ def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None
     if wake["wake_days"]:
         wake["brief_share"] = wake["brief_delivered"] / wake["wake_days"]
     out["wake"] = wake
+    out["misses"] = brief_misses(good, wake_days, tz, days=window)
     out["complaints"] = _complaints(signals, good, set(window) if out["known_days"] else set(), tz)
     out["labels"] = {"push": _push_words(out, len(window)), "brief": _brief_words(wake),
                      "action": _action_words(out), "complaints": _complaint_words(out["complaints"])}

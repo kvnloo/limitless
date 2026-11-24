@@ -153,5 +153,69 @@ class Unknown(unittest.TestCase):
         self.assertEqual(out["days"], {TODAY.isoformat(): LOGGED})
 
 
+class Words(unittest.TestCase):
+    def test_label_names_each_reason_with_a_share_word_most_first(self):
+        rows = [brief(0, "held (sleep mode)"), brief(1, "held (sleep mode)"), row(2, "log")]
+        out = misses(rows, wake(0, 1, 2))
+        self.assertEqual(out["label"], "missed wake briefs: held while Sleep mode was on (most), "
+                                       "no brief attempt on that day (some)")
+
+    def test_one_reason_for_every_miss_is_all(self):
+        out = misses([brief(0, "log (quiet: on)")], wake(0))
+        self.assertEqual(out["label"], "missed wake briefs: held by the quiet setting (all)")
+
+    def test_an_even_split_is_some_each_in_list_order(self):
+        out = misses([brief(0, "log (duplicate)"), brief(1, "held (sleep mode)")], wake(0, 1))
+        self.assertEqual(out["label"], "missed wake briefs: held while Sleep mode was on (some), "
+                                       "stopped as a repeat (some)")
+        self.assertEqual(out["top"], SLEEP)
+
+    def test_no_miss_and_unknown_have_their_own_words(self):
+        self.assertEqual(misses([brief(0)], wake(0))["label"], da.MISSES_NONE)
+        self.assertEqual(misses([], wake(0))["label"], da.MISSES_UNKNOWN)
+        self.assertEqual(misses([brief(0, "log")], None)["label"], da.MISSES_UNKNOWN)
+
+    def test_labels_never_hold_a_digit_a_date_or_a_clock_time(self):
+        rows = [brief(n, h) for n, h in enumerate(["held (sleep mode)", "log (quiet: on)", "log (duplicate)",
+                                                   "log (daily cap)", "log (telegram rc=2)", "odd"])] + [row(6)]
+        out = misses(rows, wake(*range(7)))
+        self.assertEqual(out["missed"], 7)
+        for label in (out["label"], da.MISSES_NONE, da.MISSES_UNKNOWN):
+            self.assertFalse(any(c.isdigit() for c in label), label)
+            self.assertNotIn(":0", label)
+        for r in da.MISS_REASONS:
+            self.assertIn(r, out["label"])
+
+
+class InTheAudit(unittest.TestCase):
+    def test_audit_keeps_the_misses_of_its_window_and_they_add_up(self):
+        rows = [brief(0), brief(1, "held (sleep mode)"), row(2, "log"), brief(9, "log")]
+        a = da.audit(rows, wake_days=wake(0, 1, 2, 3, 9), today=TODAY, tz=UTC)
+        m = a["misses"]
+        self.assertEqual(m["missed"], a["wake"]["wake_days"] - a["wake"]["brief_delivered"])
+        self.assertEqual(m["reasons"][SLEEP], 1)
+        self.assertEqual(m["reasons"][NONE], 1)
+        self.assertEqual(m["unknown_wake_days"], a["wake"]["unknown_wake_days"])
+        self.assertNotIn((TODAY - timedelta(days=9)).isoformat(), m["days"])
+
+    def test_the_audits_label_is_unchanged_by_the_misses(self):
+        rows = [brief(0, "held (sleep mode)")]
+        a = da.audit(rows, wake_days=wake(0), today=TODAY, tz=UTC)
+        self.assertNotIn("misses", a["labels"])
+        self.assertNotIn(SLEEP, a["label"]["label"])
+
+    def test_miss_clause_only_when_the_goal_is_not_met(self):
+        missed = da.audit([brief(0, "held (sleep mode)")], wake_days=wake(0), today=TODAY, tz=UTC)
+        self.assertEqual(da.goal(missed), da.GOAL_NOT_MET)
+        self.assertEqual(da.miss_clause(missed), "most common miss: held while Sleep mode was on")
+        fine = da.audit([brief(0)], wake_days=wake(0), today=TODAY, tz=UTC)
+        self.assertEqual(da.miss_clause(fine), "")
+        over = da.audit([row(0)] * 9 + [brief(0)], wake_days=wake(0), today=TODAY, tz=UTC)
+        self.assertEqual(da.goal(over), da.GOAL_NOT_MET)
+        self.assertEqual(da.miss_clause(over), "")          # not met for another reason: no brief missed
+        for a in (None, {}, da.audit([], wake_days=wake(0), today=TODAY, tz=UTC)):
+            self.assertEqual(da.miss_clause(a), "")
+
+
 if __name__ == "__main__":
     unittest.main()
