@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
@@ -139,7 +140,6 @@ def run_pass(state_dir, now: float, push: Optional[Callable] = None, dry_run: bo
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> tuple:
     """(row or None, pushed): ``pushed`` is True when this pass called ``push`` (delivered, held or failed), so
     jobs_runner.run_once can keep the outage recap for the next pass. Never raises."""
-    import os
     env = os.environ if env is None else env
     cfg = config(env, home)
     m = mode(cfg)
@@ -228,9 +228,8 @@ _FROM_MARK = {TOLD: S_TOLD, FAILED: S_FAILED, HELD: S_HELD, DROPPED: S_DROPPED}
 def state(state_dir, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> tuple:
     """(one of STATES, the epoch it happened or None) for the doctor. The confirmation's own delivery result is
     the proof: the newest confirmation row in kevin-push's log for this reply (logged); with no push log set, or
-    no such row, the mark's outcome for this reply; else waiting (or nothing, once the change is older than
-    jobs.SENDER_CONFIRM_STALE_S: ``late`` is then True in the doctor's words). Read-only; never raises."""
-    import os
+    no such row, the mark's outcome for this reply; else waiting, or nothing with the reply's epoch once the
+    change is older than jobs.SENDER_CONFIRM_STALE_S (never confirmed). Read-only; never raises."""
     env = os.environ if env is None else env
     if mode(cfg) == OFF:
         return S_OFF, None

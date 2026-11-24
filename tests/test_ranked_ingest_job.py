@@ -446,7 +446,8 @@ class Doctor(Base):
         self.assertEqual(names.count("job ranked ingest"), 1)
         self.assertEqual(names.index("job ranked ingest"), names.index(doctor.RANKED_ROW) + 1)
         self.assertEqual(names.index(doctor.SENDER_INGEST_ROW), names.index("job ranked ingest") + 1)
-        self.assertEqual(names.index(doctor.VOICE_MIQ_ROW), names.index(doctor.SENDER_INGEST_ROW) + 1)
+        self.assertEqual(names.index(doctor.SENDER_CONFIRM_ROW), names.index(doctor.SENDER_INGEST_ROW) + 1)
+        self.assertEqual(names.index(doctor.VOICE_MIQ_ROW), names.index(doctor.SENDER_CONFIRM_ROW) + 1)
         r = rows[names.index("job ranked ingest")]
         live = [dict(x, status="live") for x in rows if x["kind"] != "job"]
         self.assertFalse(doctor.strict_failed(live + [r]))

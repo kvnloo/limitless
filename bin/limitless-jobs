@@ -25,6 +25,12 @@ runs.jsonl, --send reads the "work apps: ..." / "feed apps: ..." reply from the 
 "hermes_db"; none set: skipped), in write mode writes apps.json, and records the action in apps-ingest.json; it
 pushes nothing.
 
+Sender confirmation: with config "sender_confirm" set to "dry_run" or "write", one more line. Right after the owner's
+"push via <profile>" reply changed the sender (push-sender.json), --send in write mode pushes one plain
+confirmation ("Pushes") through the same kevin-push call, with --once sender_confirm:<reply time>; its delivery
+result is the proof the new sender works (the doctor's "job sender confirm" row). When it pushed in a pass, the
+outage recap waits for the next pass.
+
 Outage recap: with config "outage_recap" set to "dry_run" or "write", one more line. After a push that kevin-push
 delivered ended an outage in its log (config "push_log"), --send in write mode pushes one plain recap of what was
 missed ("Pushes are back") through the same kevin-push call, with --once outage_recap:<first failed push time>, and

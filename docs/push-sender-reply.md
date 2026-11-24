@@ -65,6 +65,10 @@ right after `job ranked ingest`: off, stale (no Hermes DB, or a sync it has not 
 mode, when it ran and what it did in words, plus "KEVIN_PUSH_PROFILE is set and still wins" when it is. No row,
 card or line ever holds the profile name.
 
+To prove the new sender works right away, turn on the sender confirmation (config `sender_confirm`): one short
+plain push right after the change, whose own delivery result the doctor's `job sender confirm` row reports
+([sender-confirm.md](sender-confirm.md)).
+
 ## Example (synthetic)
 
 The real output of `python3 -I scripts/sender_ingest_example.py` (a made-up Hermes home with two made-up profiles,

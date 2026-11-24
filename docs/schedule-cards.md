@@ -83,6 +83,14 @@ event ("after each sync run"), ending at the next sync run, sender `local`, budg
 `sender_ingest:<sync run time>`. It sends nothing and never names a profile
 ([push-sender-reply.md](push-sender-reply.md)).
 
+## The sender confirmation's card
+
+When config `sender_confirm` is `dry_run` or `write`, `cards(confirm=True)` adds one more card, after the sender
+ingest's and before the outage recap's: `schedule_cards.sender_confirm_card()`, id `sender_confirm`, on the
+`sender_changed` event ("right after your reply changes the sender for your pushes"), ending when the next reply
+changes the sender again, sender `plugin`, budget the send gate's daily cap, once-key
+`sender_confirm:<sender reply time>`. It never names a profile ([sender-confirm.md](sender-confirm.md)).
+
 ## The outage recap's card
 
 When config `outage_recap` is `dry_run` or `write`, `cards(recap=True)` adds one more card last:

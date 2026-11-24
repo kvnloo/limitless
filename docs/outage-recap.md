@@ -62,6 +62,8 @@ goes through kevin-push's send gate like every push: quiet, Sleep mode and the d
 - kevin-push dropping it because the key was already claimed, or quiet holding it, settles the outage as
   `dropped`: never told, never retried.
 - Any other result (a failed send, the daily cap, a Sleep-mode hold) holds; the next pass tries again.
+- When the sender confirmation pushed in the same pass (the owner's reply just changed the sender), the recap holds
+  unsent with "waits for the next pass", so the two never go out in one pass ([sender-confirm.md](sender-confirm.md)).
 - An outage that closed more than `jobs.OUTAGE_RECAP_STALE_S` (twelve hours) ago is dropped: a late recap is
   noise.
 
