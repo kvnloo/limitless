@@ -28,8 +28,10 @@ The mark MARK (``push-sender-ingest.json``, atomic, 0600) holds epochs and words
 ``row_at`` (the runs.jsonl row the job acted on), ``ran_at``, ``mode``, ``action`` (one of ACTIONS), ``after``
 (the newest owner message a write pass read) and ``refused_at`` (the epoch of the newest reply that was refused:
 missing, no bot or no chat; kept until a later reply is applied, so push_recovery can say so while the outage
-is open; refused_at reads it). ``ingest`` returns where ``after`` should move (None: it stays; a
-dry run never moves it); sender_ingest_job writes the mark. The config file is never edited. Nothing here sends.
+is open; refused_at reads it) and ``applied_unknown`` (``true`` only: the reply push-sender.json holds was
+applied on an ``unknown: ...`` readiness answer, so nobody knew it had a bot; a later applied READY reply drops it;
+applied_unknown reads it, for push_recovery.UNKNOWN_FAILED). ``ingest`` returns where ``after`` should move (None:
+it stays; a dry run never moves it); sender_ingest_job writes the mark. The config file is never edited. Nothing here sends.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -124,10 +126,23 @@ def refused_at(state_dir) -> Optional[float]:
     return _epoch(data.get("refused_at")) if isinstance(data, dict) else None
 
 
+def applied_unknown(state_dir) -> bool:
+    """The mark's ``applied_unknown``: True only when it is the boolean ``true`` (the applied reply's readiness was
+    an ``unknown: ...`` answer); False for anything else, no mark or a broken one. Never raises."""
+    try:
+        data = json.loads((Path(state_dir) / MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("applied_unknown") is True
+
+
 def write_mark(state_dir, mark: dict) -> None:
-    """MARK in the state dir (atomic, 0600): only the epoch and word fields load_mark and refused_at know."""
+    """MARK in the state dir (atomic, 0600): only the epoch and word fields load_mark and refused_at know, and
+    ``applied_unknown`` only when it is True."""
     keep = {k: v for k, v in mark.items()
             if k in ("row_at", "ran_at", "mode", "action", "after", "refused_at") and v is not None}
+    if mark.get("applied_unknown") is True:
+        keep["applied_unknown"] = True
     _write_json(state_dir, MARK, keep)
 
 
@@ -144,16 +159,18 @@ def read_after(state_dir, now: float) -> float:
     return after if after is not None else float(now) - FIRST_READ_S
 
 
-def _got(action: str, after: Optional[float], reason: Optional[str] = None, at: Optional[float] = None) -> dict:
+def _got(action: str, after: Optional[float], reason: Optional[str] = None, at: Optional[float] = None,
+         unknown: bool = False) -> dict:
     return {"action": action, "reason": reason or SAID[action], "after": after,
-            "refused_at": at if action in REFUSALS else None}
+            "refused_at": at if action in REFUSALS else None, "applied_unknown": unknown}
 
 
 def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, write: bool = False,
            env: Optional[Mapping[str, str]] = None, hermes_home=None, cfg: Optional[Mapping] = None) -> dict:
-    """``{"action", "reason", "after", "refused_at"}`` for the owner's messages after the mark: ``action`` one of
-    ACTIONS, ``reason`` in words (never a name, the reply or a digit), ``after`` the epoch the mark's ``after``
-    moves to (None: it stays), ``refused_at`` the refused reply's epoch for a REFUSALS action (else None). The
+    """``{"action", "reason", "after", "refused_at", "applied_unknown"}`` for the owner's messages after the mark:
+    ``action`` one of ACTIONS, ``reason`` in words (never a name, the reply or a digit), ``after`` the epoch the
+    mark's ``after`` moves to (None: it stays), ``refused_at`` the refused reply's epoch for a REFUSALS action
+    (else None), ``applied_unknown`` True for a WRITE or WOULD_WRITE whose readiness was ``unknown: ...``. The
     newest ``push via`` message wins; only a profile push_sender.check calls SET and push_sender.readiness does not
     call NO_TOKEN or NO_CHAT is applied, and only with ``write`` is SENDER_FILE written. ``env`` (default
     os.environ) and ``hermes_home`` locate the Hermes home as for check; ``cfg`` gives kevin-push's target (config
@@ -179,11 +196,12 @@ def ingest(state_dir, replies: Iterable[Tuple[float, str]], now: float, write: b
         why = said[len(push_sender.UNKNOWN_PREFIX):] if said.startswith(push_sender.UNKNOWN_PREFIX) else said
         return _got(UNKNOWN, None, f"the sender profile could not be checked ({why}): nothing changed; the next "
                                    f"sync tries again")
-    refusal = _READINESS_REFUSAL.get(push_sender.readiness(cfg if isinstance(cfg, Mapping) else {}, probe,
-                                                           hermes_home))
+    ready = push_sender.readiness(cfg if isinstance(cfg, Mapping) else {}, probe, hermes_home)
+    refusal = _READINESS_REFUSAL.get(ready)
     if refusal is not None:                     # a definite no; READY and every unknown go on as before
         return _got(refusal, newest_read, at=at)
+    unknown = isinstance(ready, str) and ready.startswith(push_sender.UNKNOWN_PREFIX)
     if not write:
-        return _got(WOULD_WRITE, None)
+        return _got(WOULD_WRITE, None, unknown=unknown)
     write_reply(state_dir, name, at)
-    return _got(WRITE, newest_read)
+    return _got(WRITE, newest_read, unknown=unknown)

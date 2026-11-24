@@ -12,13 +12,19 @@ holds, from those files alone:
     no outage (none open, none closed within the recap's stale window)    live     NO_OUTAGE
     an outage open, no sender reply after it began                        missing  WAITING_REPLY
     an outage open, the last reply after it began was refused             missing  REFUSED
+    an outage open, the reply applied on an unknown readiness answer,
+      and its confirmation failed to send (not held, not pending)         missing  UNKNOWN_FAILED
     an outage open, the reply applied, its confirmation not delivered     stale    NOT_DELIVERED + why
     pushes back, the recap not sent or settled yet                         stale    BACK + the recap's mode
     pushes back, the recap sent / settled without one                      live     RECAP_SENT / SETTLED
 
 A refused reply is the sender ingest mark's ``refused_at`` (sender_reply.refused_at: a reply naming a profile that
 does not exist, or one with no Telegram bot token or no chat); it counts when it came after the outage began and
-after the reply push-sender.json holds. The outage is outage_recap.outage over the log rows (the same rule the
+after the reply push-sender.json holds. UNKNOWN_FAILED needs the same mark's ``applied_unknown``
+(sender_reply.applied_unknown: the reply push-sender.json holds was applied although push_sender.readiness could
+not tell whether that profile has a bot, e.g. a secret source) and the confirmation's own send failing for that
+reply: the profile was set but could not send, so it may have no Telegram bot. A later applied reply moves the
+stage on (a READY one drops the flag; any new reply waits for its own confirmation). The outage is outage_recap.outage over the log rows (the same rule the
 recap and the state card use). No push log (``rows`` None) is missing with the reason, never a guess. Words only:
 never a digit, a path, a profile name, a host or a time stamp. Pure and read-only: it reads the small reply and mark files and writes nothing, sends
 nothing and starts no process. Stdlib only, Python 3.9+.
@@ -35,6 +41,8 @@ UNKNOWN_PREFIX = "unknown: "
 NO_OUTAGE = "no outage: pushes are reaching you"
 WAITING_REPLY = "pushes are failing; waiting for a sender reply"
 REFUSED = "pushes are failing; your last reply named a profile that cannot reach Telegram"
+UNKNOWN_FAILED = ("pushes are failing; the profile you named was set but could not send, so it may have no "
+                  "Telegram bot; reply push via another profile")
 NOT_DELIVERED = "sender set from your reply; the confirmation has not been delivered yet"
 HELD = "held while Sleep mode was on"
 FAILED = "failed to send"
@@ -87,7 +95,10 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
             return MISSING, REFUSED
         if reply_at is None:
             return MISSING, WAITING_REPLY
-        return STALE, f"{NOT_DELIVERED} ({_confirmation(state_dir, rows, cfg, reply_at)})"
+        why = _confirmation(state_dir, rows, cfg, reply_at)
+        if why == FAILED and _sr.applied_unknown(state_dir):
+            return MISSING, UNKNOWN_FAILED
+        return STALE, f"{NOT_DELIVERED} ({why})"
     if now - o["closed_at"] > jobs.OUTAGE_RECAP_STALE_S:
         return LIVE, NO_OUTAGE
     mark = _recap.load_mark(state_dir)
