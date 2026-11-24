@@ -161,6 +161,16 @@ class NotMissed(Base):
         self.assertNotIn(LINE, self.card(now=now)["lines"])
         self.assert_none(self.tool(now=now))
 
+    def test_yesterdays_brief_is_not_offered_after_a_wake_today_either(self):
+        y = TODAY - timedelta(days=1)
+        self.wakes(local(y, 7), local(TODAY, 0, 10))
+        self.write_log([row(local(y, 23, 30), HELD)])
+        now = local(TODAY, 0, 30)
+        self.assertNotIn(LINE, self.card(now=now)["lines"])
+        res = self.tool(now=now)
+        self.assert_none(res)
+        self.assertEqual(res["reason"], missed_brief.NO_BRIEF)
+
     def test_a_brief_older_than_the_wake_jobs_stale_after_is_not_offered(self):
         self.write_log([row(SENT_AT, HELD)])
         late = SENT_AT + jobs.WAKE_BRIEF.stale_after_s + 60
