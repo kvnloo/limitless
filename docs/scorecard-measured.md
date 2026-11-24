@@ -131,6 +131,9 @@ state dir; the repo ships none), one JSON row per line: `{"id": str, "status": "
 
 Ids and evidence text are never read into a label or the audit: only the counts (raw opt-in) and words.
 
+Rows enter the ledger only two ways ([ranked-ledger.md](ranked-ledger.md)): an agent's row with evidence
+(`bin/limitless-ranked add`, never dropped) and the owner's drop by reply (`bin/limitless-ranked ingest`).
+
 ## Config
 
     {"ranked_ledger": "ranked-ledger.jsonl"}

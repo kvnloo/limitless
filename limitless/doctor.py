@@ -19,7 +19,9 @@ desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status 
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
 live, or unknown as status missing; words only, never its value), then the apps lists row (off, or each list
 set from the environment, from config or from a reply; never an app name), then the apps ask row (the wake
-brief's app-lists ask: off, waiting, told recently or not needed; words only).
+brief's app-lists ask: off, waiting, told recently or not needed; words only), then the apps ingest job's row,
+then the ranked ledger's row (scorecard row ten's private ledger, config ranked_ledger: off, live with row ten's
+words, or broken as status missing; never an id or evidence text).
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -211,6 +213,28 @@ def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional
     said = "" if told is None else f"; {APPS_TOLD if told else APPS_NOT_TOLD}"
     return _row(APPS_INGEST_ROW, "job", LIVE,
                 f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}{said}")
+
+
+RANKED_ROW = "ranked ledger"
+RANKED_SKIPPED = "some lines could not be read and were skipped"
+
+
+def ranked_ledger_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The ranked ledger scorecard row ten reads (scorecard.ledger_path: $LIMITLESS_RANKED_LEDGER, else config
+    ``ranked_ledger``): off when neither names a path; live when it has valid rows, with row ten's own label
+    (``rows read: <label>``, plus a note when some lines were skipped); broken (status missing) when it is missing,
+    cannot be read or has no valid row. Words only: never an id, evidence text, a count or a path. Kind
+    ``source``: --strict does not count it. Read-only."""
+    from . import ranked_ledger as rl, scorecard
+    env = os.environ if env is None else env
+    st = state_path(cfg, env)
+    if scorecard.ledger_path(st, cfg, env) is None:
+        return _row(RANKED_ROW, "source", OFF, rl.NO_LEDGER)
+    label, counts = rl.summary(st, cfg, env)
+    if counts is None:
+        return _row(RANKED_ROW, "source", MISSING, "broken: " + label[len(scorecard.UNKNOWN_PREFIX):])
+    skipped = rl.skipped_lines(rl.read(scorecard.ledger_path(st, cfg, env)) or "")
+    return _row(RANKED_ROW, "source", LIVE, f"rows read: {label}" + (f"; {RANKED_SKIPPED}" if skipped else ""))
 
 
 NOOP_MCP_ROW = "NOOP MCP"
@@ -518,7 +542,8 @@ def report(cfg: Mapping, now: float) -> list:
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
-    then the voice MIQ's row (voice_miq_row) just before the context packet's, and the sleep coverage audit
+    then the ranked ledger's (ranked_ledger_row), then the voice MIQ's row (voice_miq_row) just before the context
+    packet's, and the sleep coverage audit
     (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
     the sleep file.
 
@@ -531,7 +556,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
-             apps_ingest_row(reader, cfg, now), voice_miq_row(reader, cfg, now)]
+             apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), voice_miq_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
              noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
