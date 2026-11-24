@@ -113,6 +113,12 @@ PROMPT = ("Label one {kind} value with exactly one word from this set: {allowed}
 _NO_GPU = {"CUDA_VISIBLE_DEVICES": "", "HIP_VISIBLE_DEVICES": ""}
 
 
+def answerable(kind: str) -> tuple:
+    """The words the model may answer for a kind: its allowed set without "missing" / "no data" (a present value
+    is never missing)."""
+    return tuple(x for x in ALLOWED.get(kind, ()) if x not in ("missing", "no data"))
+
+
 class LocalModelLabeler:
     """label(kind, value, modality) through a local CLI, with the rule label as the fallback for any failure."""
 
@@ -134,12 +140,16 @@ class LocalModelLabeler:
             return None
         return out if out in allowed else None
 
+    def answer(self, kind: str, value) -> Optional[str]:
+        """The model's word for one value, or None: no command, a value the rules call unknown or missing (never
+        sent), or no in-set answer. The one call path label() and limitless-t1-check (t1_agreement) share."""
+        if not self.cmd or rule_label(kind, value) in (UNKNOWN, "missing", "no data"):
+            return None
+        return self._ask(kind, value, answerable(kind))
+
     def label(self, kind: str, value, modality=None) -> dict:
         rule = label(kind, value, modality)
-        if not self.cmd or rule["label"] in (UNKNOWN, "missing", "no data"):
-            return rule
-        allowed = tuple(x for x in ALLOWED[kind] if x not in ("missing", "no data"))
-        answer = self._ask(kind, value, allowed)
+        answer = self.answer(kind, value)
         return rule if answer is None else t1(answer, modality)
 
     __call__ = label
