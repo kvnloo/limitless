@@ -220,8 +220,9 @@ def push_recovery_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     or settled; missing while pushes fail and no sender reply came, or with no push log (``unknown: ...``); stale
     while the reply's confirmation is not delivered yet (held while Sleep mode was on, failed to send, not sent
     yet) or pushes are back and the recap waits (or is off, or in dry run mode). Words only: never a digit, a
-    path or the profile name. Read-only: writes nothing, sends nothing. Kind ``source``: --strict does not count
-    it."""
+    path or the profile name; while pushes fail and the owner's last reply named a profile that cannot reach
+    Telegram (sender_reply.refused_at), missing with push_recovery.REFUSED. Read-only: writes nothing, sends
+    nothing. Kind ``source``: --strict does not count it."""
     from . import push_recovery
     status, words = push_recovery.from_state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now)
     return _row(PUSH_RECOVERY_ROW, "source", status, words)
@@ -449,8 +450,10 @@ def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
     push-sender-ingest.json (sender_ingest_job.state): off by config; stale with no Hermes DB set, before any sync
     run, or while the newest sync is one it has not run after; else live, with the mode, when it ran and what that
     pass did in words ("set the sender profile from your reply", "that sender profile does not exist: nothing
-    changed", ...), plus a note when $KEVIN_PUSH_PROFILE is set and still wins. Never the profile name, a message
-    or a path; read-only."""
+    changed", "your reply named a profile with no Telegram bot, so it was not applied", ...), plus a note when
+    $KEVIN_PUSH_PROFILE is set and still wins, and, while pushes are failing and the owner's last reply was refused,
+    "pushes are failing; your last reply named a profile that cannot reach Telegram" (push_recovery.REFUSED).
+    Never the profile name, a message or a path; read-only."""
     from . import sender_ingest_job as sij
     word, said = sij.state(reader.path, cfg, now, env)
     if word == "off":
@@ -459,6 +462,8 @@ def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
         return _row(SENDER_INGEST_ROW, "job", STALE, said)
     mode, ran_at, did = said
     wins = f"; {sij.ENV_WINS}" if sij.env_wins(env) else ""
+    refused = sij.refusal_words(reader.path, cfg, now)
+    wins += f"; {refused}" if refused else ""
     return _row(SENDER_INGEST_ROW, "job", LIVE,
                 f"{mode}: ran {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}{wins}")
 

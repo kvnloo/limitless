@@ -57,7 +57,8 @@ read.
 Sender ingest: with config ``sender_ingest`` dry_run or write, one more row right after the ranked ingest's
 (sender_ingest_job.run), by the apps ingest's rule: once per new sync row, a pass that is not a dry run reads the
 owner's whole "push via <profile>" reply from the Hermes session DB and runs sender_reply.ingest (write mode writes
-push-sender.json, only for a profile push_sender.check says exists), then writes ``push-sender-ingest.json`` in
+push-sender.json, only for a profile push_sender.check says exists and push_sender.readiness does not say has no
+Telegram bot token or no chat), then writes ``push-sender-ingest.json`` in
 words only. No Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing read.
 
 Ingest pass: ``run_once(..., dry_run=True, ingest=True)`` (bin/limitless-jobs --ingest, the timer's pass) runs only

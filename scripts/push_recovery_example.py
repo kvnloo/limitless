@@ -1,7 +1,8 @@
 """The synthetic "push recovery" rows in docs/doctor.md: python3 -I scripts/push_recovery_example.py
 
 A made-up state dir in a temp dir, walked through one push outage's recovery stage by stage: synthetic
-kevin-push log rows (made-up titles), a made-up sender reply in push-sender.json, a made-up sender confirmation
+kevin-push log rows (made-up titles), a refused reply in the sender ingest's mark, a made-up sender reply in
+push-sender.json, a made-up sender confirmation
 mark and outage recap mark, at a fixed made-up clock. Each stage prints the doctor's real row
 (doctor.push_recovery_row). Reads no real state, writes nothing outside the temp dir, sends nothing, runs no
 process.
@@ -14,7 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from limitless import doctor, push_sender  # noqa: E402
+from limitless import doctor, push_sender, sender_reply  # noqa: E402
 from limitless import outage_recap_job as recap_job  # noqa: E402
 from limitless import sender_confirm_job as confirm_job  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
@@ -49,6 +50,8 @@ with tempfile.TemporaryDirectory() as tmp:
 
     show("pushes reach the owner", outage[:1])
     show("two pushes failed in a row; no reply yet", outage)
+    sender_reply.write_mark(st, {"action": sender_reply.NO_BOT, "refused_at": NOW - H})
+    show("the reply named a profile with no Telegram bot, so the sender ingest did not apply it", outage)
     (st / push_sender.REPLY_FILE).write_text(json.dumps({"profile": "sender-synth", "at": NOW - 150}))
     show("the reply set the sender; the next pass sends the confirmation", outage)
     show("Sleep mode held the confirmation", outage + [confirmation("held (sleep mode)")])

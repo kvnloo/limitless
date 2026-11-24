@@ -171,7 +171,7 @@ def ranked_ingest_card() -> dict:
 
 
 SENDER_DOES = ("nothing is sent; it reads your push via reply and, in write mode, sets the sender profile your "
-               "pushes go through, only when that profile exists")
+               "pushes go through, only when that profile exists and is not known to lack a Telegram bot or chat")
 
 
 def sender_ingest_card() -> dict:

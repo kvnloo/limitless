@@ -34,6 +34,21 @@ changes nothing: the job says "that sender profile does not exist: nothing chang
 again by whatever asked the first time. When the Hermes home is not known or cannot be read, nothing changes and
 the job asks again after the next sync. The code never picks a sender by itself, and there is never a fallback.
 
+A profile can exist and still have no Telegram bot at all, so the job then asks `push_sender.readiness` about the
+same profile and kevin-push's target (`KEVIN_PUSH_TO`, else config `push_to`, else the default): the same files
+the doctor's `push sender` row reads (the profile's `.env`, `config.yaml` and channel directory, plus the job's
+environment), and only whether a key is present, never a value. A definite no is not applied, and
+`push-sender.json` stays as it was:
+
+- no Telegram bot token: "your reply named a profile with no Telegram bot, so it was not applied";
+- no chat for the target: "your reply named a profile with no Telegram chat to send to, so it was not applied".
+
+`ready`, or any `unknown:` answer (the token may sit in a secret source, the target is not Telegram, the files
+cannot be read), still applies, as before: an unknown is never a refusal. A refused reply, like a missing
+profile, is not asked about again; the owner sends a new `push via <name>`. While the push outage is open, the
+doctor's `job sender ingest` and `push recovery` rows say "pushes are failing; your last reply named a profile
+that cannot reach Telegram" until a later reply is applied.
+
 ## Where the reply lands
 
 Write mode writes `push-sender.json` in the state dir (`{"profile": <name>, "at": <the reply's epoch>}`, atomic,
@@ -55,7 +70,9 @@ the ranked ingest, never on a clock time. No Hermes DB set: skipped. Dry run wri
 
 The mark `push-sender-ingest.json` (atomic, 0600) holds epochs and words only, never a name or a message:
 `row_at` (the sync row it acted on), `ran_at`, `mode`, `action` (`nothing`, `would write`, `write`, `missing`,
-`unknown`) and `after` (the newest owner message a write pass read; a first run reads only the last day). A dry run
+`unknown`, `no bot`, `no chat`), `after` (the newest owner message a write pass read; a first run reads only the
+last day) and `refused_at` (when the newest refused reply was sent: `missing`, `no bot` or `no chat`; kept across
+passes until a later reply is applied). A dry run
 never moves `after`, so switching to `write` later still applies the reply. The job sends nothing and logs nothing
 as sent.
 
@@ -72,8 +89,8 @@ sends that confirmation in the same pass, and nothing else ([limitless-jobs-syst
 
 ## Example (synthetic)
 
-The real output of `python3 -I scripts/sender_ingest_example.py` (a made-up Hermes home with two made-up profiles,
-a made-up session DB, a fixed clock):
+The real output of `python3 -I scripts/sender_ingest_example.py` (a made-up Hermes home with two made-up ready
+profiles, placeholder tokens only, and one with no Telegram bot; a made-up session DB, a fixed clock):
 
 ```text
 # config {"hermes_db": "hermes.db", "push_profile": "sender-old"}
@@ -106,6 +123,13 @@ $ limitless-jobs --send   (the sender ingest's line)
 Sender ingest: run: a sync ran; that sender profile does not exist: nothing changed
 kevin-push sends through: sender-new
 
+# the owner names a profile that exists but has no Telegram bot
+owner says: push via sender-botless
+runs.jsonl += {"at": "2030-01-06T08:15:00Z", "job": "sync", "ok": true}
+$ limitless-jobs --send   (the sender ingest's line)
+Sender ingest: run: a sync ran; your reply named a profile with no Telegram bot, so it was not applied
+kevin-push sends through: sender-new
+
 # KEVIN_PUSH_PROFILE still wins over the reply
 owner says: Push via Sender-New
 runs.jsonl += {"at": "2030-01-06T08:30:00Z", "job": "sync", "ok": true}
@@ -121,12 +145,13 @@ $ limitless-doctor   (the job row)
 job sender ingest: live: write mode: ran under an hour ago after a sync: set the sender profile from your reply
 
 schedule card:
-Schedule "Sender ingest" (after each sync run, at most once; asleep or awake: it sends nothing, so no window holds it): ends at the next sync run; nothing is sent; it reads your push via reply and, in write mode, sets the sender profile your pushes go through, only when that profile exists
+Schedule "Sender ingest" (after each sync run, at most once; asleep or awake: it sends nothing, so no window holds it): ends at the next sync run; nothing is sent; it reads your push via reply and, in write mode, sets the sender profile your pushes go through, only when that profile exists and is not known to lack a Telegram bot or chat
 files in the state dir: hermes.db, push-sender-ingest.json, push-sender.json, runs.jsonl
 ```
 
 ## What it never does
 
 - It never sends a message, never runs hermes and never starts, stops or restarts a process.
+- It never reads a secret value: the readiness gate asks only whether a key is present.
 - It never edits the config file and never picks a sender the owner did not name.
 - It never prints the profile name in a job line, the doctor row or the schedule card.

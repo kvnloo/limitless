@@ -26,6 +26,7 @@ from limitless import doctor, jobs, jobs_runner, push_sender, schedule_cards, se
     sender_reply, tier_audit, tools  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
 from hermes_db_fixture import make_db  # noqa: E402
+from hermes_profile_fixture import ready_profile  # noqa: E402
 
 UTC = timezone.utc
 H = 3600
@@ -60,8 +61,8 @@ class Base(unittest.TestCase):
         self.st = self.dir / "state"
         self.st.mkdir()
         self.hermes = self.dir / "hermes"
-        (self.hermes / "profiles" / GOOD).mkdir(parents=True)
-        (self.hermes / "profiles" / OLD).mkdir(parents=True)
+        ready_profile(self.hermes / "profiles" / GOOD)   # each can reach Telegram (the ingest asks readiness)
+        ready_profile(self.hermes / "profiles" / OLD)
         self.cfg_path = self.dir / "config.json"
         self.env = {"LIMITLESS_CONFIG": str(self.cfg_path), "LIMITLESS_STATE": str(self.st),
                     "HERMES_HOME": str(self.hermes)}

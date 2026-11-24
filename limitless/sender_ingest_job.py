@@ -9,8 +9,11 @@ Config ``sender_ingest``: ``off`` (the default: no row, nothing read), ``dry_run
 not itself a dry run reads the owner's messages from the Hermes session DB (config ``hermes_db``, the same read as
 the apps ingest: habit_replies.replies_from_hermes_db, role ``user`` in Telegram sessions; none set: skipped) and
 runs sender_reply.ingest: the newest whole ``push via <name>`` message after the mark, applied only when
-push_sender.check says that profile exists. Write mode writes ``push-sender.json``; dry run writes only the mark.
-Then it writes the mark ``push-sender-ingest.json`` (sender_reply.MARK: epochs and words only, atomic, 0600).
+push_sender.check says that profile exists and push_sender.readiness does not say it has no Telegram bot token or
+no chat for kevin-push's target (files only; an unknown still applies). Write mode writes ``push-sender.json``; dry
+run writes only the mark. Then it writes the mark ``push-sender-ingest.json`` (sender_reply.MARK: epochs and words
+only, atomic, 0600), whose ``refused_at`` keeps the newest refused reply until a later one is applied: while the
+push outage is open, ``refusal_words`` says so for the doctor's row (push_recovery.REFUSED).
 
 Reasons are words only: never the profile name, a message or a digit. When ``$KEVIN_PUSH_PROFILE`` is set in the
 env the job sees, the row says that it still wins (push_sender.profile's order). Nothing is pushed or logged as
@@ -44,15 +47,23 @@ def env_wins(env: Optional[Mapping[str, str]] = None) -> bool:
 
 
 def run_ingest(state_dir, db, row_at: Optional[float], now: float, mode: str,
-               env: Optional[Mapping[str, str]] = None) -> tuple:
+               env: Optional[Mapping[str, str]] = None, cfg: Optional[Mapping] = None) -> tuple:
     """Read the owner's messages after the mark from ``db`` (read-only), run sender_reply.ingest (writing
-    push-sender.json only in write mode) and record the pass in the mark: the runs.jsonl row it acted on
-    (``row_at``), this pass (``ran_at``), the mode, the action word and ``after`` (moved only by a write pass that
-    read messages; else kept). Returns (mark, ingest result). Sends nothing."""
+    push-sender.json only in write mode; ``cfg`` gives kevin-push's target for the readiness gate) and record the
+    pass in the mark: the runs.jsonl row it acted on (``row_at``), this pass (``ran_at``), the mode, the action
+    word, ``after`` (moved only by a write pass that read messages; else kept) and ``refused_at`` (set by a
+    refusal, cleared by an applied reply, else kept). Returns (mark, ingest result). Sends nothing."""
     replies = _habit_replies.replies_from_hermes_db(db, _sr.read_after(state_dir, now))
-    got = _sr.ingest(state_dir, replies, now, write=mode == jobs.SENDER_WRITE, env=env)
+    got = _sr.ingest(state_dir, replies, now, write=mode == jobs.SENDER_WRITE, env=env, cfg=cfg)
     after = got["after"] if got["after"] is not None else _sr.load_mark(state_dir).get("after")
-    mark = {"row_at": row_at, "ran_at": now, "mode": mode, "action": got["action"], "after": after}
+    if got["action"] in _sr.REFUSALS:
+        refused = got["refused_at"]
+    elif got["action"] in (_sr.WRITE, _sr.WOULD_WRITE):
+        refused = None
+    else:
+        refused = _sr.refused_at(state_dir)
+    mark = {"row_at": row_at, "ran_at": now, "mode": mode, "action": got["action"], "after": after,
+            "refused_at": refused}
     _sr.write_mark(state_dir, mark)
     return mark, got
 
@@ -74,7 +85,7 @@ def run(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, 
     if dry_run:
         return {"job": TITLE, "action": v.action, "reason": f"{v.reason}; dry run of limitless-jobs: not run"}
     try:
-        mark, got = run_ingest(state_dir, db, v.trigger_at, now, mode, os.environ if env is None else env)
+        mark, got = run_ingest(state_dir, db, v.trigger_at, now, mode, os.environ if env is None else env, cfg)
     except OSError as e:
         return {"job": TITLE, "action": jobs.HOLD,
                 "reason": f"{v.reason}; a file was not written ({type(e).__name__}); the next run tries again"}
@@ -82,6 +93,14 @@ def run(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, 
     if env_wins(env):
         reason += f"; {ENV_WINS}"
     return {"job": TITLE, "action": v.action, "reason": reason}
+
+
+def refusal_words(state_dir, cfg: Optional[Mapping], now: float) -> Optional[str]:
+    """push_recovery.REFUSED ("pushes are failing; your last reply named a profile that cannot reach Telegram")
+    while the push outage is open and the owner's last reply after it began was refused; else None. Read-only."""
+    from . import push_recovery     # late: push_recovery reads the sender confirm and recap jobs
+    _, words = push_recovery.from_state(state_dir, cfg if isinstance(cfg, Mapping) else {}, now)
+    return words if words == push_recovery.REFUSED else None
 
 
 def state(state_dir, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> tuple:

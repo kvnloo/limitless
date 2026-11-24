@@ -1,10 +1,11 @@
 """The synthetic example of the sender ingest in docs/push-sender-reply.md: python3 -I scripts/sender_ingest_example.py
 
-Builds a made-up Hermes home (two made-up profiles), a made-up Hermes session DB (tests/hermes_db_fixture.py) and
-made-up runs.jsonl rows in a temporary dir, then runs one limitless-jobs pass (jobs_runner.run_once, not a dry run,
-no push) per step and prints the sender ingest's line the way bin/limitless-jobs does, the profile kevin-push would
-send through (push_sender.profile), push-sender.json, the mark, the doctor row and the schedule card. Made-up names
-only. Reads no real state, writes nothing outside the temp dir, sends nothing, starts no process, never runs hermes.
+Builds a made-up Hermes home (two made-up ready profiles and one with no Telegram bot), a made-up Hermes session DB
+(tests/hermes_db_fixture.py) and made-up runs.jsonl rows in a temporary dir, then runs one limitless-jobs pass
+(jobs_runner.run_once, not a dry run, no push) per step and prints the sender ingest's line the way
+bin/limitless-jobs does, the profile kevin-push would send through (push_sender.profile), push-sender.json, the
+mark, the doctor row and the schedule card. Made-up names only. Reads no real state, writes nothing outside the temp
+dir, sends nothing, starts no process, never runs hermes.
 """
 import json
 import sqlite3
@@ -20,6 +21,7 @@ sys.path.insert(0, str(HERE.parent / "tests"))
 from limitless import doctor, jobs, jobs_runner, push_sender, schedule_cards, sender_reply  # noqa: E402
 from limitless.state_reader import StateReader, config  # noqa: E402
 from hermes_db_fixture import make_db  # noqa: E402
+from hermes_profile_fixture import ready_profile  # noqa: E402
 
 UTC = timezone.utc
 H = 3600
@@ -37,7 +39,8 @@ def main():
         st.mkdir()
         hermes = root / "hermes"
         for name in ("sender-old", "sender-new"):
-            (hermes / "profiles" / name).mkdir(parents=True)
+            ready_profile(hermes / "profiles" / name)     # a placeholder bot token and chat: ready
+        (hermes / "profiles" / "sender-botless").mkdir()   # exists, but no Telegram bot
         cfg_path = root / "config.json"
         env = {"LIMITLESS_CONFIG": str(cfg_path), "LIMITLESS_STATE": str(st), "HERMES_HOME": str(hermes)}
         db = st / "hermes.db"
@@ -108,6 +111,12 @@ def main():
         say("push via sender-gone", NOW - H - 60)
         sync(NOW - H)
         step(NOW - H + 60)
+        sender()
+
+        print("# the owner names a profile that exists but has no Telegram bot")
+        say("push via sender-botless", NOW - 45 * 60 - 60)
+        sync(NOW - 45 * 60)
+        step(NOW - 45 * 60 + 60)
         sender()
 
         print("# KEVIN_PUSH_PROFILE still wins over the reply")
