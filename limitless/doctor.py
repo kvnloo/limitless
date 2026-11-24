@@ -43,6 +43,8 @@ words, or broken as status missing; never an id or evidence text), then the rank
 ranked_ingest, its status file ranked-ingest.json: off, live with the mode and the last result in words, stale,
 or broken as status missing), then the sender ingest job's row (config sender_ingest, its mark
 push-sender-ingest.json: off, live with the mode and the last result in words, or stale; never the profile name),
+then the FIT import's row "fit import" (config fit_ingest and fit_drop_dir, its mark fit-ingest.json: off, live with
+dry run or write and the last pass in words, stale, or missing when the drop folder is set but absent),
 then the sender confirmation's row (config sender_confirm: the confirmation's own delivery result in kevin-push's
 log, else its mark sender-confirm.json: off, live when it reached the owner or waits, missing when its send failed).
 The outage recap job's row (config outage_recap, from kevin-push's log, config
@@ -622,6 +624,28 @@ def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
                 f"{mode}: ran {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}{wins}")
 
 
+FIT_IMPORT_ROW = "fit import"
+
+
+def fit_import_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The FIT import job (fit_ingest_job, config ``fit_ingest`` and ``fit_drop_dir``) from runs.jsonl and its mark
+    fit-ingest.json: off by config; missing when the drop folder is set but does not exist; stale with no folder
+    set, before any sync run, or while the newest sync is one it has not run after; else live, with the mode (dry
+    run or write), when the last pass ran and what it did in words ("added two rides", "nothing new", "skipped one
+    file: not a bike ride", ...). Never a path, a file name or a number from a ride; read-only."""
+    from . import fit_ingest_job as fij
+    word, said = fij.state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now)
+    if word == "off":
+        return _row(FIT_IMPORT_ROW, "job", OFF, said)
+    if word == "missing":
+        return _row(FIT_IMPORT_ROW, "job", MISSING, said)
+    if word != "ran":
+        return _row(FIT_IMPORT_ROW, "job", STALE, said)
+    mode, ran_at, did = said
+    return _row(FIT_IMPORT_ROW, "job", LIVE,
+                f"{mode}: last pass {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}")
+
+
 SENDER_CONFIRM_ROW = "job sender confirm"
 _CONFIRM_MODE_WORDS = {"dry_run": "dry run mode (nothing sent)", "write": "write mode"}
 
@@ -1016,7 +1040,7 @@ def report(cfg: Mapping, now: float) -> list:
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
     then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the sender
-    ingest job's (sender_ingest_row), then the sender confirmation's (sender_confirm_row), then the voice MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
+    ingest job's (sender_ingest_row), then the FIT import's (fit_import_row), then the sender confirmation's (sender_confirm_row), then the voice MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
     packet's, and the sleep coverage audit
     (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
     the sleep file.
@@ -1037,7 +1061,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
-             sender_ingest_row(reader, cfg, now), sender_confirm_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
+             sender_ingest_row(reader, cfg, now), fit_import_row(reader, cfg, now), sender_confirm_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
              noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]

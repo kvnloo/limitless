@@ -11,6 +11,8 @@ Digit-free except --json, which prints the whole result (durations included) as 
 Only the ride summary is read: power, heart rate and every other sample stay unread in the file. It never
 reads the network, deletes or rewrites anything (append only, mode 0600), and never sends. Exit 2 on a
 usage error, 1 when --write cannot write (no rides file set, or its folder is missing), else 0.
+For a folder of exports imported by itself once per sync run, see config "fit_drop_dir" / "fit_ingest"
+(limitless/fit_ingest_job.py, docs/carol-fit-import.md "Drop folder").
 """
 import sys
 

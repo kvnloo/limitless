@@ -25,6 +25,38 @@ bin/limitless-import-fit --json ride-a.fit              # the whole result as JS
   `not a bike ride`, `the ride has no duration`, ...), then the total, e.g. `added two rides`. No number is
   printed except with `--json`. Exit 2 on a usage error.
 
+## Drop folder
+
+Exports usually come in batches. Instead of running the importer per file, drop the files into one folder and let
+`limitless-jobs` import them as one more ingest, the same shape as the reply ingests:
+
+```json
+{"rides_file": "rides.jsonl", "fit_drop_dir": "fit-drop", "fit_ingest": "dry_run"}
+```
+
+- **Config**: `fit_drop_dir` names the folder (a relative path is in the state dir). `fit_ingest` is `off` (the
+  default: no line, nothing read), `dry_run` (reads the files and says what it would add; no ride is written) or
+  `write` (appends the new rides to the rides file).
+- **When**: once per new sync row in `runs.jsonl`, never on a clock time; the timer's `limitless-jobs --ingest`
+  pass (or `--send`) runs it, a plain dry run of `limitless-jobs` only shows its verdict. Its line is `FIT import`.
+- **Which files**: `*.fit` / `*.FIT` directly in the folder: no subfolders, no symlinks (never followed, in or out
+  of the folder), no dotfiles; oldest modification time first, at most twenty files per pass (files sharing one
+  modification time are never split across passes). The rest wait for the next pass, which goes on after the newest
+  file a write pass read. A dry run never moves that place, so it always previews the next files.
+- **Safe to re-run**: each file goes through the same `fit_ride.run` as the importer, so a ride whose start instant
+  is already in the rides file (imported by hand, or twice in the folder) is a duplicate and is not appended. A file
+  copied in keeping a modification time older than the newest file already read is not picked up: import it with
+  `bin/limitless-import-fit --write`.
+- **Never**: a source file is never moved, renamed, deleted or rewritten; nothing is sent (no `kevin-push` call).
+- **Mark**: `fit-ingest.json` in the state dir (atomic, 0600): epoch seconds (`row_at`, `ran_at`, `read_to`) and
+  words only, the mode and what the last pass did, e.g. `added two rides`, `nothing new`, `would add one ride`,
+  `skipped one file: not a bike ride`, `more files wait for the next pass`. Never a file name, a path or a number
+  from a ride.
+- **Doctor**: the `fit import` row says `off`, or `dry run` / `write` with the last pass in words; `missing` when
+  the folder is set but does not exist, `stale` with no folder set or before its first pass after a sync.
+- **Schedule card**: `fit_ingest`, on the `sync` event, sender `local`, budget zero
+  ([schedule-cards.md](schedule-cards.md)).
+
 ## What is read
 
 `limitless/fit_ride.py`, stdlib only, reads just enough of the FIT format for one row: the file header (12 or
@@ -42,4 +74,5 @@ the start and the duration into the rides file, and the rides tool turns the wee
 ## Never
 
 It never reads the network, deletes or rewrites anything (append only, one flocked write, mode 0600), sends a
-message or starts a job. Synthetic test files only (tests/test_fit_ride.py builds them with a tiny writer).
+message or starts a job (the drop folder's job above is run by `limitless-jobs`, and sends nothing). Synthetic test
+files only (tests/test_fit_ride.py builds them with a tiny writer).

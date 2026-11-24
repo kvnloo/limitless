@@ -2,7 +2,8 @@
 """limitless-jobs [--send | --ingest [--confirm]]: one pass over the event-triggered jobs; prints one line per job.
 
 Without --send it is a dry run: verdicts only, nothing is pushed or written.
-With --ingest (the timer's pass) the reply ingests (apps, ranked, sender; each by its own config mode) run for real,
+With --ingest (the timer's pass) the reply ingests (apps, ranked, sender) and the FIT import (each by its own config
+mode) run for real,
 exactly as --send runs them, and every other job is a plain dry run: kevin-push and limitless-brief are never called,
 nothing is sent and no process is started. --ingest with --send is --send.
 With --ingest --confirm the pass also sends the two recovery messages through the same kevin-push call --send uses:
@@ -32,6 +33,11 @@ Apps ingest: with config "apps_ingest" set to "dry_run" or "write", one more lin
 runs.jsonl, --send reads the "work apps: ..." / "feed apps: ..." reply from the Hermes session DB (config
 "hermes_db"; none set: skipped), in write mode writes apps.json, and records the action in apps-ingest.json; it
 pushes nothing.
+
+FIT import: with config "fit_ingest" set to "dry_run" or "write", one more line. Once after each new sync row,
+--send (or --ingest) reads the *.fit files directly in the folder config "fit_drop_dir" names (oldest first, a
+capped batch per pass), in write mode appends the new rides to the rides file, and records what it did in words in
+fit-ingest.json; a source file is never touched and nothing is pushed.
 
 Sender confirmation: with config "sender_confirm" set to "dry_run" or "write", one more line. Right after the owner's
 "push via <profile>" reply changed the sender (push-sender.json), --send (or --ingest --confirm) in write mode pushes one plain

@@ -108,12 +108,13 @@ class DoctorRow(unittest.TestCase):
         self.assertIn("KEVIN_PUSH_PROFILE is set and still wins", env["reason"])
         self.assertIn("dry run mode", self.row(mode="dry_run")["reason"])
 
-    def test_report_has_the_row_once_right_after_the_sender_ingest(self):
+    def test_report_has_the_row_once_after_the_sender_ingest_and_the_fit_import(self):
         with mock.patch.object(doctor, "sender_confirm_row", wraps=doctor.sender_confirm_row) as spy:
             rows = doctor.report({"sender_confirm": "off", "state": str(self.st)}, NOW)
         names = [r["name"] for r in rows]
         self.assertEqual(names.count(doctor.SENDER_CONFIRM_ROW), 1)
-        self.assertEqual(names.index(doctor.SENDER_CONFIRM_ROW), names.index(doctor.SENDER_INGEST_ROW) + 1)
+        self.assertEqual(names.index(doctor.FIT_IMPORT_ROW), names.index(doctor.SENDER_INGEST_ROW) + 1)
+        self.assertEqual(names.index(doctor.SENDER_CONFIRM_ROW), names.index(doctor.FIT_IMPORT_ROW) + 1)
         self.assertEqual(spy.call_count, 1)
 
 

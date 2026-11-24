@@ -2,7 +2,8 @@
 the week review, the break nudge; the NOOP export (NOOP_EXPORT), which sends nothing and wakes on a sync that
 copied the NOOP database (noop_export_verdict); and the apps ingest (APPS_INGEST) and the ranked ingest
 (RANKED_INGEST) and the sender ingest (SENDER_INGEST), which send nothing and wake on any new sync row
-(apps_ingest_verdict, ranked_ingest_verdict, sender_ingest_verdict).
+(apps_ingest_verdict, ranked_ingest_verdict, sender_ingest_verdict), and the FIT import (FIT_INGEST), which
+reads a drop folder of CAROL bike FIT files on the same event (fit_ingest_verdict).
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no
@@ -29,7 +30,7 @@ from .window import MAX_AWAKE_H
 # noop_copy is a sync run whose runs.jsonl row says it copied the NOOP database (noop_copied); only the NOOP export
 # job (NOOP_EXPORT) wakes on it. sync is any sync run's runs.jsonl row that did not fail (sync_ran); only the apps
 # ingest job (APPS_INGEST), the ranked ingest job (RANKED_INGEST) and the sender ingest job (SENDER_INGEST) wake on
-# it. push_back is a push kevin-push
+# it, and so does the FIT import (FIT_INGEST). push_back is a push kevin-push
 # delivered after an outage (outage_recap.outage: SEND_FAIL_RUN or more failed sends in a row); only the outage
 # recap (OUTAGE_RECAP) wakes on it. sender_changed is the owner's "push via <profile>" reply setting the sender
 # (push-sender.json's ``at``, newer than the last confirmation; sender_changed_verdict); only the sender
@@ -42,7 +43,8 @@ SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake
 HABIT_CUE_AFTER_S = 3600     # the feeds-free-first-hour check-in asks once the first hour after a wake has passed
 DELIVER, HOLD, DROP, NOT_TRIGGERED = "deliver", "hold", "drop", "not_triggered"
 RUN = "run"                  # a job that sends nothing (the NOOP export) is due and runs; never a message
-# What runs the three reply ingests (apps, ranked, sender) for real: the timer's --ingest pass, or a --send pass
+# What runs the three reply ingests (apps, ranked, sender) and the FIT import for real: the timer's --ingest pass,
+# or a --send pass
 INGEST_RUNS = "limitless-jobs --ingest or --send"
 # What sends the one sender confirmation: the timer's pass with --confirm (it sends nothing else), or a --send pass
 CONFIRM_RUNS = "limitless-jobs --ingest --confirm or --send"
@@ -270,6 +272,43 @@ def sender_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], no
     if mode not in (SENDER_DRY_RUN, SENDER_WRITE):
         return Verdict(NOT_TRIGGERED, SENDER_IS_OFF)
     return apps_ingest_verdict(mode, last_run, mark_at, now, db_set=db_set)
+
+
+# The FIT import sends nothing: it reads the CAROL bike FIT files dropped in one folder (config ``fit_drop_dir``)
+# and runs fit_ride.run over them (write mode appends the new rides to the rides file; fit_ingest_job). Like the
+# apps ingest it is not in SPECS, no window holds it, and it wakes on any new sync row, never on a clock time.
+FIT_INGEST = JobSpec("fit_ingest", "sync", "anytime", "FIT import", 1, "sync")
+FIT_CONFIG = "fit_ingest"
+FIT_DIR_CONFIG = "fit_drop_dir"
+FIT_OFF, FIT_DRY_RUN, FIT_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
+FIT_MODES = (FIT_OFF, FIT_DRY_RUN, FIT_WRITE)
+FIT_IS_OFF = f"off (config {FIT_CONFIG})"
+FIT_NO_DIR = f"skipped: no drop folder set (config {FIT_DIR_CONFIG})"
+FIT_DIR_MISSING = "skipped: the drop folder does not exist"
+
+
+def fit_mode(cfg: Any) -> str:
+    """Config ``fit_ingest``: off (the default, and for any value that is not one of FIT_MODES), dry_run or
+    write."""
+    v = cfg.get(FIT_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in FIT_MODES else FIT_OFF
+
+
+def fit_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], now: float,
+                       dir_set: bool = True, dir_exists: bool = True) -> Verdict:
+    """Run, drop or not triggered for the FIT import: off unless ``mode`` is dry_run or write; skipped with no drop
+    folder set (FIT_NO_DIR) or one that does not exist (FIT_DIR_MISSING); then exactly the apps ingest's rule
+    (apps_ingest_verdict, no Hermes DB needed): the newest runs.jsonl row a sync that did not fail, not after
+    ``now`` and newer than ``mark_at`` (the row the last pass acted on, from fit-ingest.json). The same row again
+    is a drop: at most once per sync row. Pure."""
+    if mode not in (FIT_DRY_RUN, FIT_WRITE):
+        return Verdict(NOT_TRIGGERED, FIT_IS_OFF)
+    if not dir_set:
+        return Verdict(NOT_TRIGGERED, FIT_NO_DIR)
+    if not dir_exists:
+        return Verdict(NOT_TRIGGERED, FIT_DIR_MISSING)
+    return apps_ingest_verdict(mode, last_run, mark_at, now, db_set=True)
 
 
 # The outage recap: one plain message after phone pushes start reaching the person again, naming in words what an

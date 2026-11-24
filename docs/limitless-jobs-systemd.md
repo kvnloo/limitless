@@ -96,7 +96,9 @@ Change `%h/src/limitless` to wherever the repo is checked out.
 When sends are gated elsewhere and the timer runs `limitless-jobs` without `--send`, that plain dry run never runs
 the reply ingests (`apps_ingest`, `ranked_ingest`, `sender_ingest`): their lines say `dry run of limitless-jobs: not
 run`, so a `push via <profile>` reply ([push-sender-reply.md](push-sender-reply.md)) never takes effect by itself.
-`--ingest` runs only those three for real, each by its own config mode (`off`: no line, `dry_run`: only the mark
+The same holds for the FIT import (`fit_ingest`, [carol-fit-import.md](carol-fit-import.md#drop-folder)), which
+reads the drop folder and sends nothing. `--ingest` runs only those three and the FIT import for real, each by its
+own config mode (`off`: no line, `dry_run`: only the mark
 is written, `write`: writes), exactly as `--send` runs them, and keeps every other job a plain dry run: it never
 calls `kevin-push` or `limitless-brief`, never sends and starts no process. `--ingest --send` is `--send`.
 

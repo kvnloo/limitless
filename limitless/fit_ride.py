@@ -228,11 +228,16 @@ _WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", 
           "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
 
 
+def count_words(n: int, noun: str) -> str:
+    """``n`` of ``noun`` in words, digit-free: "no files", "one file", ..., "more than twenty files"."""
+    if n > len(_WORDS) - 1:
+        return f"more than {_WORDS[-1]} {noun}s"
+    return f"{_WORDS[max(n, 0)]} {noun}{'' if n == 1 else 's'}"
+
+
 def rides_words(n: int) -> str:
     """``n`` rides in words, digit-free: "no rides", "one ride", ..., "more than twenty rides"."""
-    if n > len(_WORDS) - 1:
-        return f"more than {_WORDS[-1]} rides"
-    return f"{_WORDS[max(n, 0)]} ride{'' if n == 1 else 's'}"
+    return count_words(n, "ride")
 
 
 def _instant(start) -> Optional[float]:

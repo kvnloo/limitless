@@ -348,8 +348,9 @@ class Doctor(Base):
         names = [r["name"] for r in rows]
         at = names.index(doctor.RANKED_INGEST_ROW)
         self.assertEqual(names[at + 1], doctor.SENDER_INGEST_ROW)
-        self.assertEqual(names[at + 2], doctor.SENDER_CONFIRM_ROW)
-        self.assertEqual(names[at + 3], doctor.VOICE_MIQ_ROW)
+        self.assertEqual(names[at + 2], doctor.FIT_IMPORT_ROW)
+        self.assertEqual(names[at + 3], doctor.SENDER_CONFIRM_ROW)
+        self.assertEqual(names[at + 4], doctor.VOICE_MIQ_ROW)
 
     def test_the_doctor_and_jobs_clis_never_print_a_profile_name(self):
         self.config(sender_ingest="write")
