@@ -131,6 +131,11 @@ to the host's class through one table:
 `current` reads events, never a clock time, and never raises (an error is none). Config
 `window_provider` is on by default; `false` or `"off"` registers nothing.
 
+`bin/limitless-doctor`'s `cron window provider` row tells the three cases apart: off in config, a Hermes whose
+plugin API has no `register_window_provider` (config `hermes_agent_dir` names the Hermes source checkout; one
+file is searched as text, Hermes is never imported), or registered, with the window the cron gate reads now
+([doctor.md](doctor.md)).
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
