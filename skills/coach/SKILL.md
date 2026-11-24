@@ -44,6 +44,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | Did my pushes stay within the limit this week? | limitless_delivery |
 | Did my inputs stay fresh most days this month? | limitless_uptime |
 | How did I sleep this week? | limitless_sleep |
+| Did the wearable record sleep on most nights this month? | limitless_sleep_coverage |
 | Am I short on sleep? | limitless_sleep_debt |
 | Did I nap yesterday? | limitless_naps |
 | Was my heart rate before sleep usual? | limitless_presleep_hr |

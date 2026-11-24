@@ -82,6 +82,7 @@ tool limitless_rides: off: no rides file: set "rides_file" in config.json
 tool limitless_anki: off: no Anki collection set
 tool limitless_sleep: missing: no sleep data: no wearable file (set "sleep_file" in config.json) and no phone screen events
 tool limitless_sleep_debt: missing: no sleep data: no wearable file (set "sleep_file" in config.json) and no phone screen events
+tool limitless_sleep_coverage: off: no wearable sleep file: set "sleep_file" in config.json
 tool limitless_loop: missing: no week decided yet: no loop row
 tool limitless_experiment: live: answers, with nothing measured behind it yet
 tool limitless_naps: live: answers from a proxy

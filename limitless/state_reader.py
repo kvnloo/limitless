@@ -146,6 +146,31 @@ def _rows(text: str) -> list:
     return out
 
 
+def valid_sleep_rows(rows, today: date) -> list:
+    """StateReader.sleep_rows's check over already-read sleep file ``rows``: the valid rows ``{"night",
+    "asleep_s", "source"[, "span"]}`` up to ``today``, oldest night first; never raises."""
+    if not isinstance(today, date):
+        return []
+    out, seen = [], set()
+    for r in rows if isinstance(rows, (list, tuple)) else ():
+        if not isinstance(r, dict):
+            continue
+        night, secs, source = r.get("night"), r.get("asleep_s"), r.get("source")
+        if not _valid_day(night) or night > today.isoformat():
+            continue
+        if isinstance(secs, bool) or not isinstance(secs, int) or not 0 < secs <= MAX_ASLEEP_S:
+            continue
+        if not isinstance(source, str) or not source.strip() or (night, source) in seen:
+            continue
+        seen.add((night, source))
+        row = {"night": night, "asleep_s": secs, "source": source}
+        a, b = parse_ts(r.get("start")), parse_ts(r.get("end"))
+        if a is not None and b is not None and math.isfinite(a) and math.isfinite(b) and 0 < b - a <= MAX_ASLEEP_S:
+            row["span"] = (a, b)
+        out.append(row)
+    return sorted(out, key=lambda x: x["night"])
+
+
 def normalize_digest(row: Optional[dict]) -> Optional[dict]:
     """The live sync writes {builtAt, phoneProxy: {gapHours}, ...}; map it to {at, metrics}.
 
@@ -455,6 +480,17 @@ class StateReader:
         p = Path(v).expanduser()
         return p if p.is_absolute() else self.path / p
 
+    def sleep_file_rows(self, env: Optional[Mapping[str, str]] = None,
+                        home: Optional[Path] = None) -> Optional[list]:
+        """The sleep file's JSON object rows as written, in file order (for sleep_coverage, which drops demo rows
+        by fields sleep_rows never keeps). None when no file is configured, it is missing or unreadable; never
+        raises."""
+        try:
+            p = self.sleep_file(env, home)
+            return None if p is None else _rows(p.read_text(errors="replace"))
+        except Exception:  # noqa: BLE001 - unreadable sleep data is no rows, never a traceback
+            return None
+
     def sleep_rows(self, today: Optional[date] = None, env: Optional[Mapping[str, str]] = None,
                    home: Optional[Path] = None) -> list:
         """The sleep file's valid rows ``{"night", "asleep_s", "source"[, "span"]}``, oldest night first.
@@ -475,22 +511,7 @@ class StateReader:
             rows = _rows(p.read_text(errors="replace"))
         except Exception:  # noqa: BLE001 - unreadable sleep data is no rows, never a traceback
             return []
-        out, seen = [], set()
-        for r in rows:
-            night, secs, source = r.get("night"), r.get("asleep_s"), r.get("source")
-            if not _valid_day(night) or night > today.isoformat():
-                continue
-            if isinstance(secs, bool) or not isinstance(secs, int) or not 0 < secs <= MAX_ASLEEP_S:
-                continue
-            if not isinstance(source, str) or not source.strip() or (night, source) in seen:
-                continue
-            seen.add((night, source))
-            row = {"night": night, "asleep_s": secs, "source": source}
-            a, b = parse_ts(r.get("start")), parse_ts(r.get("end"))
-            if a is not None and b is not None and math.isfinite(a) and math.isfinite(b) and 0 < b - a <= MAX_ASLEEP_S:
-                row["span"] = (a, b)
-            out.append(row)
-        return sorted(out, key=lambda x: x["night"])
+        return valid_sleep_rows(rows, today)
 
     def presleep_hr_file(self, env: Optional[Mapping[str, str]] = None,
                          home: Optional[Path] = None) -> Optional[Path]:

@@ -39,7 +39,7 @@ GOAL_WORDS = {GOAL_MET: "wearable goal met", GOAL_NOT_MET: "wearable goal not me
               GOAL_UNKNOWN: "wearable goal unknown: too many nights with no sleep data"}
 EVERY, MOST, HALF, SOME, FEW = "every night", "most nights", "about half the nights", "some nights", "few nights"
 NO_WEARABLE = "no wearable sleep"
-NO_FILE_REASON = "no wearable sleep file set (sleep_file in config.json)"
+NO_FILE_REASON = 'no wearable sleep file: set "sleep_file" in config.json'
 UNREADABLE_REASON = "the wearable sleep file is missing or cannot be read"
 NO_NIGHTS_REASON = "no wearable night and no phone estimate in the audit window"
 FEW_KNOWN_REASON = "fewer than a week of nights have wearable sleep or a phone estimate"
