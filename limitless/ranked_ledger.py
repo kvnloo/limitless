@@ -50,7 +50,7 @@ def agent_row(item_id, status, evidence=None) -> dict:
     """The one row an agent may append, or Refused: a valid id, a status in AGENT_STATUSES (never dropped), and
     for verified a non-empty evidence string."""
     if status == DROPPED:
-        raise Refused("dropped is refused: only the owner drops, by reply")
+        raise Refused("dropped: only the owner drops, by reply")
     if status not in AGENT_STATUSES:
         raise Refused("the status must be open, built or verified")
     if not valid_id(item_id):
