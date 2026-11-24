@@ -360,8 +360,12 @@ class Doctor(Base):
                                env=child_env(self.env), capture_output=True, text=True, timeout=60)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("sender ingest", r.stdout.lower(), argv)
+            # the doctor's "sender candidates" row is the one row that names profiles (the owner's own labels,
+            # tests/test_sender_candidates.py); every other line never does
+            lines = [ln for ln in (r.stdout + r.stderr).splitlines()
+                     if not ln.startswith("sender candidates:") and '"name": "sender candidates"' not in ln]
             for w in NAMES + (PRIVATE,):
-                self.assertNotIn(w, r.stdout + r.stderr, argv)
+                self.assertNotIn(w, "\n".join(lines), argv)
 
 
 class Cards(Base):

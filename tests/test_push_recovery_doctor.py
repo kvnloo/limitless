@@ -224,7 +224,8 @@ class Row(Case):
             rows = doctor.report(cfg, NOW)
         names = [r["name"] for r in rows]
         self.assertEqual(names.count(doctor.PUSH_RECOVERY_ROW), 1)
-        self.assertEqual(names.index(doctor.PUSH_RECOVERY_ROW), names.index(doctor.PUSH_SENDER_ROW) + 1)
+        self.assertEqual(names.index(doctor.PUSH_RECOVERY_ROW), names.index(doctor.SENDER_CANDIDATES_ROW) + 1)
+        self.assertEqual(names.index(doctor.SENDER_CANDIDATES_ROW), names.index(doctor.PUSH_SENDER_ROW) + 1)
         self.assertEqual(names.index(doctor.SLEEP_MODE_ROW), names.index(doctor.PUSH_RECOVERY_ROW) + 1)
         self.assertEqual(rows[names.index(doctor.PUSH_RECOVERY_ROW)]["reason"], WAITING_REPLY)
 
@@ -242,7 +243,7 @@ class Docs(unittest.TestCase):
             self.assertIn(words, r.stdout)
         self.assertNotIn("sender-synth", r.stdout)
         self.assertIn("## Push recovery row", doc)
-        self.assertIn("`push recovery`, right after the push sender row", doc)
+        self.assertIn("`push recovery`, right after the sender candidates row", doc)
 
 
 if __name__ == "__main__":

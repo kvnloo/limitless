@@ -1,7 +1,7 @@
 """Push recovery: where a push-outage recovery stands, as one plain stage, for limitless-doctor's "push recovery" row.
 
-    stage(state_dir, rows, cfg, now) -> (status, words)
-    from_state(state_dir, cfg, now)  -> the same, reading kevin-push's log (config ``push_log``) itself
+    stage(state_dir, rows, cfg, now, env=None) -> (status, words)
+    from_state(state_dir, cfg, now, env=None)  -> the same, reading kevin-push's log (config ``push_log``) itself
 
 During a push outage the recovery runs in stages across several limitless-jobs passes: pushes fail and the owner
 is asked to reply ``push via <name>``; sender_ingest_job applies the reply (push-sender.json); sender_confirm_job
@@ -24,10 +24,15 @@ after the reply push-sender.json holds. UNKNOWN_FAILED needs the same mark's ``a
 (sender_reply.applied_unknown: the reply push-sender.json holds was applied although push_sender.readiness could
 not tell whether that profile has a bot, e.g. a secret source) and the confirmation's own send failing for that
 reply: the profile was set but could not send, so it may have no Telegram bot. A later applied reply moves the
-stage on (a READY one drops the flag; any new reply waits for its own confirmation). The outage is outage_recap.outage over the log rows (the same rule the
+stage on (a READY one drops the flag; any new reply waits for its own confirmation). While the owner must reply
+(WAITING_REPLY, REFUSED) the words go on with the profiles the owner can name (push_sender.candidates over the
+Hermes home of ``env``, files only): "; ready profiles: a, b", else "; profiles that may reach Telegram: c"
+(readiness cannot tell), else "; no profile can reach Telegram"; nothing is added when no Hermes home is known.
+The constant stays the prefix, so a caller matches with ``startswith``. The outage is outage_recap.outage over the log rows (the same rule the
 recap and the state card use). No push log (``rows`` None) is missing with the reason, never a guess. Words only:
-never a digit, a path, a profile name, a host or a time stamp. Pure and read-only: it reads the small reply and mark files and writes nothing, sends
-nothing and starts no process. Stdlib only, Python 3.9+.
+never a digit, a path, a host or a time stamp, and no profile name but the candidates' (a name with a digit is only
+counted). Read-only: it reads the small reply and mark files and the profiles' files for presence, and writes
+nothing, sends nothing and starts no process. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
@@ -55,6 +60,23 @@ RECAP_DRY_RUN = f"{BACK}; the recap is in dry run mode"
 RECAP_SENT = f"{BACK}; recap sent"
 SETTLED = f"{BACK}; settled without a recap"
 BROKEN = UNKNOWN_PREFIX + "the push log or a mark could not be read"
+READY_PROFILES = "; ready profiles: "
+MAYBE_PROFILES = "; profiles that may reach Telegram: "
+NO_PROFILE = "; no profile can reach Telegram"
+
+
+def _who_can_send(cfg, env, hermes_home) -> str:
+    """What the owner could reply with, appended to WAITING_REPLY / REFUSED; "" when no Hermes home is known."""
+    try:
+        cands = push_sender.candidates(cfg, env, hermes_home)
+    except Exception:  # noqa: BLE001 - the stage still holds without the names
+        return ""
+    if cands is None:
+        return ""
+    ready, maybe = push_sender.ready_names(cands), push_sender.maybe_names(cands)
+    if ready:
+        return READY_PROFILES + ", ".join(ready)
+    return MAYBE_PROFILES + ", ".join(maybe) if maybe else NO_PROFILE
 
 
 def _confirmation(state_dir, rows, cfg, reply_at: float) -> str:
@@ -76,9 +98,10 @@ def _confirmation(state_dir, rows, cfg, reply_at: float) -> str:
 
 
 def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: float,
-          why: Optional[str] = None) -> tuple:
+          why: Optional[str] = None, env: Optional[Mapping[str, str]] = None, hermes_home=None) -> tuple:
     """(status, words) for the recovery stage (see the module doc). ``rows`` are kevin-push's log rows; None when
-    there is no push log, then ``why`` (default delivery_audit.NO_LOG_REASON) is the missing reason."""
+    there is no push log, then ``why`` (default delivery_audit.NO_LOG_REASON) is the missing reason. ``env``
+    (default os.environ) and ``hermes_home`` locate the Hermes home whose profiles the reply stages name."""
     if rows is None:
         return MISSING, UNKNOWN_PREFIX + (why or _da.NO_LOG_REASON)
     cfg = cfg if isinstance(cfg, Mapping) else {}
@@ -92,9 +115,9 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
             reply_at = None
         refused = _sr.refused_at(state_dir)
         if refused is not None and refused >= o["first_at"] and (reply_at is None or refused > reply_at):
-            return MISSING, REFUSED
+            return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home)
         if reply_at is None:
-            return MISSING, WAITING_REPLY
+            return MISSING, WAITING_REPLY + _who_can_send(cfg, env, hermes_home)
         why = _confirmation(state_dir, rows, cfg, reply_at)
         if why == FAILED and _sr.applied_unknown(state_dir):
             return MISSING, UNKNOWN_FAILED
@@ -107,7 +130,8 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
     return STALE, {_recap.OFF: RECAP_OFF, _recap.DRY_RUN: RECAP_DRY_RUN}.get(_recap.mode(cfg), RECAP_WAITS)
 
 
-def from_state(state_dir, cfg: Optional[Mapping], now: float) -> tuple:
+def from_state(state_dir, cfg: Optional[Mapping], now: float, env: Optional[Mapping[str, str]] = None,
+               hermes_home=None) -> tuple:
     """``stage`` over kevin-push's log at config ``push_log`` (delivery_audit.log_path): no log set or one that
     cannot be read is missing with that reason. Never raises; read-only."""
     try:
@@ -117,6 +141,6 @@ def from_state(state_dir, cfg: Optional[Mapping], now: float) -> tuple:
         got = _da.read_log(path)
         if got is None:
             return stage(state_dir, None, cfg, now, _da.UNREADABLE_REASON)
-        return stage(state_dir, got[0], cfg, now)
+        return stage(state_dir, got[0], cfg, now, env=env, hermes_home=hermes_home)
     except Exception:  # noqa: BLE001 - a broken file is one row, never a traceback
         return MISSING, BROKEN

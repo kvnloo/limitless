@@ -5,6 +5,7 @@
     check(cfg, env, hermes_home=None)      # "set: ..." / "broken: ..." / "unknown: <reason>", words only
     readiness(cfg, env, hermes_home=None)  # "ready" / "no Telegram bot token ..." / "no Telegram chat ..." /
                                            # "missing: ..." / "unknown: <reason>", words only, report-only
+    candidates(cfg, env, hermes_home=None) # [(name, readiness)] for every profile ``-p`` resolves, or None
 
 kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else the
 owner's ``push via <name>`` reply (REPLY_FILE ``push-sender.json`` in the state dir, written by
@@ -21,6 +22,9 @@ kevin-push asks ``check`` before each send: BROKEN starts no hermes and logs NO_
 every send with no Telegram bot token in its ``.env`` / ``config.yaml`` / environment, or no chat to send to (no
 home channel for a bare ``telegram`` target, no channel directory entry for a named one). It reads only whether
 a key is present and non-empty, never a value; kevin-push never asks it, so a wrong guess cannot block a send.
+``candidates`` asks readiness once per profile Hermes could resolve (``default`` and each live dir under
+``profiles/``), so the doctor's "sender candidates" row and the push recovery words can name the profiles the owner
+may reply ``push via <name>`` with. Profile names are the owner's own labels and appear only there.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -375,3 +379,66 @@ def readiness(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
         return READY if _directory_has(home, ref) else NO_CHAT
     except (OSError, ValueError):
         return FILES_UNREADABLE
+
+
+# -- candidates: every profile that could be the sender, with its readiness (report-only) ---------------------------
+
+# hermes_constants._DELETED_PROFILES_DIR: ``hermes profile delete`` leaves a tombstone at
+# ``<root>/profiles/.deleted/<name>`` and ``-p <name>`` then refuses it (named_profile_is_live).
+DELETED_DIR = ".deleted"
+DEFAULT_NAME = "default"
+
+
+def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
+               hermes_home: "Path | str | None" = None) -> Optional[list]:
+    """Every profile ``hermes -p <name>`` could resolve, as ``[(name, readiness words)]`` sorted by name: DEFAULT_NAME
+    (the Hermes home itself) and each dir under ``<home>/profiles/`` whose name Hermes resolves (PROFILE_ID) and
+    that carries no tombstone (``profiles/.deleted/<name>``). Each answer is ``readiness`` with that profile as the
+    sender and kevin-push's own target, so a name listed READY is one the owner can reply ``push via <name>`` with.
+    None when no Hermes home is known, it does not exist or cannot be listed. ``hermes_home`` defaults to
+    hermes_root(env). Files only and presence only, like readiness: never runs hermes or any process, and never
+    reads a value into what it returns."""
+    env = os.environ if env is None else env
+    root = Path(hermes_home) if hermes_home is not None else hermes_root(env)
+    if root is None:
+        return None
+    try:
+        if not root.is_dir():
+            return None
+        names = [DEFAULT_NAME]
+        profiles = root / "profiles"
+        if profiles.is_dir():
+            for entry in profiles.iterdir():
+                name = entry.name
+                if (name != DEFAULT_NAME and PROFILE_ID.match(name) and entry.is_dir()
+                        and not (profiles / DELETED_DIR / name).exists()):
+                    names.append(name)
+    except (OSError, ValueError):
+        return None
+    base = dict(env)
+    return [(name, readiness(cfg, dict(base, **{PROFILE_ENV: name}), root)) for name in sorted(names)]
+
+
+_COUNT_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
+
+
+def _named(names: list) -> list:
+    """The names as they may be shown: one with a digit is never printed (words only), only counted."""
+    shown = [n for n in names if not re.search(r"\d", n)]
+    hidden = len(names) - len(shown)
+    more = " more" if shown else ""
+    if hidden == 1:
+        shown.append(f"one{more} whose name holds a digit")
+    elif hidden:
+        shown.append(f"{_COUNT_WORDS.get(hidden, 'some')}{more} whose names hold a digit")
+    return shown
+
+
+def ready_names(cands: Optional[list]) -> list:
+    """The candidates readiness calls READY, as printable names (``_named``)."""
+    return _named([n for n, w in cands or () if w == READY])
+
+
+def maybe_names(cands: Optional[list]) -> list:
+    """The candidates readiness answers ``unknown: ...`` for, as printable names (``_named``)."""
+    return _named([n for n, w in cands or () if w.startswith(UNKNOWN_PREFIX)])

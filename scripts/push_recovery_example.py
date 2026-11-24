@@ -46,7 +46,9 @@ with tempfile.TemporaryDirectory() as tmp:
         print(f"# {note}")
         if rows is not None:
             (st / "push-log.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-        r = doctor.push_recovery_row(StateReader(st), c, NOW)
+        # a Hermes home that does not exist: the reply stages name no profile (never the host's own profiles);
+        # scripts/sender_candidates_example.py shows them with made-up ones
+        r = doctor.push_recovery_row(StateReader(st), c, NOW, hermes_home=st / "no-hermes-home")
         print(f"{r['name']}: {r['status']}: {r['reason']}")
 
     show("pushes reach the owner", outage[:1])
