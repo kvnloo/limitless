@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""limitless-t1-check: run the local T1 model (LIMITLESS_T1_CMD or config t1_model_cmd) once on each fixed
+synthetic labeler prompt and say, in words, whether it agrees with the rule labels; saves the verdict words to
+config t1_check_file under the state dir when set. See limitless/t1_agreement.py and docs/privacy-tiers.md.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import t1_agreement  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(t1_agreement.main())

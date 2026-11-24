@@ -18,7 +18,8 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
-from typing import Optional
+from pathlib import Path
+from typing import Mapping, Optional
 
 from . import labeler
 
@@ -99,3 +100,115 @@ def text(result: dict) -> str:
     lines = [f"local model check: {result['words']}"]
     lines += [f"{k}: {w}" for k, w in result.get("kinds", {}).items()]
     return "\n".join(lines)
+
+
+MIN_KEY, FILE_KEY = "t1_min_agreement", "t1_check_file"
+MIN_DEFAULT = "most"
+_RANK = {"few": 0, "most": 1, "all": 2}
+_FROM_WORDS = {w: v for v, w in VERDICT_WORDS.items()}
+MAX_SAVED = 256
+
+
+def min_agreement(cfg: Mapping) -> str:
+    """config t1_min_agreement: all, most or few; anything else is the default, most."""
+    v = cfg.get(MIN_KEY) if isinstance(cfg, Mapping) else None
+    return v if v in _RANK else MIN_DEFAULT
+
+
+def _verdict_of(result) -> Optional[str]:
+    if isinstance(result, Mapping):
+        return result.get("verdict")
+    if isinstance(result, str):
+        return _FROM_WORDS.get(result.strip(), UNKNOWN if result.strip().startswith(UNKNOWN + ":") else None)
+    return None
+
+
+def allowed(cfg: Mapping, result) -> bool:
+    """Whether the labeler may use the model: the check result (check()'s dict, or its saved words) is known
+    and at least t1_min_agreement. Unknown, unreadable or missing never is."""
+    v = _verdict_of(result)
+    return v in _RANK and _RANK[v] >= _RANK[min_agreement(cfg)]
+
+
+def gated(cfg: Mapping) -> bool:
+    """True when config t1_check_file is set at all (even to a bad value): the model then needs a passing check
+    on file. Unset (the default) keeps the labeler as it was: the model is used whenever its command is set."""
+    return isinstance(cfg, Mapping) and cfg.get(FILE_KEY) not in (None, "")
+
+
+def _state(cfg: Mapping, env: Mapping[str, str], home: Optional[Path]) -> Path:
+    home = Path.home() if home is None else home
+    if env.get("LIMITLESS_STATE"):
+        return Path(env["LIMITLESS_STATE"])
+    st = cfg.get("state")
+    return Path(st) if isinstance(st, str) and st else home / ".local/state/limitless"
+
+
+def check_path(cfg: Mapping, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
+    """The saved check file: config t1_check_file, a relative path inside the state dir ($LIMITLESS_STATE, else
+    config state, else ~/.local/state/limitless). None when unset, or absolute, or it leaves the state dir."""
+    env = os.environ if env is None else env
+    v = cfg.get(FILE_KEY) if isinstance(cfg, Mapping) else None
+    if not isinstance(v, str) or not v.strip():
+        return None
+    rel = Path(v)
+    if rel.is_absolute() or ".." in rel.parts:
+        return None
+    return _state(cfg, env, home) / rel
+
+
+def save(path: Path, result: dict) -> bool:
+    """Write the verdict words (one line, no digit) to path, mode 0600, replacing any older verdict."""
+    words = str(result.get("words", ""))
+    if not words or any(c.isdigit() for c in words) or "\n" in words:
+        return False
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            os.fchmod(f.fileno(), 0o600)
+            f.write(words + "\n")
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
+
+
+def saved(cfg: Mapping, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[str]:
+    """The verdict words on file, or None (no t1_check_file, no file, unreadable, or not a verdict line)."""
+    path = check_path(cfg, env, home)
+    if path is None:
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            line = f.read(MAX_SAVED).split("\n", 1)[0].strip()
+    except (OSError, ValueError):
+        return None
+    if any(c.isdigit() for c in line) or _verdict_of(line) is None:
+        return None
+    return line
+
+
+def main(argv=None, env: Optional[Mapping[str, str]] = None) -> int:
+    import argparse
+    import json
+    from .state_reader import config
+    p = argparse.ArgumentParser(prog="limitless-t1-check", description="Run the local T1 model once on each fixed "
+                                "synthetic labeler prompt and say, in words, how often it agrees with the rule "
+                                "labels. Exits zero only when the result meets the minimum agreement.")
+    p.add_argument("--json", action="store_true", help="print the counts as JSON")
+    args = p.parse_args(argv)
+    env = os.environ if env is None else env
+    cfg = config(env)
+    result = check(labeler.t1_model_cmd(env))
+    path = check_path(cfg, env)
+    wrote = path is not None and save(path, result)
+    ok = allowed(cfg, result)
+    if args.json:
+        print(json.dumps(dict(result, allowed=ok, saved=wrote, min_agreement=min_agreement(cfg)), sort_keys=True))
+        return 0 if ok else 1
+    print(text(result))
+    print("saved for the labeler" if wrote else "not saved: no check file is set" if path is None
+          else "not saved: the check file cannot be written")
+    print(f"meets the minimum agreement ({min_agreement(cfg)}): {'yes' if ok else 'no'}")
+    return 0 if ok else 1
