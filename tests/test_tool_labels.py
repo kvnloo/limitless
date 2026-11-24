@@ -82,7 +82,7 @@ class Handlers(unittest.TestCase):
                         "limitless_phase", "limitless_explain_back", "limitless_experiment",
                         "limitless_focus_safe", "limitless_skill_tree", "limitless_breathing",
                         "limitless_palace", "limitless_outages", "limitless_result_tier",
-                        "limitless_delivery"):  # own T1 words; the
+                        "limitless_delivery", "limitless_uptime"):  # own T1 words; the
                 continue                     # fixture has no body_file, work queue, rides, sleep or AW data;
                                              # quiet: on, off, ...; anki: no collection;
                                              # propose: its action words; loop: no week decided;
@@ -101,6 +101,7 @@ class Handlers(unittest.TestCase):
                                              # outages: not recording: ..., off (test_outage_tool)
                                              # result_tier: result filter off, ... (test_result_tier_tool)
                                              # delivery: no push log in the fixture (test_delivery_tool)
+                                             # uptime: fixture runs name no stale inputs (test_uptime_tool)
             res = self.call(name, {"text": "a synthetic thought"})
             self.assertTrue(FIELDS <= set(res), (name, res))
             self.assertIsNotNone(res["value"], name)

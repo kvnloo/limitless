@@ -49,6 +49,9 @@ PHRASES = (FRESH_ALL, FRESH_KNOWN, FRESH_MOST, FRESH_HALF, STALE_MOST, STALE_KNO
            "stale all week", "stale all month", "stale every day")       # the label's order, best first
 NONE_NAMED = "no input was reported stale"
 GOAL_MET, GOAL_NOT_MET, GOAL_UNKNOWN = "met", "not met", "unknown"
+NO_LOG_REASON = "no sync run log in the state dir (runs.jsonl)"
+NO_ROWS_REASON = "no sync run in the audit window"
+FEW_KNOWN_REASON = "fewer than a week of sync runs name their stale inputs"
 GOAL_WORDS = {GOAL_MET: "uptime goal met", GOAL_NOT_MET: "uptime goal not met",
               GOAL_UNKNOWN: "uptime goal unknown: too many days without input words"}
 
