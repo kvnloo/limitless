@@ -1390,14 +1390,15 @@ def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Map
     whether the uptime goal, config ``uptime_target``, was met) with the T1 label beside it; modality measured
     (the log is the sync's own record), aged by the newest run in the window. The counts (fresh, stale and
     unknown days per input, every-input-fresh days, the target, skipped lines) are T0 and appear only with
-    ``raw`` (LIMITLESS_RAW_IN_PROMPT). No runs.jsonl or no run in the window is value None with a reason
-    (unknown, not zero); fewer than a week of runs that name their stale inputs is the label "unknown" with a
-    reason. Inputs in config ``outage_ignore`` are left out. Reasons never echo a path. Nothing is written or sent.
+    ``raw`` (LIMITLESS_RAW_IN_PROMPT). No runs.jsonl, no run in the window, or fewer than a week of runs that
+    name their stale inputs is value None with a reason and the label "unknown" (unknown, not zero). Inputs in
+    config ``outage_ignore`` are left out. Reasons never echo a path. Nothing is written or sent.
     """
     unknown = {"label": _uptime.UNKNOWN, "tier": "T1", "modality": _uptime.MODALITY}
     a, rows = _uptime_read(reader, now, env, home, tz)
     reason = (_uptime.NO_LOG_REASON if a is None
-              else _uptime.NO_ROWS_REASON if not any(d["runs"] for d in a["days"]) else None)
+              else _uptime.NO_ROWS_REASON if not any(d["runs"] for d in a["days"])
+              else _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None)
     if reason:
         out = envelope(None, _uptime.MODALITY, None, reason=reason)
         out["label"] = unknown
@@ -1410,6 +1411,4 @@ def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Map
         value.update({k: a[k] for k in UPTIME_RAW_KEYS})
     out = envelope(value, _uptime.MODALITY, (now - max(ats)) / 3600 if ats else None)
     out["label"] = a["label"]
-    if a["label"]["label"] == _uptime.UNKNOWN:
-        out["reason"] = _uptime.FEW_KNOWN_REASON
     return out

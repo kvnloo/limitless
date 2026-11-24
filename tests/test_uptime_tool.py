@@ -99,8 +99,9 @@ class Tool(unittest.TestCase):
 
     def test_old_rows_without_inputs_are_unknown_with_a_reason(self):
         write(self.st, [run(NOW - 2 * H - n * D) for n in range(28)] + month()[:6])
-        res = self.call()
-        self.assertEqual(res["value"], {"label": "unknown"})
+        res = self.call(raw=True)
+        self.assertIsNone(res["value"])
+        self.assertEqual(res["evidence_tier"], "none")
         self.assertEqual(res["label"]["label"], "unknown")
         self.assertEqual(res["reason"], ua.FEW_KNOWN_REASON)
         self.assertEqual(doctor.classify(NAME, res)[0], doctor.MISSING)

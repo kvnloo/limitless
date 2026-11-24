@@ -140,6 +140,14 @@ class Cli(unittest.TestCase):
         got = json.loads(self.run_cli(self.env(), "--json").stdout)
         self.assertEqual(got, {"label": "unknown", "reason": ua.NO_LOG_REASON})
 
+    def test_too_few_known_days_is_unknown_but_json_keeps_the_counts(self):
+        write(self.st, time.time(), lambda n: [], inputs=False, lag=0)
+        r = self.run_cli(self.env())
+        self.assertEqual(r.stdout, f"unknown: {ua.FEW_KNOWN_REASON}\n")
+        got = json.loads(self.run_cli(self.env(), "--json").stdout)
+        self.assertEqual((got["label"], got["reason"], got["known_days"]), ("unknown", ua.FEW_KNOWN_REASON, 0))
+        self.assertEqual(got["inputs"]["whoop"], {"fresh": 0, "stale": 0, "unknown": 28})
+
     def test_writes_nothing(self):
         write(self.st, time.time(), lambda n: [], lag=0)
         before = {p.name: p.read_bytes() for p in self.st.iterdir()}

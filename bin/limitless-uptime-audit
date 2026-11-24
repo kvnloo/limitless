@@ -26,10 +26,14 @@ def main(argv):
                                  description="Read-only: input uptime per day from the sync's runs.jsonl.")
     ap.add_argument("--json", action="store_true", help="print the counts as JSON")
     a = ap.parse_args(argv[1:])
-    res = tools.uptime(StateReader(state_dir()), time.time(), raw=True)
+    reader, now = StateReader(state_dir()), time.time()
+    res = tools.uptime(reader, now)
     words, reason = res["label"]["label"], res.get("reason")
     if a.json:
-        out = dict(res["value"] or {"label": words})
+        got = tools.uptime_audit(reader, now)
+        out = {"label": words}
+        if got is not None:
+            out.update({k: got[k] for k in tools.UPTIME_RAW_KEYS})
         if reason:
             out["reason"] = reason
         print(json.dumps(out, indent=1, sort_keys=True))
