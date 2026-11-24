@@ -96,6 +96,16 @@ class Wiring(unittest.TestCase):
         self.assertEqual(self.row()["reason"], f"{FRESH}; {MET}")
         self.assertEqual(self.measured_line(), [f"Measured: loop uptime: {FRESH}; {MET}"])
 
+    def test_the_gap_times_only_with_the_raw_opt_in(self):
+        write(self.st, NOW, last_ago=5 * H, hole=(3 * D, 3 * D - 8 * H))
+        reader = StateReader(self.st)
+        plain = tools.uptime(reader, NOW, env=dict(os.environ), home=self.dir, tz=UTC)["value"]
+        self.assertNotIn("loop", plain)
+        loop = tools.uptime(reader, NOW, raw=True, env=dict(os.environ), home=self.dir, tz=UTC)["value"]["loop"]
+        self.assertEqual((loop["spacing_s"], loop["limit_s"], loop["open_s"]), (H, 3 * H, 5 * H))
+        self.assertEqual([g["s"] for g in loop["gaps"]], [8 * H])
+        self.assertEqual((loop["week_gaps"], loop["week_longest_s"]), (1, 8 * H))
+
     def test_too_few_rows_keep_the_unknown_reason(self):
         write(self.st, NOW, last_ago=2 * D, days=4)
         r = self.row()

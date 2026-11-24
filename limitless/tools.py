@@ -1431,7 +1431,7 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
 
 
 UPTIME_RAW_KEYS = ("days", "inputs", "window_days", "known_days", "all_fresh_days", "all_fresh_share", "target",
-                   "goal", "skipped")
+                   "goal", "skipped", "loop")
 
 
 def _uptime_read(reader: StateReader, now: float, env, home, tz, cfg: Optional[Mapping] = None) -> tuple:

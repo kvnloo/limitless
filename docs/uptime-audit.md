@@ -74,7 +74,7 @@ themselves, from the rows' own `"at"`:
 
 - Tool `limitless_uptime`, read-only: `{value: {label}, modality: "measured", age_h, evidence_tier}` with the T1
   label beside it, aged by the newest run in the window. The counts (fresh, stale and unknown days per input,
-  per-day rows, every-input-fresh days, the target, skipped lines) appear only with the raw opt-in
+  per-day rows, every-input-fresh days, the target, skipped lines, the loop gaps) appear only with the raw opt-in
   (`LIMITLESS_RAW_IN_PROMPT=1`). No `runs.jsonl`, no run in the window, or fewer than a week of runs that name
   their stale inputs is value `null` with a reason and the label `unknown`: unknown, not zero. Reasons never
   echo a path.
