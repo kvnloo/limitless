@@ -116,7 +116,9 @@ def _write_json(state_dir, name: str, obj: dict) -> None:
 
 def refused_at(state_dir) -> Optional[float]:
     """The mark's ``refused_at``: the epoch of the newest reply that was refused and not followed by an applied
-    one; None when there is none, no mark or a broken one. Never raises."""
+    one; None when there is none, no state dir, no mark or a broken one. Never raises."""
+    if state_dir is None:
+        return None
     try:
         data = json.loads((Path(state_dir) / MARK).read_text(encoding="utf-8"))
     except (OSError, ValueError):

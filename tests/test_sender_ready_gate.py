@@ -315,5 +315,13 @@ class Stage(unittest.TestCase):
         self.assertEqual(pr.REFUSED, REFUSED)
 
 
+class NoStateDir(unittest.TestCase):
+    """refused_at says it never raises, like push_sender.reply_at, which accepts a missing state dir."""
+
+    def test_refused_at_is_none_without_a_state_dir(self):
+        self.assertIsNone(ps.reply_at(None))
+        self.assertIsNone(sr.refused_at(None))
+
+
 if __name__ == "__main__":
     unittest.main()
