@@ -1320,7 +1320,7 @@ def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] =
     tool:limitless_schedule, never opted in); a digit there drops both and says why. The habit cards follow
     habit.json's cue; ``external_jobs`` marks jobs another sender owns; a configured idea ledger adds its card,
     config ``noop_export`` (dry_run or write) adds the NOOP export's, config ``apps_ingest`` the apps ingest's and
-    config ``ranked_ingest`` the ranked ingest's.
+    config ``ranked_ingest`` the ranked ingest's and config ``outage_recap`` the outage recap's.
     Modality derived, age_h None.
     Nothing is written, sent, scheduled or registered.
     """
@@ -1328,7 +1328,8 @@ def schedule(reader: StateReader, now: float, env: Optional[Mapping[str, str]] =
                                   ledger=reader.idea_ledger_path(env, home) is not None,
                                   noop=jobs.noop_mode(config(env, home)) != jobs.NOOP_OFF,
                                   apps=jobs.apps_mode(config(env, home)) != jobs.APPS_OFF,
-                                  ranked=jobs.ranked_mode(config(env, home)) != jobs.RANKED_OFF)
+                                  ranked=jobs.ranked_mode(config(env, home)) != jobs.RANKED_OFF,
+                                  recap=jobs.outage_recap_mode(config(env, home)) != jobs.OUTAGE_RECAP_OFF)
     lines = [c["description"] for c in cards]
     word = _schedule_cards.label(len(cards))
     out = {"value": {"cards": cards}, "modality": _schedule_cards.MODALITY, "age_h": None, "evidence_tier": "direct"}

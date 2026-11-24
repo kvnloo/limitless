@@ -21,7 +21,7 @@ its mark noop-export.json), just before both the sleep coverage row (sleep_cover
 the phone proxy: live when the wearable goal was met, stale when not, missing when unknown, off with no sleep
 file; words only) and, before that, the context packet's row (config context_packet_path: off, live
 when written within STALE_H, else stale; read from the packet's own generated_at), with the voice MIQ's row
-(config voice_miq, its mark voice-miq.json) just before it. Right after the tool rows comes the NOOP MCP row
+(config voice_miq, its mark voice-miq.json) and the outage recap job's row just before it. Right after the tool rows comes the NOOP MCP row
 (config noop_mcp and t0_tools; the server is never started), then the desktop ActivityWatch's row (config
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
@@ -31,7 +31,9 @@ brief's app-lists ask: off, waiting, told recently or not needed; words only), t
 then the ranked ledger's row (scorecard row ten's private ledger, config ranked_ledger: off, live with row ten's
 words, or broken as status missing; never an id or evidence text), then the ranked ingest job's row (config
 ranked_ingest, its status file ranked-ingest.json: off, live with the mode and the last result in words, stale,
-or broken as status missing).
+or broken as status missing). The outage recap job's row (config outage_recap, from kevin-push's log, config
+push_log, and its mark outage-recap.json: off, waiting, told or nothing to recap; missing with no push log) comes
+right after the voice MIQ's.
 Reasons are words only: a digit is never printed, and neither is a tool's value.
 Nothing here writes, sends, pushes or starts a job.
 """
@@ -477,6 +479,32 @@ def voice_miq_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     return _row(VOICE_MIQ_ROW, "job", LIVE, f"{_VOICE_MODE_WORDS[mode]}: {said}")
 
 
+OUTAGE_RECAP_ROW = "job outage recap"
+_RECAP_MODE_WORDS = {"dry_run": "dry run mode (nothing sent)", "write": "write mode"}
+
+
+def outage_recap_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
+    """The outage recap (outage_recap_job, config ``outage_recap``) from kevin-push's log (config ``push_log``) and
+    its mark outage-recap.json: off by config; missing with no push log set; else live, saying "outage recap:
+    waiting" (pushes are still failing, or they came back and the next pass sends the recap), "told" (the last
+    outage was recapped, with when in words) or "nothing to recap", then the mode. Never sends, never runs
+    hermes. Words only."""
+    from . import outage_recap_job as job   # outage_recap_job -> jobs_runner -> card
+    head = "outage recap: "
+    st, at = job.state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now)
+    if st == job.S_OFF:
+        return _row(OUTAGE_RECAP_ROW, "job", OFF, f"{head}off (config {job.CONFIG_KEY})")
+    if st == job.S_NO_LOG:
+        return _row(OUTAGE_RECAP_ROW, "job", MISSING, f"{head}on, but {job.NO_LOG_REASON}")
+    said = {job.S_OPEN: "waiting: pushes are still failing",
+            job.S_WAITING: "waiting: pushes came back after an outage; the next pass sends the recap",
+            job.S_NOTHING: "nothing to recap"}.get(st)
+    if st == job.S_TOLD:
+        said = "told: the last outage was recapped" + \
+            ("" if at is None else f" {age_words(max(0.0, now - at) / 3600)}")
+    return _row(OUTAGE_RECAP_ROW, "job", LIVE, f"{head}{said}; {_RECAP_MODE_WORDS[job.mode(cfg)]}")
+
+
 PACKET_ROW = "export context packet"
 
 
@@ -743,7 +771,7 @@ def report(cfg: Mapping, now: float) -> list:
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
     then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the voice
-    MIQ's row (voice_miq_row) just before the context
+    MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
     packet's, and the sleep coverage audit
     (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
     the sleep file.
@@ -762,7 +790,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
-             voice_miq_row(reader, cfg, now)]
+             voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
              noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
