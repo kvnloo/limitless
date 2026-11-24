@@ -79,7 +79,7 @@ names an item ([ranked-ledger.md](ranked-ledger.md#as-an-event-job)).
 
 When config `outage_recap` is `dry_run` or `write`, `cards(recap=True)` adds one more card last:
 `schedule_cards.outage_recap_card()`, id `outage_recap`, on the `push_back` event ("when a push reaches you
-again after pushes failed"), ending when pushes next come back after an outage, sender `plugin`, budget the
+again after pushes stopped getting through"), ending when pushes next come back after an outage, sender `plugin`, budget the
 send gate's daily cap, once-key `outage_recap:<first failed push time>`, answers OK or More. It is not a
 `jobs.SPECS` job: no decision window holds it (the delivery that wakes it shows the person can be reached), but
 it goes through kevin-push's send gate like every push ([outage-recap.md](outage-recap.md)).

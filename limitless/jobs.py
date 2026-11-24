@@ -564,7 +564,7 @@ _SPEAKS = {"wake": "when you wake up", "sleep_mode_on": "when Sleep mode goes on
            "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends",
            "long_block": "when a focus block runs long",
            "noop_copy": "after a sync that copied the NOOP database", "sync": "after each sync run",
-           "push_back": "when a push reaches you again after pushes failed"}
+           "push_back": "when a push reaches you again after pushes stopped getting through"}
 _IN_WINDOW = {"peak": "in a peak window, at most one decision per window",
               "trough": "in a low-energy window, for a review or an easy read",
               "wind_down": "once your wind-down has started", "anytime": "any time you are awake"}

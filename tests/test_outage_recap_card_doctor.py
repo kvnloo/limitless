@@ -39,7 +39,7 @@ class Card(unittest.TestCase):
         self.assertEqual((c["sender"], c["budget"], c["per_window"]), (schedule_cards.PLUGIN, send_gate.DAILY_CAP, 1))
         self.assertEqual(c["once_key"], "outage_recap:<first failed push time>")
         self.assertEqual(c["name"], "Pushes are back")
-        self.assertIn("when a push reaches you again after pushes failed", c["description"])
+        self.assertIn("when a push reaches you again after pushes stopped getting through", c["description"])
         self.assertIn("OK or More in one tap", c["words"]["answers"])
         self.assertIsNone(CLOCK.search(json.dumps(c)))
         self.assertIsNone(re.search(r"\d", c["description"]))
