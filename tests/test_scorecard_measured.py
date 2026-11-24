@@ -252,7 +252,8 @@ class Block(Fixture):
         self.runs()
         self.pushes()
         rows = sc.parse(table(uptime="red", delivery="amber"))
-        self.assertIn("- Loop uptime: red", sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.first_two())))
+        self.assertIn("- Loop uptime: red",
+                      sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.first_two())))
 
     def test_without_measured_lines_the_block_is_unchanged(self):
         summary = sc.summary(sc.parse(table()))

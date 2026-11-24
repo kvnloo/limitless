@@ -331,7 +331,8 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
     Row one is the uptime audit of the state dir's runs.jsonl, row two the delivery audit of kevin-push's log
     (config ``push_log``), row three the habit loop (the stop rule's loop rows in predictions.jsonl and the habit
     files), row four the evidence loop (the locks and receipts in predictions.jsonl) and row seven privacy
-    (tier_audit.check over the audit log for the last seven days). ``label`` is the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is
+    (tier_audit.check over the audit log for the last seven days). ``label`` is the audit's own T1 words (no
+    digit) or ``unknown: <why>``; ``goal`` is
     met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
     nothing is written or sent, and no hand status is changed.
     """
