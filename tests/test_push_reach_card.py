@@ -27,6 +27,7 @@ PROFILE = "sender-a"
 SENDER_MISSING = "Phone pushes are not reaching you: the sender profile is missing"
 SEND_FAILING = "Phone pushes are not reaching you: the last pushes failed to send"
 PREFIX = "Phone pushes are not reaching you"
+GENERIC = ". Reply with a profile that has a Telegram bot."   # push_reach.hint: an open outage, no ready profile
 DAY = TODAY - timedelta(days=3)   # well inside the seven-day window in any local zone
 
 
@@ -87,13 +88,13 @@ class Build(Base):
     def test_failed_last_pushes_are_their_own_line(self):
         self.sender()
         write_log(self.log, FAILING_LAST)
-        self.assertIn(SEND_FAILING, self.build()["lines"])
+        self.assertIn(SEND_FAILING + GENERIC, self.build()["lines"])
 
     def test_the_broken_sender_wins(self):
         write_log(self.log, FAILING_LAST)
         lines = self.build()["lines"]
-        self.assertIn(SENDER_MISSING, lines)
-        self.assertEqual([ln for ln in lines if ln.startswith(PREFIX)], [SENDER_MISSING])
+        self.assertIn(SENDER_MISSING + GENERIC, lines)
+        self.assertEqual([ln for ln in lines if ln.startswith(PREFIX)], [SENDER_MISSING + GENERIC])
 
     def test_a_set_sender_and_a_delivered_last_push_say_nothing(self):
         self.sender()
@@ -181,7 +182,7 @@ class Hook(Base):
 
         with mock.patch.object(tier_audit, "gate", side_effect=spy):
             out = self.hook()(user_message="hi")
-        self.assertIn(SENDER_MISSING, out["context"].splitlines())
+        self.assertIn(SENDER_MISSING + GENERIC, out["context"].splitlines())
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0][0], "pre_llm_call")
         self.assertIn(SENDER_MISSING, seen[0][1])

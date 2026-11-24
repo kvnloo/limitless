@@ -1,9 +1,10 @@
 """The synthetic push-reach example in docs/push-reach.md: python3 -I scripts/push_reach_example.py
 
 A made-up state dir (a copy of the synthetic fixture state, tests/fixtures/state), a made-up Hermes home and a
-made-up kevin-push log, all in a temporary dir, at the fixture clock in UTC. Three cases: the sender profile is
-missing, the sender is set but the last pushes failed to send, and the sender is set with the last push
-delivered. For each it prints the real pre_llm_call card (card.make_pre_llm_call, through tier_audit.gate),
+made-up kevin-push log, all in a temporary dir, at the fixture clock in UTC. Four cases: the sender profile is
+missing, the sender is set but the last pushes failed to send (no profile has a bot, then one made-up profile
+``helper`` with a made-up token and chat key, so the card names the reply), and the sender is set with the last
+push delivered. For each it prints the real pre_llm_call card (card.make_pre_llm_call, through tier_audit.gate),
 limitless_status's ``delivery`` (tools.status_with_delivery) and the context packet's ``delivery`` row. Reads no
 real state, never runs hermes, writes nothing outside the temporary dir, sends nothing.
 """
@@ -40,15 +41,17 @@ def log_row(hour, how="telegram"):
 
 CASES = (
     ("the sender profile is not in the Hermes home; the last push was delivered", False,
-     [log_row(10, RC1), log_row(11, RC1), log_row(12)]),
+     [log_row(10, RC1), log_row(11, RC1), log_row(12)], False),
     ("the sender profile is there; the last two pushes logged telegram rc=1", True,
-     [log_row(10), log_row(11, RC1), log_row(12, RC1)]),
+     [log_row(10), log_row(11, RC1), log_row(12, RC1)], False),
+    ("the same, and profile helper has a Telegram bot token and chat", True,
+     [log_row(10), log_row(11, RC1), log_row(12, RC1)], True),
     ("the sender profile is there; the last push was delivered", True,
-     [log_row(10, RC1), log_row(11, RC1), log_row(12)]),
+     [log_row(10, RC1), log_row(11, RC1), log_row(12)], False),
 )
 
 with tempfile.TemporaryDirectory() as tmp:
-    for n, (what, sender, rows) in enumerate(CASES):
+    for n, (what, sender, rows, helper) in enumerate(CASES):
         root = Path(tmp) / f"case{n}"
         st = root / "state"
         st.mkdir(parents=True)
@@ -58,8 +61,12 @@ with tempfile.TemporaryDirectory() as tmp:
         (hermes / "profiles" / "other").mkdir(parents=True)
         if sender:
             (hermes / "profiles" / PROFILE).mkdir()
+        if helper:
+            (hermes / "profiles" / "helper").mkdir()
+            (hermes / "profiles" / "helper" / ".env").write_text(
+                "TELEGRAM_BOT_TOKEN=made-up-token\nTELEGRAM_HOME_CHANNEL=made-up-chat\n")
         (st / "push-log.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-        cfg = {"push_profile": PROFILE, "push_log": "push-log.jsonl"}
+        cfg = {"push_profile": PROFILE, "push_to": "telegram", "push_log": "push-log.jsonl"}
         (root / "config.json").write_text(json.dumps(cfg))
         env = {"HOME": str(root), "HERMES_HOME": str(hermes), "LIMITLESS_STATE": str(st),
                "LIMITLESS_CONFIG": str(root / "config.json")}
