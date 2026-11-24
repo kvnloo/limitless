@@ -159,7 +159,8 @@ class Write(Base):
             r = self.row(self.once())
             self.assertNoNames(self.mark.read_text())
             self.assertNoNames(json.dumps(r))
-            self.assertEqual(set(self.load_mark()), {"row_at", "ran_at", "mode", "action"})
+            wrote = {"wrote_at", "wrote"} if mode == "write" else set()     # which lists, in words
+            self.assertEqual(set(self.load_mark()), {"row_at", "ran_at", "mode", "action"} | wrote)
 
 
 class Due(Base):

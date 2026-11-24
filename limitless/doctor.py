@@ -156,12 +156,14 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
 APPS_INGEST_ROW = "job apps ingest"
 _APPS_DID = {"nothing": "no new apps reply", "would write": "would write the app lists",
              "write": "wrote the app lists"}
+APPS_TOLD, APPS_NOT_TOLD = "told in a brief", "not told yet"   # the last write, after it (apps-set.json)
 
 
 def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
     """The apps ingest job (jobs.APPS_INGEST, config ``apps_ingest``) from runs.jsonl and its mark apps-ingest.json:
     off by config; stale with no Hermes DB set, before any sync run, or while the newest sync is one it has not run
-    after; else live, with what the last run did in words. Never an app name or reply text; read-only."""
+    after; else live, with what the last run did in words and, once any run wrote the lists, whether that write was
+    "told in a brief" or "not told yet" (jobs_runner.apps_set_told). Never an app name or reply text; read-only."""
     from . import habit_replies, jobs, jobs_runner
     mode = jobs.apps_mode(cfg)
     if mode == jobs.APPS_OFF:
@@ -179,8 +181,10 @@ def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional
         return _row(APPS_INGEST_ROW, "job", STALE, f"{on}, but it has not run yet: {v.reason}")
     ago = age_words(max(0.0, now - mark["ran_at"]) / 3600)
     did = _APPS_DID.get(mark.get("action"), "unknown")
+    told = jobs_runner.apps_set_told(reader.path)
+    said = "" if told is None else f"; {APPS_TOLD if told else APPS_NOT_TOLD}"
     return _row(APPS_INGEST_ROW, "job", LIVE,
-                f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}")
+                f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}{said}")
 
 
 NOOP_MCP_ROW = "NOOP MCP"

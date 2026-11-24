@@ -71,6 +71,14 @@ The row reads config, `apps.json` and `apps-ask.json` only, never app time.
 Nothing here sends, pushes, writes config or starts anything; the brief's sender never sends a second message.
 Stdlib only, Python 3.9+.
 
+## After the reply
+
+Once the apps ingest job writes the lists from the reply, the next delivered brief says so once with one line,
+"Work and feed app lists set from your reply." (`jobs_runner.brief_apps_set`; told only after a real delivery,
+the same rule as this ask; see [apps-ingest.md](apps-ingest.md#told-once-in-the-wake-brief)). The two are
+never in the same brief: while a list is set this ask is empty, and a brief that carries the line leaves the ask
+out. The line never names an app.
+
 ## Synthetic run
 
 `python3 -I scripts/apps_ask_example.py`: a made-up week of phone app time (well-known public app ids only)

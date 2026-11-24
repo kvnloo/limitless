@@ -112,7 +112,10 @@ export job's pattern ([noop-export.md](noop-export.md#as-an-event-job)).
   "skipped: no Hermes DB set (config hermes_db)", and nothing is read or written.
 - **The mark `apps-ingest.json`** (in the state dir, atomic, 0600): `row_at` (epoch seconds of the `runs.jsonl`
   row it acted on), `ran_at` (epoch seconds of the run), `mode` and `action`, one of `nothing`, `would write` or
-  `write`. Never an app name, never reply text, no digit outside the two epoch values.
+  `write`. A run that writes also records `wrote_at` (epoch seconds of that run) and `wrote`, the words of the
+  lists it set (`work`, `feed`); a later run that writes nothing keeps both, so the next wake brief can still
+  tell that write once ([below](#told-once-in-the-wake-brief)). Never an app name, never reply text, no digit
+  outside the epoch values.
 - **The T1 line.** When a run writes the app lists, its row carries one plain line, "app lists set from your
   reply" (`jobs.APPS_LINE`), and `jobs_runner.apps_ingest_label(state_dir)` returns it as a T1 label until the
   next run, so a later wake brief may show it. The job itself never sends: no push, no decision window, quiet or
@@ -123,7 +126,8 @@ export job's pattern ([noop-export.md](noop-export.md#as-an-event-job)).
 - **Doctor.** One `job apps ingest` row, right after the `apps lists` row: `off` by config; `stale` with no Hermes
   DB set, before any sync run, or while the newest sync is one it has not run after; else `live`, with the mode,
   the run's age and what it did in words ("wrote the app lists", "would write the app lists", "no new apps
-  reply"). Never an app name, never a digit. `--strict` never counts this row.
+  reply"), then, once any run wrote the lists, whether that write was "told in a brief" or "not told yet"
+  ([below](#told-once-in-the-wake-brief)). Never an app name, never a digit. `--strict` never counts this row.
 
 ### Synthetic example
 
@@ -165,13 +169,87 @@ $ limitless-jobs --send   (the apps ingest's line)
 Apps ingest: run: a sync ran; no new apps reply: the app lists stay as they are
 
 apps-ingest.json (mode 0o600):
-{"action": "nothing", "mode": "write", "ran_at": 1893916860.0, "row_at": 1893916800.0}
+{"action": "nothing", "mode": "write", "ran_at": 1893916860.0, "row_at": 1893916800.0, "wrote": ["work", "feed"], "wrote_at": 1893913260.0}
 apps.json mode 0o600, lists: work_apps, feed_apps
 
 $ limitless-doctor   (the job row)
-job apps ingest: live: write mode: ran under an hour ago after a sync: no new apps reply
+job apps ingest: live: write mode: ran under an hour ago after a sync: no new apps reply; not told yet
 
 schedule card:
 Schedule "Apps ingest" (after each sync run, at most once; asleep or awake: it sends nothing, so no window holds it): ends at the next sync run; nothing is sent; it reads your work apps or feed apps reply and, in write mode, sets the app lists from it
 files in the state dir: apps-ingest.json, apps.json, hermes.db, runs.jsonl
+```
+
+## Told once in the wake brief
+
+The person sent the pre-filled reply from the wake brief ([apps-ask.md](apps-ask.md)); the next delivered brief
+says once that it worked, as one plain line:
+
+```
+Work and feed app lists set from your reply.
+```
+
+("Work app list set from your reply." or "Feed app list set from your reply." when the reply named one list.)
+It is the input-outage line's told-once rule ([outage.md](outage.md)):
+
+- **Built read-only.** `jobs_runner.brief_apps_set(state_dir, now)` gives the line while the last write in
+  `apps-ingest.json` (its `wrote_at`) is not the one in `apps-set.json`, through the tier audit gate (hook
+  `brief:apps_set`); `brief_post.finalize` puts it after the outage line, before the apps ask. Building it marks
+  nothing, so `bin/limitless-brief build` only previews.
+- **Told only after a real delivery.** `bin/limitless-brief send` calls `jobs_runner.brief_apps_set_told` only
+  when the delivery reached Telegram (rc == 0). It writes `apps-set.json`, `{"told": <the write's wrote_at>,
+  "told_at": <epoch seconds>}`, atomically (a temp file in the state dir, mode 0600, then a rename): epochs only.
+  A failed delivery writes nothing, so the next brief says it. The same write is told never twice; a later reply
+  that the ingest writes has a new `wrote_at`, so it is told again. A later run with no new reply keeps
+  `wrote_at` in `apps-ingest.json`, so a sync between the write and the brief does not lose it.
+- **Write mode only.** With config `apps_ingest` `off` or `dry_run` there is no line and no mark: a dry run
+  never tells, and a dry run of `limitless-jobs` writes nothing to tell.
+- **Words only.** The line names which lists were set, never an app name, never a count, no digit. The gate
+  would block a digit; the audit row is counts and a hash.
+- **Short messages.** The line has the word reply, so kevin-push's shape ([message-shape.md](message-shape.md))
+  keeps it as the brief's closing line when it folds a long brief.
+- **Never with the ask.** While a list is set the apps ask is empty; a brief that carries this line leaves the
+  ask out in any case (a reply that cleared both lists is asked again in the next brief).
+- **Doctor.** The `job apps ingest` row ends with "told in a brief" or "not told yet" after a write.
+
+It rides in the brief: no push of its own, no job, nothing restarted, nothing sent by the plugin itself.
+
+### Synthetic example
+
+`python3 -I scripts/apps_set_example.py` (a made-up session DB and made-up `runs.jsonl` rows in a temp dir; real
+output):
+
+```text
+# config {"hermes_db": "hermes.db", "apps_ingest": "write"}
+# the person replied (a made-up reply in the session DB)
+$ limitless-jobs --send   (after a sync)
+Apps ingest: run: a sync ran; wrote the app lists
+brief line: Work and feed app lists set from your reply.
+job apps ingest: live: write mode: ran under an hour ago after a sync: wrote the app lists; not told yet
+# the delivery failed: nothing is marked, the next brief says it
+brief line: Work and feed app lists set from your reply.
+# the brief went out (a real delivery): the sender marks it told
+apps-set.json (mode 0o600): {"told": 1893909660.0, "told_at": 1893916800.0}
+brief line: (no apps-set line)
+job apps ingest: live: write mode: ran about two hours ago after a sync: wrote the app lists; told in a brief
+# the next sync, with no new reply
+$ limitless-jobs --send   (after a sync)
+Apps ingest: run: a sync ran; no new apps reply: the app lists stay as they are
+brief line: (no apps-set line)
+# a later reply sets the feed list again
+# the person replied (a made-up reply in the session DB)
+$ limitless-jobs --send   (after a sync)
+Apps ingest: run: a sync ran; wrote the app lists
+brief line: Feed app list set from your reply.
+job apps ingest: live: write mode: ran under an hour ago after a sync: wrote the app lists; not told yet
+# the brief went out (a real delivery): the sender marks it told
+apps-set.json (mode 0o600): {"told": 1893934860.0, "told_at": 1893938400.0}
+brief line: (no apps-set line)
+# a dry run never tells
+# config {"hermes_db": "hermes.db", "apps_ingest": "dry_run"}
+# the person replied (a made-up reply in the session DB)
+$ limitless-jobs --send   (after a sync)
+Apps ingest: run: a sync ran; would write the app lists (config apps_ingest "write" writes them)
+brief line: (no apps-set line)
+the tier audit rows: hook=brief:apps_set digits=0 blocked=False (3 rows, counts and a hash)
 ```
