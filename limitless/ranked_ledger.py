@@ -75,6 +75,12 @@ def newest(path) -> dict:
     return scorecard._ledger_rows(read(path) or "")
 
 
+def skipped_lines(text: str) -> int:
+    """How many non-blank lines are not a valid row (scorecard._ledger_rows skips them: torn or another shape)."""
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    return sum(1 for ln in lines if not scorecard._ledger_rows(ln))
+
+
 def owner_dropped(row) -> bool:
     return isinstance(row, Mapping) and row.get("status") == DROPPED and row.get("by") == scorecard.OWNER
 
