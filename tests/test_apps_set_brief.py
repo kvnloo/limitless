@@ -246,7 +246,9 @@ class Cli(unittest.TestCase):
         self.cfg.parent.mkdir(parents=True)
         self.config("write")
         from test_apps_ask_brief import aw_rows      # app candidates, so the ask would show while no list is set
-        aw_rows(self.st, time.time())
+        # a day further back: rows span ~4 h from two days before the given time, so late in the evening they
+        # would reach yesterday and add the brief's "Yesterday's work" line (a clock-dependent failure)
+        aw_rows(self.st, time.time() - 24 * H)
         self.wrote_at = time.time() - H
         self.write(self.wrote_at, ["work", "feed"], {"work_apps": ["editor", "terminal"], "feed_apps": ["scrollerapp"]})
         self.audit = self.home / "audit.jsonl"
