@@ -107,6 +107,18 @@ class OneSource(unittest.TestCase):
         self.assertEqual(after["window"], "any time you are awake")
         self.assertNotEqual(before, after)
 
+    def test_card_stale_line_is_the_public_span_words(self):
+        for spec in ALL:
+            cron = jobs.to_cron_fields(spec)
+            if "stale_after_s" in cron:
+                self.assertEqual(jobs.to_schedule_card(spec)["stale"],
+                                 f"dropped if more than {jobs.span_words(cron['stale_after_s'])} late", spec.name)
+
+    def test_span_words_says_exact_spans(self):
+        w = jobs.span_words
+        self.assertEqual([w(3600), w(5400), w(86400), w(36 * 3600), w(2 * 86400)],
+                         ["an hour", "ninety minutes", "a day", "thirty-six hours", "two days"])
+
     def test_card_follows_to_cron_fields(self):
         with mock.patch.object(jobs, "to_cron_fields", return_value={"window_class": "trough",
                                                                       "stale_after_s": 1200}):

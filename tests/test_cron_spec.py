@@ -159,12 +159,20 @@ class PlanWords(unittest.TestCase):
     def test_stale_words(self):
         w = cron_spec.stale_words
         self.assertEqual(w(None), "never stale")
-        self.assertEqual(w(3600), "stale after one hour")
+        self.assertEqual(w(3600), "stale after an hour")
         self.assertEqual(w(3 * 3600), "stale after three hours")
         self.assertEqual(w(12 * 3600), "stale after twelve hours")
-        self.assertEqual(w(1800), "stale after under an hour")
-        self.assertEqual(w(5400), "stale after about one hour")   # rounded down, said as about
-        self.assertEqual(w(3 * 86400), "stale after over a day")
+        self.assertEqual(w(1800), "stale after thirty minutes")
+        self.assertEqual(w(5400), "stale after ninety minutes")    # said exactly, never "about"
+        self.assertEqual(w(86400), "stale after a day")
+        self.assertEqual(w(36 * 3600), "stale after thirty-six hours")
+        self.assertEqual(w(3 * 86400), "stale after three days")   # past a day: exact, never "over a day"
+        self.assertEqual(w(3661.5), "stale after three thousand six hundred sixty-two seconds")  # up, as the gate
+
+    def test_stale_words_is_the_shared_span(self):
+        for s in (1, 90, 1800, 3600, 5400, 86400, 36 * 3600, 3 * 86400, 100000):
+            with self.subTest(seconds=s):
+                self.assertEqual(cron_spec.stale_words(s), f"stale after {jobs.span_words(s)}")
 
     def test_plan_lines_have_no_digits_and_name_every_job(self):
         lines = cron_spec.plan_lines()
@@ -175,6 +183,40 @@ class PlanWords(unittest.TestCase):
         text = "\n".join(lines)
         self.assertIn("limitless-miq (MIQ for tonight?): window wind down, stale after three hours", text)
         self.assertIn("limitless-noop_export (NOOP export): skipped, sends nothing", text)
+
+
+class CardAndPlanSayTheSameSpan(unittest.TestCase):
+    """The schedule card and limitless-cron-spec say a job's expiry through one helper, jobs.span_words."""
+
+    CARD = re.compile(r"dropped if more than (.+) late")
+    PLAN = re.compile(r".*, stale after (.+)")
+
+    def test_every_job_with_an_expiry_says_the_same_span_on_card_and_plan(self):
+        checked = 0
+        for spec in cron_spec.all_specs():
+            cron = jobs.to_cron_fields(spec)
+            if "stale_after_s" not in cron or not cron_spec.job_spec(spec):
+                continue
+            with self.subTest(job=spec.name):
+                card = self.CARD.fullmatch(jobs.to_schedule_card(spec)["stale"])
+                plan = self.PLAN.fullmatch(cron_spec.plan_line(spec))
+                self.assertIsNotNone(card)
+                self.assertIsNotNone(plan, cron_spec.plan_line(spec))
+                self.assertEqual(card.group(1), plan.group(1))
+                self.assertFalse(re.search(r"\d", card.group(0)), card.group(0))
+                self.assertFalse(re.search(r"\d", plan.group(0)), plan.group(0))
+                checked += 1
+        self.assertGreaterEqual(checked, 8)
+
+    def test_the_nap_job_says_an_hour_on_both(self):
+        self.assertEqual(jobs.to_schedule_card(jobs.NAP)["stale"], "dropped if more than an hour late")
+        line = cron_spec.plan_line(jobs.NAP)
+        self.assertTrue(line.endswith(", stale after an hour"), line)
+
+    def test_cron_spec_keeps_no_number_table_of_its_own(self):
+        own = [k for k, v in vars(cron_spec).items()
+               if isinstance(v, (list, tuple)) and v and all(isinstance(x, str) for x in v) and "twelve" in v]
+        self.assertEqual(own, [])
 
 
 class Cli(unittest.TestCase):

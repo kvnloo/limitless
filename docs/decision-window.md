@@ -162,9 +162,9 @@ The event that ends a job (`expires`, e.g. Sleep mode going on) has no cron fiel
 ## Creating the jobs on a patched host
 
 `bin/limitless-cron-spec` prints the Hermes cron job each plugin job would be: one line per job in words (host
-job name, title, the window it waits for, how long until a held occurrence is stale), or with `--json` the
-payloads. It is a dry run: it never calls Hermes, creates no job and sends nothing, and without `--scripts` it
-writes no file.
+job name, title, the window it waits for, how long until a held occurrence is stale: "stale after an hour", the
+same span words as the card's `stale` line, both from `jobs.span_words`), or with `--json` the payloads. It is a
+dry run: it never calls Hermes, creates no job and sends nothing, and without `--scripts` it writes no file.
 
 On the fork branch (`up/cron-decision-window-gate-r2`) the two fields can only be set through the Python job
 API or a job record in `cron/jobs.json`. `hermes cron create` has no `--window-class` or `--stale-after-s`
