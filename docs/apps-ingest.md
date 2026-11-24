@@ -112,7 +112,10 @@ export job's pattern ([noop-export.md](noop-export.md#as-an-event-job)).
   "skipped: no Hermes DB set (config hermes_db)", and nothing is read or written.
 - **The mark `apps-ingest.json`** (in the state dir, atomic, 0600): `row_at` (epoch seconds of the `runs.jsonl`
   row it acted on), `ran_at` (epoch seconds of the run), `mode` and `action`, one of `nothing`, `would write` or
-  `write`. Never an app name, never reply text, no digit outside the two epoch values.
+  `write`. A run that writes also records `wrote_at` (epoch seconds of that run) and `wrote`, the words of the
+  lists it set (`work`, `feed`); a later run that writes nothing keeps both, so the next wake brief can still
+  tell that write once ([below](#told-once-in-the-wake-brief)). Never an app name, never reply text, no digit
+  outside the epoch values.
 - **The T1 line.** When a run writes the app lists, its row carries one plain line, "app lists set from your
   reply" (`jobs.APPS_LINE`), and `jobs_runner.apps_ingest_label(state_dir)` returns it as a T1 label until the
   next run, so a later wake brief may show it. The job itself never sends: no push, no decision window, quiet or
@@ -165,7 +168,7 @@ $ limitless-jobs --send   (the apps ingest's line)
 Apps ingest: run: a sync ran; no new apps reply: the app lists stay as they are
 
 apps-ingest.json (mode 0o600):
-{"action": "nothing", "mode": "write", "ran_at": 1893916860.0, "row_at": 1893916800.0}
+{"action": "nothing", "mode": "write", "ran_at": 1893916860.0, "row_at": 1893916800.0, "wrote": ["work", "feed"], "wrote_at": 1893913260.0}
 apps.json mode 0o600, lists: work_apps, feed_apps
 
 $ limitless-doctor   (the job row)

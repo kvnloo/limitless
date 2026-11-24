@@ -911,18 +911,27 @@ APPS_MARK = "apps-ingest.json"
 APPS_ACTIONS = (_apps_reply.NOTHING, _apps_reply.WOULD_WRITE, _apps_reply.WRITE)
 
 
+APPS_LIST_WORDS = ("work", "feed")     # apps-ingest.json's ``wrote``: which lists the last write set, in words
+_APPS_LIST_OF = {"work apps": "work", "feed apps": "feed"}   # apps_reply row words -> APPS_LIST_WORDS
+
+
 def load_apps_mark(state_dir) -> dict:
-    """apps-ingest.json as ``{"row_at", "ran_at", "mode", "action"}``; {} when missing or malformed. ``row_at`` and
-    ``ran_at`` are epoch seconds or None; ``action`` is one of APPS_ACTIONS or None."""
+    """apps-ingest.json as ``{"row_at", "ran_at", "mode", "action", "wrote_at", "wrote"}``; {} when missing or
+    malformed. ``row_at``, ``ran_at`` and ``wrote_at`` (the ``ran_at`` of the last run that wrote the app lists,
+    kept by later runs) are epoch seconds or None; ``action`` is one of APPS_ACTIONS or None; ``wrote`` is the
+    words of the lists that write set (APPS_LIST_WORDS order), () when unknown."""
     try:
         data = json.loads((Path(state_dir) / APPS_MARK).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     if not isinstance(data, dict):
         return {}
+    wrote = data.get("wrote") if isinstance(data.get("wrote"), list) else []
     return {"row_at": _epoch(data.get("row_at")), "ran_at": _epoch(data.get("ran_at")),
             "mode": data.get("mode") if data.get("mode") in jobs.APPS_MODES else None,
-            "action": data.get("action") if data.get("action") in APPS_ACTIONS else None}
+            "action": data.get("action") if data.get("action") in APPS_ACTIONS else None,
+            "wrote_at": _epoch(data.get("wrote_at")),
+            "wrote": tuple(w for w in APPS_LIST_WORDS if w in wrote)}
 
 
 def _write_mark(state_dir, name: str, mark: dict) -> None:
@@ -948,12 +957,22 @@ def run_apps_ingest(state_dir, db, row_at: float, now: float, mode: str) -> dict
     """Read the person's replies after apps.json's ``since`` from the Hermes session DB ``db`` (read-only), run
     apps_reply.ingest (writing apps.json only in write mode) and record the run in apps-ingest.json: the runs.jsonl
     row it acted on (``row_at``), this run (``ran_at``), the mode and the action word (nothing, would write,
-    write). Never an app name or reply text. Returns the mark. Sends nothing."""
+    write). A write also records ``wrote_at`` (this run) and ``wrote``, the words of the lists it set ("work",
+    "feed"); a later run that writes nothing keeps them, so a wake brief can still tell that write once
+    (brief_apps_set). Never an app name or reply text. Returns the mark. Sends nothing."""
     replies = _habit_replies.replies_from_hermes_db(db, _apps_reply.read_after(state_dir, now))
     got = _apps_reply.ingest(state_dir, replies, now, dry_run=mode != jobs.APPS_WRITE)
     action = _apps_reply.NOTHING if got["apps"] is None else \
         _apps_reply.WRITE if mode == jobs.APPS_WRITE else _apps_reply.WOULD_WRITE
     mark = {"row_at": row_at, "ran_at": now, "mode": mode, "action": action}
+    if action == _apps_reply.WRITE:
+        said = {_APPS_LIST_OF.get(w) for r in got["rows"] if r.get("action") == _apps_reply.WRITE
+                for w in r.get("lists", ())}
+        mark.update(wrote_at=now, wrote=[w for w in APPS_LIST_WORDS if w in said])
+    else:
+        old = load_apps_mark(state_dir)
+        if old.get("wrote_at") is not None:
+            mark.update(wrote_at=old["wrote_at"], wrote=list(old["wrote"]))
     _write_mark(state_dir, APPS_MARK, mark)
     return mark
 
@@ -995,6 +1014,56 @@ def apps_ingest_line(state_dir) -> str:
     """jobs.APPS_LINE when the last apps ingest wrote the app lists (apps-ingest.json says ``write``), else "".
     Words only: a later brief may show it as a T1 line."""
     return jobs.APPS_LINE if load_apps_mark(state_dir).get("action") == _apps_reply.WRITE else ""
+
+
+APPS_SET_MARK = "apps-set.json"   # {"told": the wrote_at last told in a brief, "told_at": when}, epochs only
+APPS_SET_HOOK = "brief:apps_set"
+_APPS_SET_WORDS = {("work", "feed"): "Work and feed app lists", ("work",): "Work app list",
+                   ("feed",): "Feed app list"}
+
+
+def load_apps_set_mark(state_dir) -> dict:
+    """apps-set.json as ``{"told", "told_at"}`` (epoch seconds or None); {} when missing or malformed."""
+    try:
+        data = json.loads((Path(state_dir) / APPS_SET_MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {"told": _epoch(data.get("told")), "told_at": _epoch(data.get("told_at"))}
+
+
+def apps_set_untold(state_dir, now: float, cfg: Mapping) -> Optional[dict]:
+    """The apps-ingest mark of the last write not yet told in a brief, or None: none, the ingest is not in write
+    mode (config ``apps_ingest``: a dry run never tells), the write is after ``now``, or it was told already."""
+    if jobs.apps_mode(cfg) != jobs.APPS_WRITE:
+        return None
+    mark = load_apps_mark(state_dir)
+    at = mark.get("wrote_at")
+    if at is None or at > now or load_apps_set_mark(state_dir).get("told") == at:
+        return None
+    return mark
+
+
+def apps_set_line(wrote) -> str:
+    """"Work and feed app lists set from your reply." (or the one list ``wrote`` names); words only, never a name
+    or a count. jobs.APPS_LINE, capitalized, when the lists are unknown."""
+    head = _APPS_SET_WORDS.get(tuple(w for w in APPS_LIST_WORDS if w in (wrote or ())))
+    return f"{head} set from your reply." if head else f"{jobs.APPS_LINE[0].upper()}{jobs.APPS_LINE[1:]}."
+
+
+def brief_apps_set(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None) -> str:
+    """The wake brief's one apps-set line (apps_set_line): "Work and feed app lists set from your reply." once
+    after each apps-ingest write not yet told, through tier_audit.gate (hook ``brief:apps_set``); "" when there is
+    none, the ingest is not in write mode, it was told, or state is unreadable. Read-only, like brief_outage with
+    ``write=False``: the sender calls brief_apps_set_told once the brief went out. It rides in the brief: no push
+    or job of its own."""
+    try:
+        mark = apps_set_untold(state_dir, now, config(env, home))
+        return _gated(APPS_SET_HOOK, apps_set_line(mark["wrote"]), env, home) if mark else ""
+    except Exception:  # noqa: BLE001 - an unreadable mark must not stop the brief
+        return ""
 
 
 def apps_ingest_label(state_dir) -> Optional[dict]:
