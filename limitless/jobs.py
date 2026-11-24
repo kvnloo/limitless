@@ -1,7 +1,8 @@
 """Event-triggered job specs: the wake brief, the post-nap message, the bedtime question, the habit check-in,
 the week review, the break nudge; the NOOP export (NOOP_EXPORT), which sends nothing and wakes on a sync that
 copied the NOOP database (noop_export_verdict); and the apps ingest (APPS_INGEST) and the ranked ingest
-(RANKED_INGEST), which send nothing and wake on any new sync row (apps_ingest_verdict, ranked_ingest_verdict).
+(RANKED_INGEST) and the sender ingest (SENDER_INGEST), which send nothing and wake on any new sync row
+(apps_ingest_verdict, ranked_ingest_verdict, sender_ingest_verdict).
 
 A job says which event wakes it (``trigger_event``), which decision window it speaks in
 (``window_class``), how often it may speak per window and which event ends it. There are no
@@ -27,7 +28,8 @@ from .window import MAX_AWAKE_H
 # focus block in the activity data that ran as long as the person's usual long block (blocks.long_block_events).
 # noop_copy is a sync run whose runs.jsonl row says it copied the NOOP database (noop_copied); only the NOOP export
 # job (NOOP_EXPORT) wakes on it. sync is any sync run's runs.jsonl row that did not fail (sync_ran); only the apps
-# ingest job (APPS_INGEST) and the ranked ingest job (RANKED_INGEST) wake on it. push_back is a push kevin-push
+# ingest job (APPS_INGEST), the ranked ingest job (RANKED_INGEST) and the sender ingest job (SENDER_INGEST) wake on
+# it. push_back is a push kevin-push
 # delivered after an outage (outage_recap.outage: SEND_FAIL_RUN or more failed sends in a row); only the outage
 # recap (OUTAGE_RECAP) wakes on it.
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block", "noop_copy",
@@ -230,6 +232,36 @@ def ranked_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], no
         return Verdict(NOT_TRIGGERED, RANKED_IS_OFF)
     if not ledger_set:
         return Verdict(NOT_TRIGGERED, RANKED_NO_LEDGER)
+    return apps_ingest_verdict(mode, last_run, mark_at, now, db_set=db_set)
+
+
+# The sender ingest sends nothing: it reads the owner's whole "push via <profile>" reply from the Hermes session DB
+# and runs sender_reply.ingest (write mode writes push-sender.json, which kevin-push's sender resolution reads, only
+# for a profile that exists). Like the apps ingest it is not in SPECS, no window holds it, and it wakes on any new
+# sync row, never on a clock time.
+SENDER_INGEST = JobSpec("sender_ingest", "sync", "anytime", "Sender ingest", 1, "sync")
+SENDER_CONFIG = "sender_ingest"
+SENDER_OFF, SENDER_DRY_RUN, SENDER_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
+SENDER_MODES = (SENDER_OFF, SENDER_DRY_RUN, SENDER_WRITE)
+SENDER_IS_OFF = f"off (config {SENDER_CONFIG})"
+
+
+def sender_mode(cfg: Any) -> str:
+    """Config ``sender_ingest``: off (the default, and for any value that is not one of SENDER_MODES), dry_run or
+    write."""
+    v = cfg.get(SENDER_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in SENDER_MODES else SENDER_OFF
+
+
+def sender_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], now: float,
+                          db_set: bool = True) -> Verdict:
+    """Run, drop or not triggered for the sender ingest: off unless ``mode`` is dry_run or write, then exactly the
+    apps ingest's rule (apps_ingest_verdict): a Hermes DB set, the newest runs.jsonl row a sync that did not fail,
+    not after ``now`` and newer than ``mark_at`` (the row the last pass acted on, from push-sender-ingest.json).
+    The same row again is a drop: at most once per sync row. Pure."""
+    if mode not in (SENDER_DRY_RUN, SENDER_WRITE):
+        return Verdict(NOT_TRIGGERED, SENDER_IS_OFF)
     return apps_ingest_verdict(mode, last_run, mark_at, now, db_set=db_set)
 
 
