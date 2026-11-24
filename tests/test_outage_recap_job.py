@@ -204,6 +204,18 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(push, now=NOW + 300)["action"], jobs.DELIVER)
         self.assertEqual([c["once"] for c in push.calls], [KEY])
 
+    def test_a_wait_holds_even_when_this_pass_s_own_delivery_is_logged_after_the_pass_clock(self):
+        # the confirmation pushed in this pass closed the outage; kevin-push logged it a second after run_once's now
+        self.log(OPEN + [row(NOW + 1, "Pushes", "telegram")])
+        push = FakePush()
+        r = job.run(self.st, NOW, push=push, dry_run=False, env=self.env, tz=UTC,
+                    wait="the sender confirmation went out in this pass")
+        self.assertEqual((r["action"], r["reason"]), (jobs.HOLD, "pushes came back after an outage; waits for the "
+                                                                  "next pass: the sender confirmation went out in "
+                                                                  "this pass"))
+        self.assertEqual(push.calls, [])
+        self.assertIsNone(self.mark())
+
     def test_run_once_sends_the_sender_confirmation_first_and_the_recap_on_the_next_pass(self):
         self.log(CLOSED)
         self.cfg_path.write_text(json.dumps({"outage_recap": "write", "push_log": "push-log.jsonl",
@@ -220,6 +232,35 @@ class Job(unittest.TestCase):
         rows = jobs_runner.run_once(self.st, NOW + 300, push=push, dry_run=False, env=self.env, tz=UTC)
         self.assertEqual([c["title"] for c in push.calls], ["Pushes", outage_recap.TITLE])
         self.assertEqual([r for r in rows if r["job"] == job.TITLE][0]["action"], jobs.DELIVER)
+
+    def test_an_ingest_confirm_pass_sends_the_recap_on_the_pass_after_the_confirmation(self):
+        # the timer's pass (limitless-jobs --ingest --confirm) is the only sender on such a host: the recap the
+        # confirmation holds for "the next pass" must go out on that next pass, once
+        self.log(CLOSED)
+        self.cfg_path.write_text(json.dumps({"outage_recap": "write", "push_log": "push-log.jsonl",
+                                             "sender_confirm": "write"}))
+        (self.st / "push-sender.json").write_text(json.dumps({"profile": "backup-bot", "at": NOW - 900}))
+        push = FakePush()
+        kw = dict(push=push, dry_run=True, ingest=True, confirm=True, env=self.env, tz=UTC)
+        rows = jobs_runner.run_once(self.st, NOW, **kw)
+        self.assertEqual([c["title"] for c in push.calls], ["Pushes"])
+        self.assertIn("waits for the next pass", [r for r in rows if r["job"] == job.TITLE][0]["reason"])
+        rows = jobs_runner.run_once(self.st, NOW + 300, **kw)
+        self.assertEqual([(c["title"], c["once"]) for c in push.calls], [("Pushes", f"sender_confirm:{int(NOW - 900)}"),
+                                                                         (outage_recap.TITLE, KEY)])
+        self.assertEqual([r for r in rows if r["job"] == job.TITLE][0]["action"], jobs.DELIVER)
+        self.assertEqual(self.mark()["outcome"], job.TOLD)
+        self.assertFalse((self.st / jobs_runner.SENT_LOG).exists())
+        jobs_runner.run_once(self.st, NOW + 600, **kw)
+        self.assertEqual(len(push.calls), 2)
+
+    def test_an_ingest_pass_without_confirm_never_sends_the_recap(self):
+        self.log(CLOSED)
+        push = FakePush()
+        rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=True, ingest=True, env=self.env, tz=UTC)
+        self.assertIn("nothing sent", [r for r in rows if r["job"] == job.TITLE][0]["reason"])
+        self.assertEqual(push.calls, [])
+        self.assertIsNone(self.mark())
 
     def test_a_confirmation_that_did_not_push_never_holds_the_recap(self):
         self.log(CLOSED)

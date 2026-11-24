@@ -311,11 +311,17 @@ class IngestCli(Fakes):
         self.assertTrue(any(ln.startswith("Sender confirm: deliver") and ln.endswith("; sent") for ln in lines),
                         r.stdout)
         self.assertTrue(any(ln.startswith("Back from nap: deliver") for ln in lines), r.stdout)
-        self.assertTrue(any(ln.startswith("Outage recap: deliver") and "nothing sent" in ln for ln in lines),
+        self.assertTrue(any(ln.startswith("Outage recap: hold") and "waits for the next pass" in ln for ln in lines),
                         r.stdout)
         self.assertNothingSent()
         self.assertFalse((self.st / "outage-recap.json").exists())
         self.assertWrote()
+        r = self.run_cli("--ingest", "--confirm")    # the next pass sends the recap, and only the recap
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([c["argv"][:2] for c in self.calls_made()], [["limitless", "Pushes"],
+                                                                     ["limitless", "Pushes are back"]])
+        self.assertTrue((self.st / "outage-recap.json").exists())
+        self.assertNothingSent()
 
     def test_ingest_without_confirm_leaves_the_confirmation_due(self):
         self.config("write", outage_recap="write", push_log="push-log.jsonl", sender_confirm="write")
@@ -366,9 +372,10 @@ class EveryJobDue(Fakes):
         rc, out = self.main("--ingest", "--confirm")
         self.assertEqual(rc, 0)
         got = {ln.split(": ")[0]: ln for ln in out.splitlines()}
-        for job in ("Wake-up brief", "Habit check-in", "Outage recap", "Sender confirm"):
+        for job in ("Wake-up brief", "Habit check-in", "Sender confirm"):
             self.assertIn(f"{job}: deliver: ", got.get(job, ""), out)
-        self.assertIn("nothing sent", got["Outage recap"])
+        self.assertIn("Outage recap: hold: ", got["Outage recap"])
+        self.assertIn("waits for the next pass", got["Outage recap"])
         self.assertTrue(got["Sender confirm"].endswith("; sent"), got["Sender confirm"])
         calls = self.calls_made()
         self.assertEqual(len(calls), 1, calls)
@@ -464,7 +471,7 @@ class TimerDoc(unittest.TestCase):
         text = (ROOT / "docs" / "limitless-jobs-systemd.md").read_text(encoding="utf-8")
         section = text[text.index("## Timer: the reply ingests without sending (`--ingest`)"):]
         for word in ("sender_confirm", "`--ingest --confirm`", "`--confirm` without `--ingest` is a usage error",
-                     "outage recap stays a dry run"):
+                     "the outage recap", "which waits for the pass after a confirmation push"):
             self.assertIn(word, section)
         self.assertIn("`job sender confirm`", section)
 

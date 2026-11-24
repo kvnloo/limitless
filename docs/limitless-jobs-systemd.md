@@ -100,19 +100,20 @@ run`, so a `push via <profile>` reply ([push-sender-reply.md](push-sender-reply.
 is written, `write`: writes), exactly as `--send` runs them, and keeps every other job a plain dry run: it never
 calls `kevin-push` or `limitless-brief`, never sends and starts no process. `--ingest --send` is `--send`.
 
-`--ingest --confirm` adds exactly one send: the sender confirmation (`sender_confirm`,
+`--ingest --confirm` adds the two recovery sends, at most one per pass: the sender confirmation (`sender_confirm`,
 [sender-confirm.md](sender-confirm.md)), so a `push via <profile>` reply the pass applies is proven by its own
-delivery without a hand-run `--send`. It goes through the same `kevin-push` call `--send` uses (the normal send
-gate, `--once sender_confirm:<reply time>`, `KEVIN_PUSH_STRICT=1`) and only when config `sender_confirm` is
-`write`. Every other job stays as `--ingest` leaves it: no other `kevin-push` call, `limitless-brief` is never
-called, the outage recap stays a dry run and nothing else is logged as sent.
+delivery without a hand-run `--send`, and the outage recap (`outage_recap`, [outage-recap.md](outage-recap.md)),
+which waits for the pass after a confirmation push. On a host whose only timer is this pass, that next pass is the
+one that sends the recap. Both go through the same `kevin-push` call `--send` uses (the normal send gate, their
+`--once` keys, `KEVIN_PUSH_STRICT=1`) and only when their config is `write`. Every other job stays as `--ingest`
+leaves it: no other `kevin-push` call, `limitless-brief` is never called and nothing else is logged as sent.
 `--confirm` without `--ingest` is a usage error (exit 2); `--send` with anything is `--send`.
 
 An example service for that timer (example text only: nothing here installs or touches a unit):
 
 ```ini
 [Unit]
-Description=Limitless jobs pass: the reply ingests run, only the sender confirmation is sent
+Description=Limitless jobs pass: the reply ingests run, only the sender confirmation and the outage recap are sent
 
 [Service]
 Type=oneshot

@@ -120,16 +120,16 @@ def _run(state_dir, now: float, push, dry: bool, m: str, cfg, tz, wait: Optional
         said = "already told about this outage" if mark.get("outcome") == TOLD else \
             "this outage was already settled without a recap"
         return _row(jobs.DROP, said)
-    if o["closed_at"] > now:
-        return _row(jobs.NOT_TRIGGERED, "the push that ended the outage is timestamped in the future")
     if now - o["closed_at"] > STALE_S:
         return _row(jobs.DROP, "too late: pushes came back a while ago; a late recap is noise")
+    if wait and not dry:   # before the clock check: this pass's own push may be logged a second after ``now``
+        return _row(jobs.HOLD, f"{EVENT}; waits for the next pass: {wait}")
+    if o["closed_at"] > now:
+        return _row(jobs.NOT_TRIGGERED, "the push that ended the outage is timestamped in the future")
     r = _rc.recap(rows, now, tz)
     if dry:
         hint = f'config {CONFIG_KEY} "{WRITE}" sends it' if m == DRY_RUN else "dry run of limitless-jobs"
         return _row(jobs.DELIVER, f"{EVENT}; would send the recap ({hint}): nothing sent")
-    if wait:
-        return _row(jobs.HOLD, f"{EVENT}; waits for the next pass: {wait}")
     from . import jobs_runner   # jobs_runner imports this module inside run_once
     ok, how = jobs_runner._push(push, r["title"], r["body"], r["key"], why=WHY)
     if ok:
