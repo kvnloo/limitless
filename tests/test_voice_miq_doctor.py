@@ -60,7 +60,8 @@ class Row(unittest.TestCase):
         rows = doctor.report(cfg, NOW)
         names = [r["name"] for r in rows]
         self.assertEqual(names.count(doctor.VOICE_MIQ_ROW), 1)
-        self.assertEqual(names[names.index(doctor.VOICE_MIQ_ROW) + 1], doctor.PACKET_ROW)
+        at = names.index(doctor.VOICE_MIQ_ROW)   # then the outage recap job's row, then the context packet's
+        self.assertEqual(names[at + 1:at + 3], [doctor.OUTAGE_RECAP_ROW, doctor.PACKET_ROW])
         self.assertNotIn("job", doctor.STRICT_KINDS)
 
 
