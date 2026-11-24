@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from limitless import delivery_audit, jobs, scorecard as sc, uptime_audit  # noqa: E402
+from limitless import delivery_audit, jobs, scorecard as sc, tier_audit, tools, uptime_audit  # noqa: E402
 
 UTC = timezone.utc
 NOW = 2_000_000_000.0
@@ -23,6 +23,7 @@ TODAY = datetime.fromtimestamp(NOW, UTC).date()
 H = 3600
 HEADER = "| # | Criterion | Status | Evidence (latest) | Weeks green |\n|---|---|---|---|---|\n"
 DIGIT = re.compile(r"\d")
+FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
 
 def table(uptime="green", delivery="green", rest="amber"):
@@ -255,6 +256,85 @@ class Block(Fixture):
         block = sc.weekly_block([], sc.measured_lines([], self.measured()))
         self.assertEqual(block.splitlines()[0], sc.WEEKLY_TITLE)
         self.assertEqual(len(block.splitlines()), 3)
+
+
+class ToolField(Fixture):
+    def card(self, md):
+        p = self.root / "scorecard.md"
+        p.write_text(md)
+        return p
+
+    def tool(self, md=None, raw=False, path=None):
+        p = self.card(md if md is not None else table()) if path is None else path
+        return tools.scorecard(p, NOW, state_dir=self.st, cfg=self.cfg, tz=UTC, raw=raw, env=self.env,
+                               home=self.root)
+
+    def test_measured_field_carries_t1_labels_and_goals(self):
+        self.runs(stale_days=7)
+        out = self.tool()
+        self.assertEqual([m["n"] for m in out["measured"]], [1, 2])
+        want = {m["n"]: m for m in self.measured()}
+        for m in out["measured"]:
+            self.assertEqual(m["label"], {"label": want[m["n"]]["label"], "tier": "T1", "modality": "measured"})
+            self.assertEqual(m["goal"], want[m["n"]]["goal"])
+            self.assertEqual(m["criterion_words"], want[m["n"]]["criterion_words"])
+            self.assertNotIn("counts", m)
+
+    def test_envelope_shape_and_value_are_unchanged(self):
+        out = self.tool()
+        self.assertTrue(FIELDS <= set(out))
+        self.assertEqual(out["modality"], "self_report")
+        self.assertEqual(out["value"], sc.summary(sc.parse(table())))
+
+    def test_disagreement_note_on_the_row(self):
+        self.runs(stale_days=7)
+        m = {x["n"]: x for x in self.tool()["measured"]}
+        self.assertEqual(m[1]["note"], "Row Loop uptime says green but the measurement says not met.")
+        self.assertNotIn("note", m[2])
+        self.assertNotIn("note", self.tool(table(uptime="amber"))["measured"][0])
+
+    def test_no_digit_outside_the_raw_opt_in(self):
+        self.runs(stale_days=3)
+        self.pushes(per_day=2)
+        got = self.tool()["measured"]
+        self.assertTrue(all(set(m) <= {"n", "criterion_words", "label", "goal", "note"} for m in got))
+        text = json.dumps([[m["label"]["label"], m["criterion_words"], m["goal"], m.get("note", "")] for m in got])
+        self.assertIsNone(DIGIT.search(text), text)
+
+    def test_counts_only_with_the_raw_opt_in(self):
+        self.runs(stale_days=3)
+        self.pushes()
+        m = {x["n"]: x for x in self.tool(raw=True)["measured"]}
+        self.assertEqual(set(m[1]["counts"]), set(tools.UPTIME_RAW_KEYS))
+        self.assertEqual(m[1]["counts"]["window_days"], 28)
+        self.assertEqual(set(m[2]["counts"]), set(tools.DELIVERY_RAW_KEYS))
+        self.assertEqual(m[2]["counts"]["known_days"], 7)
+
+    def test_raw_with_no_log_has_no_counts(self):
+        for m in self.tool(raw=True)["measured"]:
+            self.assertNotIn("counts", m)
+            self.assertEqual(m["goal"], "unknown")
+
+    def test_missing_scorecard_still_measures(self):
+        self.runs()
+        out = self.tool(path=self.root / "absent.md")
+        self.assertIsNone(out["value"])
+        self.assertEqual(out["evidence_tier"], "none")
+        self.assertEqual(out["measured"][0]["goal"], "met")
+        self.assertNotIn("note", out["measured"][0])
+
+    def test_passes_tier_audit(self):
+        self.runs(stale_days=7)
+        self.pushes(briefs=False)
+        out = self.tool()
+        words = tier_audit.labels(out)
+        self.assertEqual(words, [m["label"]["label"] for m in out["measured"]])
+        audit = self.root / "audit.jsonl"
+        got = tier_audit.audit_result("tool:limitless_scorecard", out, False, env={"LIMITLESS_AUDIT": str(audit)},
+                                      home=self.root, now=NOW)
+        self.assertEqual(got, out)
+        (line,) = [json.loads(ln) for ln in audit.read_text().splitlines()]
+        self.assertEqual((line["tier"], line["blocked"], line["digits"]), ("T1", False, 0))
 
 
 if __name__ == "__main__":

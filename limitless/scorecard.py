@@ -185,6 +185,22 @@ def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tu
     return a["label"]["label"], da.goal(a), a
 
 
+def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
+                    env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
+    """``[(row, audit)]`` for rows one and two: ``row`` as measured() gives it, ``audit`` the audit's own dict
+    (its T0 counts) or None when there was no log to audit."""
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    out = []
+    for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
+                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured)):
+        try:
+            label, goal, audit = read(state_dir, cfg, now, tz, env, home)
+        except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
+            label, goal, audit = UNKNOWN_PREFIX + "the log could not be read", "unknown", None
+        out.append(({"n": n, "criterion_words": words, "label": label, "goal": goal}, audit))
+    return out
+
+
 def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[dict]:
     """North-star rows one and two as code measured them: ``[{n, criterion_words, label, goal}]``.
@@ -194,20 +210,20 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
     met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
     nothing is written or sent, and no hand status is changed.
     """
-    cfg = cfg if isinstance(cfg, Mapping) else {}
-    out = []
-    for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
-                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured)):
-        try:
-            label, goal, _audit = read(state_dir, cfg, now, tz, env, home)
-        except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
-            label, goal = UNKNOWN_PREFIX + "the log could not be read", "unknown"
-        out.append({"n": n, "criterion_words": words, "label": label, "goal": goal})
-    return out
+    return [row for row, _audit in measured_audits(state_dir, cfg, now, tz, env=env, home=home)]
 
 
 MEASURED_LINE = "Measured: {}: {}"
 DISAGREE_LINE = "Row {} says green but the measurement says not met."
+
+
+def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
+    """"Row <name> says green but the measurement says not met." when the hand-kept row numbered like ``m`` is
+    green and ``m``'s goal is not met; else None. It only words the gap: the status is never changed."""
+    row = next((r for r in rows or () if isinstance(r, dict) and r.get("n") == m.get("n")), None)
+    if row is None or row.get("status") != "green" or m.get("goal") != "not met":
+        return None
+    return DISAGREE_LINE.format(_name(row["criterion"]))
 
 
 def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
@@ -215,7 +231,6 @@ def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
     <label>" (at most one each, in that order), each followed by "Row <name> says green but the measurement says
     not met." when the hand-kept row with that number is green and the audit's goal is not met. Only words:
     no status is changed here, and code never marks a row green."""
-    hand = {r["n"]: r for r in rows or () if isinstance(r, dict)}
     out, seen = [], set()
     for m in measured_rows or ():
         n = m.get("n") if isinstance(m, dict) else None
@@ -223,7 +238,7 @@ def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
             continue
         seen.add(n)
         out.append(_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label"))))
-        row = hand.get(n)
-        if row is not None and row["status"] == "green" and m.get("goal") == "not met":
-            out.append(DISAGREE_LINE.format(_name(row["criterion"])))
+        note = disagreement(rows, m)
+        if note:
+            out.append(note)
     return out
