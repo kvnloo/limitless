@@ -156,6 +156,35 @@ same host class); a spec with no window gives no fields. Both need a cron or int
 The event that ends a job (`expires`, e.g. Sleep mode going on) has no cron field; the plugin's own
 `should_fire` still applies it.
 
+## Creating the jobs on a patched host
+
+`bin/limitless-cron-spec` prints the Hermes cron job each plugin job would be: one line per job in words (host
+job name, title, the window it waits for, how long until a held occurrence is stale), or with `--json` the
+payloads. It is a dry run: it never calls Hermes, creates no job, writes no file and sends nothing.
+
+On the fork branch (`up/cron-decision-window-gate-r2`) the two fields can only be set through the Python job
+API or a job record in `cron/jobs.json`. `hermes cron create` has no `--window-class` or `--stale-after-s`
+flag, and the `cronjob` tool schema has no such field either. So each `--json` payload is the keyword
+arguments for `cron.jobs.create_job(**payload)`:
+
+| key | value | why |
+| --- | --- | --- |
+| `name` | `limitless-<job>` | one host job per plugin job |
+| `schedule` | `every 5m` | an interval, which is recurring, as the window fields require. The cues are events, so this only polls for them and is never the time a message is meant for |
+| `no_agent`, `script` | `true`, `limitless-<job>.sh` | the job runs a script, never an agent turn. The host wants a plain file name in its scripts dir |
+| `deliver` | `local` | the plugin's send gate does the sending. The host never delivers the script's output |
+| `window_class`, `stale_after_s` | `jobs.to_cron_fields(spec)` | see the table above |
+
+Jobs that send nothing (the NOOP export and the ingests) get no payload: they have no message to hold, so
+`limitless-jobs --ingest` keeps running them. The wake brief's host job is `anytime`. A Hermes job's window
+is fixed when the job is created, while the brief only becomes `peak` when it carries a decision, so the
+plugin's own gate still holds that case.
+
+`limitless-jobs` has no single-job mode yet, so nothing in this repo fills the `limitless-<job>.sh` scripts.
+Until it does, keep the systemd timer as the sender ([docs/limitless-jobs-systemd.md](limitless-jobs-systemd.md)).
+The payloads show what the host jobs will look like, and the host accepts each one (`tests/test_cron_spec.py`
+runs them through copies of the fork's own rules).
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
