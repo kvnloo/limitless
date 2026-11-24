@@ -739,7 +739,8 @@ def week_delivery(state_dir, env: Optional[Mapping[str, str]] = None, home: Opti
     """The week review's delivery line (delivery_audit.audit of kevin-push's log, config ``push_log``, over the
     seven local days up to ``today``): "Pushes: within the push limit every day this week; brief reached you on
     most wake days; every push had a reply line.", digit-free, through tier_audit.gate (hook
-    ``week_review:delivery``); an unknown brief clause is left out. "" when no ``today`` is given, the log is
+    ``week_review:delivery``); an unknown brief clause and the complaints clause (no complaint source is read
+    here, so it is unknown) are left out. "" when no ``today`` is given, the log is
     unset or unreadable, or the week has no row (unknown, not zero). Read-only: the log is never written."""
     if not isinstance(today, date):
         return ""
@@ -753,7 +754,8 @@ def week_delivery(state_dir, env: Optional[Mapping[str, str]] = None, home: Opti
                             tz=tz, cap=_delivery.push_cap(cfg), skipped=got[1])
         if not a["known_days"]:
             return ""
-        words = [w for k, w in a["labels"].items() if w and not (k == "brief" and w == _delivery.BRIEF_UNKNOWN)]
+        words = [w for k, w in a["labels"].items() if w and not (k == "brief" and w == _delivery.BRIEF_UNKNOWN)
+                 and not (k == "complaints" and w.startswith(_delivery.COMPLAINTS_UNKNOWN))]
         line = DELIVERY_LINE.format("; ".join(words))
     except Exception:  # noqa: BLE001 - a broken log must not stop the review
         return ""

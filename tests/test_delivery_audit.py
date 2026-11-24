@@ -231,7 +231,8 @@ class Labels(unittest.TestCase):
     def test_the_label_joins_the_clauses_in_words(self):
         out = run([brief(0), row(0)], wake_days=[TODAY])
         self.assertEqual(out["label"]["label"], "within the push limit on every logged day; "
-                                                "brief reached you on every wake day; some pushes had no reply line")
+                                                "brief reached you on every wake day; some pushes had no reply line; "
+                                                "complaints: unknown, " + da.NO_DB_COMPLAINTS)
         self.assertEqual(out["label"]["tier"], "T1")
 
     def test_digit_walk_over_every_label(self):

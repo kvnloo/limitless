@@ -1356,7 +1356,7 @@ def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = No
 
 
 DELIVERY_RAW_KEYS = ("days", "delivered", "known_days", "cap", "over_cap_days", "wake", "no_action",
-                     "action_unknown", "skipped")
+                     "action_unknown", "skipped", "complaints")
 
 
 def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
@@ -1365,7 +1365,8 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
     days up to ``now``, read-only.
 
     An envelope whose value is ``{label}`` (the T1 words: within or over the push limit, whether the wake brief
-    reached the person on the wake days, whether every push had a reply line) with the T1 label beside it;
+    reached the person on the wake days, whether every push had a reply line, whether a push drew a quiet or
+    stop request: delivery_audit.signals, unknown with no Hermes DB set) with the T1 label beside it;
     modality measured (the log is kevin-push's own record), aged by the newest row in the window. The counts
     (per-day deliveries, days over the cap, wake days and briefs, pushes with no reply line, skipped lines) are
     T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). Config ``push_log`` unset, an unreadable log or a
@@ -1387,7 +1388,7 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
     rows, skipped = got
     a = _delivery.audit(rows, wake_days=jobs_runner.delivery_wake_days(reader.path, now, env, home, tz),
                         today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=_delivery.push_cap(cfg),
-                        skipped=skipped)
+                        skipped=skipped, signals=_delivery.signals(reader.path, cfg, now, env))
     if not a["known_days"]:
         out = envelope(None, _delivery.MODALITY, None, reason=_delivery.NO_ROWS_REASON)
         out["label"] = unknown

@@ -176,13 +176,14 @@ class ToolRows(DoctorCase):
     def tool(self, name, cfg=None):
         return self.row(f"tool {name}", cfg)
 
-    def test_one_row_per_manifest_tool_in_order_after_the_run_and_uptime_rows(self):
+    def test_one_row_per_manifest_tool_in_order_after_the_run_uptime_and_delivery_rows(self):
         rows = self.rows()
         tools_ = [r for r in rows if r["kind"] == "tool"]
         self.assertEqual([r["name"] for r in tools_], [f"tool {n}" for n in manifest_tools()])
         run_at = [r["kind"] for r in rows].index("run")
         self.assertEqual(rows[run_at + 1]["name"], "uptime")
-        self.assertEqual(rows.index(tools_[0]), run_at + 2)
+        self.assertEqual(rows[run_at + 2]["name"], "delivery")
+        self.assertEqual(rows.index(tools_[0]), run_at + 3)
 
     def test_a_null_value_is_missing_with_the_envelopes_own_reason(self):
         r = self.tool("limitless_habit")

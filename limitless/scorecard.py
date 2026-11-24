@@ -177,7 +177,9 @@ def _uptime_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tupl
 
 def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
     """(label, goal, audit) of row two: delivery_audit over kevin-push's log (config push_log), like
-    limitless_delivery and the week review's Pushes line."""
+    limitless_delivery and the week review's Pushes line, with the complaints read from the Hermes session DB
+    (config hermes_db) and quiet.json (delivery_audit.signals): no DB set is complaints unknown, so the goal
+    stays unknown."""
     from . import delivery_audit as da, jobs_runner   # lazily: jobs_runner is heavy and reads tools
     path = da.log_path(cfg, state_dir)
     if path is None:
@@ -187,7 +189,8 @@ def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tu
         return UNKNOWN_PREFIX + da.UNREADABLE_REASON, da.GOAL_UNKNOWN, None
     rows, skipped = got
     a = da.audit(rows, wake_days=jobs_runner.delivery_wake_days(state_dir, now, env, home, tz),
-                 today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=da.push_cap(cfg), skipped=skipped)
+                 today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=da.push_cap(cfg), skipped=skipped,
+                 signals=da.signals(state_dir, cfg, now, env))
     if not a["known_days"]:
         return da.UNKNOWN_ROWS, da.GOAL_UNKNOWN, a
     return a["label"]["label"], da.goal(a), a

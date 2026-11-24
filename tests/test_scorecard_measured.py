@@ -15,8 +15,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from limitless import delivery_audit, jobs, scorecard as sc, tier_audit, tools, uptime_audit  # noqa: E402
+from hermes_db_fixture import make_db  # noqa: E402
 
 UTC = timezone.utc
 NOW = 2_000_000_000.0
@@ -128,9 +130,13 @@ class Measured(Fixture):
 
     def test_delivery_every_day_within_cap_with_briefs_is_met(self):
         self.pushes()
+        self.assertEqual(self.by_n()[2]["goal"], "unknown")      # no reply source: complaints unknown
+        make_db(self.st / "state.db", [], started=NOW - 86400)   # synthetic session DB, no reply at all
+        self.cfg["hermes_db"] = "state.db"
         m = self.by_n()[2]
         self.assertEqual(m["goal"], "met")
-        for words in (delivery_audit.WITHIN_ALL, delivery_audit.BRIEF_ALL, delivery_audit.ACTION_ALL):
+        for words in (delivery_audit.WITHIN_ALL, delivery_audit.BRIEF_ALL, delivery_audit.ACTION_ALL,
+                      delivery_audit.COMPLAINTS_NONE):
             self.assertIn(words, m["label"])
 
     def test_delivery_over_the_cap_is_not_met(self):

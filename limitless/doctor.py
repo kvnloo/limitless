@@ -5,7 +5,9 @@
 status is one of STATUSES: live, stale, missing or off. The rows are the state dir (exists, readable), each
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
 last sync run's age in words from runs.jsonl, then the uptime row (uptime_audit over runs.jsonl: live when the
-uptime goal was met, stale when not, missing when unknown; kind source, words only), one row per tool in
+uptime goal was met, stale when not, missing when unknown; kind source, words only), the delivery row
+(north-star row two as the scorecard measures it, complaints included: off with no push log, live when met,
+stale when not, missing when unknown; kind source, words only), one row per tool in
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
 open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
@@ -148,6 +150,28 @@ def uptime_row(reader: StateReader, now: float) -> dict:
     if words == ua.UNKNOWN:
         return _row(UPTIME_ROW, "source", MISSING, ua.FEW_KNOWN_REASON)
     return _row(UPTIME_ROW, "source", _UPTIME_STATUS.get(a["goal"], MISSING), words)
+
+
+DELIVERY_ROW = "delivery"
+_DELIVERY_STATUS = {"met": LIVE, "not met": STALE}   # delivery_audit.goal -> row status; unknown is missing
+
+
+def delivery_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None, tz=None) -> dict:
+    """North-star row two as the scorecard measures it (scorecard._delivery_measured: the delivery audit of
+    kevin-push's log, config push_log, with the complaints from the Hermes DB, config hermes_db, and
+    quiet.json): off when no push log is set; live when the goal is met, stale when it is not, missing when it is
+    unknown (complaints unknown included). The reason is the audit's T1 words, never a count or a reply. Kind
+    ``source``: --strict does not count it. Read-only."""
+    from . import delivery_audit as da, scorecard
+    try:
+        label, goal, _ = scorecard._delivery_measured(reader.path, cfg if isinstance(cfg, Mapping) else {}, now,
+                                                      tz, env, home)
+    except Exception as exc:  # noqa: BLE001 - a failing audit is a row, never a traceback (its message stays out)
+        return _row(DELIVERY_ROW, "source", MISSING, f"the delivery audit failed with {type(exc).__name__}")
+    if label == da.NO_LOG:
+        return _row(DELIVERY_ROW, "source", OFF, da.NO_LOG_REASON)
+    return _row(DELIVERY_ROW, "source", _DELIVERY_STATUS.get(goal, MISSING), label)
 
 
 NOOP_ROW = "job NOOP export"
@@ -576,7 +600,8 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), each tool in
+    """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), north-star row
+    two (delivery_row), each tool in
     plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
@@ -593,7 +618,7 @@ def report(cfg: Mapping, now: float) -> list:
     path = state_path(cfg)
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
-    rows += [uptime_row(reader, now)]
+    rows += [uptime_row(reader, now), delivery_row(reader, cfg, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),

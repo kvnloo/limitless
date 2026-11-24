@@ -29,17 +29,29 @@ any wake day" / unknown; action "every push had a reply line" / "some pushes had
 
 A day of the window with no row at all is unknown (None), never zero: the log may not cover it. Bad lines
 and rows (not JSON, not an object, no numeric ``at``, no string ``how``) are skipped and counted.
-Pure: no clock, no file except read_log, no send. Stdlib only, Python 3.9+.
+
+Complaints (``signals``: ``{"replies": [(epoch, text)] | None, "quiet": quiet.json dict | None, "why"}``, as
+``signals()`` reads them): only explicit signals the person sent, on a local day of the window. A quiet,
+quiet tonight or snooze command (quiet.command: the whole message) in the replies, or the one quiet.json
+records (mode off, quiet_tonight or snoozed, ``since`` in the window), counted once per second; and a reply
+whose first words are ``stop`` or ``too much`` (stop_request) sent within REPLY_GAP_S after a delivered push.
+Nothing else is read into it: no model, no sentiment. ``replies`` None (no Hermes DB set, or it cannot be
+read) or a week with no row is unknown with a reason, never "no complaints". ``complaints`` keeps only the
+counts (T0); the text is never stored. Label: "no complaints this week" / "some pushes drew a quiet or stop
+request" / "complaints: unknown, <why>".
+Pure: no clock, no file except read_log and signals, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import json
 import math
+import sqlite3
+import unicodedata
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
-from . import jobs, message_shape, send_gate
+from . import jobs, message_shape, quiet, send_gate
 
 DELIVERED = "telegram"           # bin/kevin-push's ``how`` for a real delivery (rc 0); jobs_runner.DELIVERED
 WAKE_TITLE = jobs.WAKE_BRIEF.send_title
@@ -57,6 +69,14 @@ BRIEF_SOME, BRIEF_NONE = "brief reached you on some wake days", "brief did not r
 BRIEF_UNKNOWN = "brief: unknown, no wake days known"
 ACTION_ALL, ACTION_SOME = "every push had a reply line", "some pushes had no reply line"
 ACTION_KNOWN = "every push with a known body had a reply line"
+COMPLAINTS_NONE, COMPLAINTS_SOME = "no complaints this week", "some pushes drew a quiet or stop request"
+COMPLAINTS_UNKNOWN = "complaints: unknown, "
+NO_DB_COMPLAINTS = "no Hermes DB set (config hermes_db), so replies cannot be read"
+DB_UNREADABLE = "the Hermes DB could not be read"
+QUIET_UNREADABLE = "the quiet file could not be read"
+NO_WEEK_COMPLAINTS = "no push rows this week"
+REPLY_GAP_S = 3600              # a stop or too much reply counts within an hour after a delivered push
+STOP_WORDS = (("stop",), ("too", "much"))
 
 
 def _at(v) -> Optional[float]:
@@ -118,6 +138,51 @@ def log_path(cfg: Optional[Mapping], state_dir) -> Optional[Path]:
     return p if p.is_absolute() else Path(state_dir) / p
 
 
+def _replies(db: Path, since: float) -> Optional[list]:
+    """habit_replies' query of the person's Telegram messages after ``since``, read-only; None (not ``[]``) when
+    the DB is missing, locked or not the session store, so an unreadable source is unknown, never none."""
+    from . import habit_replies
+    from urllib.parse import quote
+    if not db.is_file():
+        return None
+    try:
+        con = sqlite3.connect("file:" + quote(str(db.resolve())) + "?mode=ro", uri=True,
+                              timeout=habit_replies.BUSY_TIMEOUT_S)
+    except sqlite3.Error:
+        return None
+    try:
+        rows = con.execute(habit_replies._QUERY, ("telegram", float(since))).fetchall()
+    except (sqlite3.Error, ValueError, TypeError, OverflowError):
+        return None
+    finally:
+        con.close()
+    return [(float(t), c) for t, c in rows if _at(t) is not None and isinstance(c, str)]
+
+
+def signals(state_dir, cfg: Optional[Mapping], now: float, env: Optional[Mapping[str, str]] = None,
+            days: int = DAYS) -> dict:
+    """The complaint sources for ``audit(signals=...)``: ``{"replies", "quiet", "why"}``. ``replies`` are the
+    person's Telegram messages from the Hermes session DB (habit_replies.hermes_db_from: $LIMITLESS_HERMES_DB,
+    else config ``hermes_db``, the DB the quiet ingest reads) over the last ``days`` and one more; ``quiet`` is
+    quiet.json (None when there is none). ``why`` is set, and the complaints unknown, when no DB is set, it
+    cannot be read, or quiet.json is there but cannot be read. Read-only; the texts are only passed on to
+    ``audit``, which keeps counts."""
+    from . import habit_replies
+    try:
+        db = habit_replies.hermes_db_from(state_dir, cfg if isinstance(cfg, Mapping) else {}, env)
+    except (TypeError, ValueError):
+        db = None
+    if db is None:
+        return {"replies": None, "quiet": None, "why": NO_DB_COMPLAINTS}
+    replies = _replies(Path(db), float(now) - (max(int(days), 1) + 1) * 86400.0)
+    if replies is None:
+        return {"replies": None, "quiet": None, "why": DB_UNREADABLE}
+    state = quiet.load(state_dir)
+    if state is None and (Path(state_dir) / quiet.QUIET_FILE).exists():
+        return {"replies": None, "quiet": None, "why": QUIET_UNREADABLE}
+    return {"replies": replies, "quiet": state, "why": None}
+
+
 def push_cap(cfg: Optional[Mapping] = None) -> int:
     """Config ``push_cap`` (a whole number, at least one); anything else is the send gate's own DAILY_CAP."""
     v = cfg.get(CAP_CONFIG) if isinstance(cfg, Mapping) else None
@@ -163,10 +228,60 @@ def _day(r: dict, tz: Optional[tzinfo]) -> date:
     return datetime.fromtimestamp(_at(r["at"]), tz).date()
 
 
+def stop_request(text) -> bool:
+    """True when a reply's first words, case-insensitive with trailing punctuation ignored, are ``stop`` or
+    ``too much`` (STOP_WORDS). "stop" anywhere else in a sentence, or inside a word, is not one."""
+    if not isinstance(text, str):
+        return False
+    words = []
+    for w in text.lower().split()[:2]:
+        while w and unicodedata.category(w[-1]).startswith("P"):
+            w = w[:-1]
+        words.append(w)
+    return any(tuple(words[:len(s)]) == s for s in STOP_WORDS)
+
+
+MUTING = (quiet.OFF, quiet.TONIGHT, quiet.SNOOZED)
+
+
+def _complaints(signals: Optional[Mapping], good: list, days: set, tz: Optional[tzinfo]) -> dict:
+    """The T0 complaint counts over the window ``days`` (see the module doc); never the text."""
+    sig = signals if isinstance(signals, Mapping) else {}
+    replies = sig.get("replies")
+    why = sig.get("why") or (NO_DB_COMPLAINTS if not isinstance(replies, (list, tuple)) else None)
+    if not days:
+        why = NO_WEEK_COMPLAINTS
+    if why:
+        return {"known": False, "quiet": None, "stop": None, "total": None, "why": str(why)}
+
+    def in_window(t) -> bool:
+        return _at(t) is not None and datetime.fromtimestamp(t, tz).date() in days
+
+    sent = [float(r["at"]) for r in good if delivered(r)]
+    muted, stops = set(), 0
+    state = sig.get("quiet")
+    since = quiet._since(state)
+    if quiet.mode_of(state) in MUTING and since is not None and in_window(since):
+        muted.add(int(since))
+    for item in replies or ():
+        if not isinstance(item, (tuple, list)) or len(item) != 2:
+            continue
+        t, text = item
+        if not in_window(t):
+            continue
+        if quiet.command(text) in MUTING:
+            muted.add(int(t))
+        elif stop_request(text) and any(p <= t <= p + REPLY_GAP_S for p in sent):
+            stops += 1
+    return {"known": True, "quiet": len(muted), "stop": stops, "total": len(muted) + stops, "why": None}
+
+
 def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None, *, today: Optional[date] = None,
-          tz: Optional[tzinfo] = None, cap: Optional[int] = None, skipped: int = 0) -> dict:
+          tz: Optional[tzinfo] = None, cap: Optional[int] = None, skipped: int = 0,
+          signals: Optional[Mapping] = None) -> dict:
     """The delivery audit of ``rows`` over the ``days`` local days ending ``today`` (default: the newest row's
-    day). T0 counts per day and in total, and one T1 ``label`` in words. See the module doc."""
+    day). T0 counts per day and in total, and one T1 ``label`` in words. ``signals`` (``signals()``) are the
+    complaint sources; None is complaints unknown. See the module doc."""
     good, bad = [], int(skipped or 0)
     for r in rows or ():
         if valid(r):
@@ -213,8 +328,9 @@ def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None
     if wake["wake_days"]:
         wake["brief_share"] = wake["brief_delivered"] / wake["wake_days"]
     out["wake"] = wake
+    out["complaints"] = _complaints(signals, good, set(window) if out["known_days"] else set(), tz)
     out["labels"] = {"push": _push_words(out, len(window)), "brief": _brief_words(wake),
-                     "action": _action_words(out)}
+                     "action": _action_words(out), "complaints": _complaint_words(out["complaints"])}
     words = "; ".join(w for w in out["labels"].values() if w)
     out["label"] = {"label": words, "tier": "T1", "modality": MODALITY}
     return out
@@ -247,21 +363,30 @@ def _action_words(out: dict) -> str:
     return ACTION_KNOWN if out["action_unknown"] else ACTION_ALL
 
 
+def _complaint_words(c: dict) -> str:
+    if not c["known"]:
+        return COMPLAINTS_UNKNOWN + c["why"]
+    return COMPLAINTS_SOME if c["total"] else COMPLAINTS_NONE
+
+
 GOAL_MET, GOAL_NOT_MET, GOAL_UNKNOWN = "met", "not met", "unknown"
 
 
 def goal(a: Optional[dict]) -> str:
     """Whether an audit (``audit``'s dict, None for no log) meets north-star row two, judged from its own counts.
 
-    "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, or a delivered
-    push had no reply line. "met" only when every day of the window has rows, at least one wake day is known,
-    no wake day is unknown, and every delivered body is known to carry a reply line. Anything else ("unknown")
-    includes no log, a quiet week and unknown wake days: unknown is never met.
+    "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, a delivered
+    push had no reply line, or a complaint is known (a quiet or stop request). "met" only when every day of
+    the window has rows, at least one wake day is known, no wake day is unknown, every delivered body is known
+    to carry a reply line, and complaints are known to be none. Anything else ("unknown") includes no log, a
+    quiet week, unknown wake days and unknown complaints: unknown is never met.
     """
     if not isinstance(a, dict) or not a.get("known_days"):
         return GOAL_UNKNOWN
     wake = a["wake"]
-    if a["over_cap_days"] or a["no_action"] or wake["brief_delivered"] < wake["wake_days"]:
+    c = a.get("complaints") or {}
+    if a["over_cap_days"] or a["no_action"] or wake["brief_delivered"] < wake["wake_days"] or \
+            (c.get("known") and c.get("total")):
         return GOAL_NOT_MET
-    complete = a["known_days"] == len(a["days"]) and not a["action_unknown"]
+    complete = a["known_days"] == len(a["days"]) and not a["action_unknown"] and c.get("known") is True
     return GOAL_MET if complete and wake["wake_days"] and not wake["unknown_wake_days"] else GOAL_UNKNOWN
