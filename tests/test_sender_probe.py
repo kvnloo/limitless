@@ -171,6 +171,94 @@ class Verdicts(Home):
         self.assertEqual(self.called(), [])
 
 
+class Reasons(Home):
+    """probe(..., reasons=True): a fourth item, words only, says why a check failed; the verdicts stay as they were."""
+
+    def reasons(self, timeout=sp.TIMEOUT_S):
+        got = sp.probe(self.cfg, self.env, timeout=timeout, reasons=True)
+        return {name: (words, why) for name, words, _, why in got}
+
+    def test_the_three_reasons_are_words_only(self):
+        self.assertEqual(sp.REASON_NOT_FOUND, "hermes was not found (set hermes_bin in the config)")
+        self.assertEqual(sp.REASON_TOO_LONG, "hermes took too long")
+        self.assertEqual(sp.REASON_UNEXPECTED, "hermes exited with an unexpected answer")
+        for why in (sp.REASON_NOT_FOUND, sp.REASON_TOO_LONG, sp.REASON_UNEXPECTED):
+            self.assertIsNone(re.search(r"\d|/", why), why)
+
+    def test_a_missing_configured_binary_is_not_found(self):
+        self.cfg = dict(self.cfg, hermes_bin=str(self.dir / "no-such-hermes"))
+        self.assertEqual(self.reasons(), {"default": (sp.CHECK_FAILED, sp.REASON_NOT_FOUND)})
+        self.assertEqual(self.called(), [])
+
+    def test_hermes_off_path_is_not_found(self):
+        self.env = dict(self.env, PATH=str(self.dir / "empty-path-dir"))
+        self.assertEqual(self.reasons(), {"default": (sp.CHECK_FAILED, sp.REASON_NOT_FOUND)})
+
+    def test_a_binary_that_is_not_executable_is_not_found(self):
+        plain = self.dir / "plain-hermes"
+        plain.write_text(FAKE)
+        plain.chmod(0o644)
+        self.cfg = dict(self.cfg, hermes_bin=str(plain))
+        self.assertEqual(self.reasons(), {"default": (sp.CHECK_FAILED, sp.REASON_NOT_FOUND)})
+        self.assertEqual(self.called(), [])
+
+    def test_a_timeout_took_too_long(self):
+        self.mode("sleep")
+        self.assertEqual(self.reasons(timeout=0.5), {"default": (sp.CHECK_FAILED, sp.REASON_TOO_LONG)})
+
+    def test_another_exit_is_an_unexpected_answer(self):
+        for mode in ("other", "unknown-mode", "crash"):
+            self.mode(mode)
+            self.assertEqual(self.reasons(), {"default": (sp.CHECK_FAILED, sp.REASON_UNEXPECTED)}, mode)
+
+    def test_a_settled_verdict_has_no_reason(self):
+        self.assertEqual(self.reasons(), {"default": (sp.NO_TARGETS, None)})
+        self.mode("targets")
+        self.assertEqual(self.reasons(), {"default": (sp.TARGETS_FOUND, None)})
+
+    def test_the_default_shape_and_run_one_are_unchanged(self):
+        self.mode("sleep")
+        got = self.probe(timeout=0.5)
+        self.assertEqual([len(r) for r in got], [3])
+        self.assertEqual(self.verdicts(got), {"default": sp.CHECK_FAILED})
+        self.assertEqual(sp.run_one(str(self.dir / "no-such-hermes"), "default", self.env), sp.CHECK_FAILED)
+        self.assertEqual(sp.CHECK_FAILED, "unknown: the check failed")
+
+    def test_no_output_of_hermes_reaches_a_reason(self):
+        for mode in ("none", "targets", "crash", "other", "unknown-mode"):
+            self.mode(mode)
+            for words, why in self.reasons().values():
+                self.assertNotIn(MARK, f"{words} {why}")
+                self.assertNotIn("Traceback", f"{words} {why}")
+
+
+class Golden(Home):
+    """The saved file and push_sender.candidates are what they were before reasons existed, byte for byte."""
+
+    GOLDEN = ('{"default": {"at": 1894708800.0, "files": {".env": null, "config.yaml": 1000000000}, '
+              '"verdict": "no targets"}}\n')
+
+    def setUp(self):
+        super().setUp()
+        os.utime(self.hermes / "config.yaml", ns=(10**9, 10**9))
+
+    def test_the_saved_json_is_byte_identical(self):
+        sp.save(self.st, self.probe(), NOW)
+        self.assertEqual((self.st / sp.PROBE_FILE).read_text(), self.GOLDEN)
+        self.assertEqual(self.candidates(), [("default", ps.PROBED_NONE)])
+
+    def test_a_reasons_run_saves_the_same_bytes(self):
+        sp.save(self.st, sp.probe(self.cfg, self.env, reasons=True), NOW)
+        self.assertEqual((self.st / sp.PROBE_FILE).read_text(), self.GOLDEN)
+        self.assertEqual(self.candidates(), [("default", ps.PROBED_NONE)])
+
+    def test_a_failed_reasons_run_keeps_the_file(self):
+        sp.save(self.st, self.probe(), NOW)
+        self.mode("other")
+        sp.save(self.st, sp.probe(self.cfg, self.env, reasons=True), NOW + H)
+        self.assertEqual((self.st / sp.PROBE_FILE).read_text(), self.GOLDEN)
+
+
 class Saved(Home):
     def read(self):
         return json.loads((self.st / sp.PROBE_FILE).read_text())
@@ -347,6 +435,34 @@ class Cli(Home):
         self.assertNotIn(MARK, r.stdout + r.stderr)
         data = json.loads((self.st / sp.PROBE_FILE).read_text())
         self.assertEqual(data["default"]["verdict"], sp.TARGETS_FOUND)
+
+    def test_a_missing_binary_says_set_hermes_bin(self):
+        self.vault("delta")
+        r = self.run_bin(env=dict(self.env, PATH=str(self.dir / "empty-path-dir")))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "default: unknown: the check failed: hermes was not found (set hermes_bin in the config)\n"
+                                   "delta: unknown: the check failed: hermes was not found (set hermes_bin in the config)\n"
+                                   "dry run: nothing saved (pass --write to save)\n")
+        self.assertEqual(self.called(), [])
+
+    def test_another_exit_says_unexpected_answer_and_never_hermes_output(self):
+        for mode in ("other", "crash", "unknown-mode"):
+            self.mode(mode)
+            r = self.run_bin("--write")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout, "default: unknown: the check failed: hermes exited with an unexpected answer\n"
+                                       "saved\n", mode)
+            self.assertNotIn(MARK, r.stdout + r.stderr)
+            self.assertNotIn("Traceback", r.stdout + r.stderr)
+            for line in r.stdout.splitlines():
+                self.assertIsNone(re.search(r"\d|/", line), line)
+        self.assertNotIn("default", json.loads((self.st / sp.PROBE_FILE).read_text()))
+
+    def test_a_settled_line_has_no_reason(self):
+        self.vault("delta")
+        r = self.run_bin()
+        self.assertEqual(r.stdout, "default: no targets\ndelta: no targets\ndry run: nothing saved (pass --write to save)\n")
+        self.assertNotIn(MARK, r.stdout + r.stderr)
 
     def test_nothing_unknown_runs_nothing(self):
         (self.hermes / "config.yaml").unlink()
