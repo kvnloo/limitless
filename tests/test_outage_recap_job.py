@@ -204,6 +204,18 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(push, now=NOW + 300)["action"], jobs.DELIVER)
         self.assertEqual([c["once"] for c in push.calls], [KEY])
 
+    def test_a_wait_holds_even_when_this_pass_s_own_delivery_is_logged_after_the_pass_clock(self):
+        # the confirmation pushed in this pass closed the outage; kevin-push logged it a second after run_once's now
+        self.log(OPEN + [row(NOW + 1, "Pushes", "telegram")])
+        push = FakePush()
+        r = job.run(self.st, NOW, push=push, dry_run=False, env=self.env, tz=UTC,
+                    wait="the sender confirmation went out in this pass")
+        self.assertEqual((r["action"], r["reason"]), (jobs.HOLD, "pushes came back after an outage; waits for the "
+                                                                  "next pass: the sender confirmation went out in "
+                                                                  "this pass"))
+        self.assertEqual(push.calls, [])
+        self.assertIsNone(self.mark())
+
     def test_run_once_sends_the_sender_confirmation_first_and_the_recap_on_the_next_pass(self):
         self.log(CLOSED)
         self.cfg_path.write_text(json.dumps({"outage_recap": "write", "push_log": "push-log.jsonl",
