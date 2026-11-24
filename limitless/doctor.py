@@ -5,8 +5,9 @@
 status is one of STATUSES: live, stale, missing or off. The rows are the state dir (exists, readable), each
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
 last sync run's age in words from runs.jsonl, then the uptime row (uptime_audit over runs.jsonl: live when the
-uptime goal was met, stale when not, missing when unknown; kind source, words only), one row per tool in
-plugin.yaml, from that tool's own
+uptime goal was met, stale when not, missing when unknown; kind source, words only), the local labeler's row
+(env LIMITLESS_T1_CMD or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one
+row per tool in plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
 open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
 its mark noop-export.json), just before both the sleep coverage row (sleep_coverage over config sleep_file and
@@ -148,6 +149,56 @@ def uptime_row(reader: StateReader, now: float) -> dict:
     if words == ua.UNKNOWN:
         return _row(UPTIME_ROW, "source", MISSING, ua.FEW_KNOWN_REASON)
     return _row(UPTIME_ROW, "source", _UPTIME_STATUS.get(a["goal"], MISSING), words)
+
+
+LOCAL_LABELER_ROW = "local labeler"
+RUNNER = "limitless-t1-local"
+_RULES_USED = "; the rule labels are used"
+LOCAL_WORDS = {   # local_labeler_row's verdict -> (status, reason); never the command, a path or a digit
+    "off": (OFF, "no local model command set, so the rule labels are used"),
+    "set": (LIVE, "set: the command, the model binary and the model file exist (the model is not run here)"),
+    "set other": (LIVE, "set: the command exists; it is not the bundled runner, so no model file is checked (the "
+                        "model is not run here)"),
+    "unreadable": (MISSING, "broken: the command line cannot be read" + _RULES_USED),
+    "no program": (MISSING, "broken: the command's program does not exist" + _RULES_USED),
+    "no paths": (MISSING, "broken: the runner's model binary or model file is not set" + _RULES_USED),
+    "no files": (MISSING, "broken: the model binary or the model file does not exist" + _RULES_USED),
+}
+
+
+def _local_verdict(cfg: Mapping, env: Mapping[str, str]) -> str:
+    import shlex
+    import shutil
+    from . import labeler, t1_local
+    cmd = env.get(labeler.ENV_KEY) or (cfg.get(labeler.CONFIG_KEY) if isinstance(cfg, Mapping) else None)
+    if not isinstance(cmd, str) or not cmd.strip():
+        return "off"
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return "unreadable"
+    if not argv or shutil.which(argv[0], path=env.get("PATH") or os.defpath) is None:
+        return "no program"
+    runner = [a for a in argv if os.path.basename(a) == RUNNER]
+    if not runner:
+        return "set other"
+    if not all(os.path.isfile(a) for a in runner):
+        return "no program"
+    binary, model = t1_local.paths(env, cfg if isinstance(cfg, Mapping) else {})
+    if binary is None or model is None:
+        return "no paths"
+    return "set" if os.path.isfile(binary) and os.path.isfile(model) else "no files"
+
+
+def local_labeler_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The optional local T1 model (labeler.LocalModelLabeler: $LIMITLESS_T1_CMD, else config ``t1_model_cmd``):
+    off when unset; set when the command's program exists and, for the bundled runner (bin/limitless-t1-local),
+    its model binary and model file ($LIMITLESS_T1_BIN / $LIMITLESS_T1_MODEL, else config ``t1_bin`` /
+    ``t1_model``) exist too; broken (status missing) when the command cannot be read or a file is missing. Only
+    checks that files exist: the model is never run and no process is started. Words only: never the command, a
+    path or a digit. Kind ``labeler``: --strict does not count it."""
+    status, reason = LOCAL_WORDS[_local_verdict(cfg, os.environ if env is None else env)]
+    return _row(LOCAL_LABELER_ROW, "labeler", status, reason)
 
 
 NOOP_ROW = "job NOOP export"
@@ -576,8 +627,8 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), each tool in
-    plugin.yaml, the context packet
+    """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), the local
+    labeler (local_labeler_row), each tool in plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
@@ -589,12 +640,15 @@ def report(cfg: Mapping, now: float) -> list:
     the sleep file.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
-    as they do inside Hermes."""
+    as they do inside Hermes. The tools label with the rules only (labeler.rules_only): a configured local
+    model is never run by the doctor."""
+    from . import labeler
     path = state_path(cfg)
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
-    rows += [uptime_row(reader, now)]
-    rows += [tool_row(name, now) for name in manifest_tools()]
+    rows += [uptime_row(reader, now), local_labeler_row(cfg)]
+    with labeler.rules_only():
+        rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),

@@ -21,6 +21,7 @@ import math
 import os
 import shlex
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, Union
 
@@ -150,5 +151,19 @@ def t1_model_cmd(env: Optional[Mapping[str, str]] = None, home: Optional[Path] =
     return v if isinstance(v, str) and v.strip() else None
 
 
+_RULES_ONLY = []
+
+
+@contextmanager
+def rules_only():
+    """Inside this block from_config gives the rule labeler, so the local model is never run. For
+    limitless-doctor, whose read-only tool calls must not start the configured model."""
+    _RULES_ONLY.append(True)
+    try:
+        yield
+    finally:
+        _RULES_ONLY.pop()
+
+
 def from_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> LocalModelLabeler:
-    return LocalModelLabeler(t1_model_cmd(env, home))
+    return LocalModelLabeler(None if _RULES_ONLY else t1_model_cmd(env, home))
