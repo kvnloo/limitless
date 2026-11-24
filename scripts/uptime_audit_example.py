@@ -81,4 +81,18 @@ with tempfile.TemporaryDirectory() as tmp:
     res = tools.uptime(StateReader(old), NOW, env=env, home=root, tz=UTC)
     print(json.dumps({k: res[k] for k in keep if k in res}))
 
+    print("\n# a loop that stopped: hourly runs, none for eight hours three days ago and none in the last five hours")
+    gaps = st / "gaps"
+    gaps.mkdir()
+    hourly = [NOW - 5 * HOUR - k * HOUR for k in range(27 * 24)]
+    hourly = [t for t in hourly if not NOW - 3 * DAY - 8 * HOUR < t < NOW - 3 * DAY]
+    (gaps / "runs.jsonl").write_text("".join(json.dumps({"at": iso(t), "job": "sync", "ok": True, "inputs": "stale"})
+                                             + "\n" for t in sorted(hourly)))
+    (gaps / "inputs.json").write_text(json.dumps({"at": iso(NOW - HOUR), "ageHours": {n: 1.0 for n in NAMES}}))
+    cfg.write_text(json.dumps({}))
+    print(tools.uptime(StateReader(gaps), NOW, env=env, home=root, tz=UTC)["label"]["label"])
+    print("# the same with config loop_gap_limit_s: eight hours (neither stretch is over it)")
+    cfg.write_text(json.dumps({"loop_gap_limit_s": 8 * HOUR}))
+    print(tools.uptime(StateReader(gaps), NOW, env=env, home=root, tz=UTC)["label"]["label"])
+
     print("\n# runs.jsonl is unchanged:", (st / "runs.jsonl").read_text().count("\n"), "lines")

@@ -31,6 +31,16 @@ class Docs(unittest.TestCase):
                      "--json", "scorecard", "never marks", "never changes how it is written", "no clock time"):
             self.assertIn(word, text)
 
+    def test_the_doc_and_readme_name_the_loop_gaps(self):
+        text = DOC.read_text()
+        for word in ("loop_gap_limit_s", "median spacing", "the loop stopped once this week",
+                     "the loop stopped a few times this week", "the loop has not run for", "under an hour",
+                     "over a day", "never sets a status"):
+            self.assertIn(word, text)
+        self.assertIn("loop_gap_limit_s", (ROOT / "README.md").read_text())
+        self.assertIn("loop_gap_limit_s", (ROOT / "docs" / "doctor.md").read_text())
+        self.assertIn("# a loop that stopped", text)    # the example shows a loop gap
+
 
 if __name__ == "__main__":
     unittest.main()

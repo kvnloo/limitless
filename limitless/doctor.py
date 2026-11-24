@@ -5,7 +5,8 @@
 status is one of STATUSES: live, stale, missing or off. The rows are the state dir (exists, readable), each
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
 last sync run's age in words from runs.jsonl, then the uptime row (uptime_audit over runs.jsonl: live when the
-uptime goal was met, stale when not, missing when unknown; kind source, words only), the delivery row
+uptime goal was met, stale when not, missing when unknown; kind source, words only, loop gaps said in words but
+never setting the status), the delivery row
 (north-star row two as the scorecard measures it, complaints included: off with no push log, live when met,
 stale when not, missing when unknown; kind source, words only), the push sender row (whether kevin-push's
 Hermes profile can reach Telegram, push_sender.readiness: live when ready, missing when the profile does not

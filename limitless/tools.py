@@ -1431,7 +1431,7 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
 
 
 UPTIME_RAW_KEYS = ("days", "inputs", "window_days", "known_days", "all_fresh_days", "all_fresh_share", "target",
-                   "goal", "skipped")
+                   "goal", "skipped", "loop")
 
 
 def _uptime_read(reader: StateReader, now: float, env, home, tz, cfg: Optional[Mapping] = None) -> tuple:
@@ -1447,7 +1447,8 @@ def _uptime_read(reader: StateReader, now: float, env, home, tz, cfg: Optional[M
     names = list(snap["ageHours"]) if isinstance(snap.get("ageHours"), dict) else []
     today = datetime.fromtimestamp(now, tz).date()
     a = _uptime.audit(rows, inputs=names, days=_uptime.window_days(cfg), today=today, tz=tz,
-                      ignore=outage.ignored(cfg), target=_uptime.target(cfg), skipped=skipped)
+                      ignore=outage.ignored(cfg), target=_uptime.target(cfg), skipped=skipped, now=now,
+                      gap_limit=_uptime.gap_limit(cfg))
     return a, rows
 
 
@@ -1456,7 +1457,8 @@ def uptime_audit(reader: StateReader, now: float, env: Optional[Mapping[str, str
                  cfg: Optional[Mapping] = None) -> Optional[dict]:
     """uptime_audit.audit of the state dir's runs.jsonl over the config window (``uptime_days``) ending today
     (local, ``tz``), judging inputs.json's input names plus every name a run lists, config ``outage_ignore`` left
-    out, against ``uptime_target``; None when there is no readable log. Read-only: limitless_uptime, the
+    out, against ``uptime_target``, with the loop gaps up to ``now`` (config ``loop_gap_limit_s``); None when
+    there is no readable log. Read-only: limitless_uptime, the
     doctor's uptime row, the scorecard's measured rows and bin/limitless-uptime-audit all read through it."""
     return _uptime_read(reader, now, env, home, tz, cfg)[0]
 

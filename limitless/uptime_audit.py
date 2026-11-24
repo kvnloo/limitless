@@ -23,13 +23,18 @@ no judged input is stale that day.
 Config: ``uptime_days`` (the window, a whole number of days, default DAYS) and ``uptime_target`` (the share of
 window days that must be every-input-fresh, above zero and at most one, default TARGET). The share is over the
 whole window, so an unknown day counts against the goal, never for it.
-Pure: no clock, no file except read_log, no send. Stdlib only, Python 3.9+.
+Loop gaps (loop_gaps): from the rows' own ``at`` times, a gap is two consecutive runs further apart than config
+``loop_gap_limit_s`` (seconds), else GAP_SPACINGS times the median spacing of the window's runs; it is open when
+the caller's ``now`` is that far past the newest run. The words say an open gap first ("the loop has not run for
+hours") and the closed gaps of the last seven days before the goal ("the loop stopped once this week for
+hours"); never a digit, a time stamp or a host, and never a status.
+Pure: no clock (``now`` is the caller's), no file except read_log, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 import json
 import math
-from datetime import date, datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
@@ -38,6 +43,8 @@ from .state_reader import parse_ts
 DAYS = 28
 TARGET = 0.95
 DAYS_CONFIG, TARGET_CONFIG = "uptime_days", "uptime_target"
+GAP_LIMIT_CONFIG = "loop_gap_limit_s"
+GAP_SPACINGS = 3                 # default loop-gap limit: this many times the usual spacing of the runs
 LOG_NAME = "runs.jsonl"
 STALE_WORD = "stale"
 MODALITY = "measured"            # runs.jsonl is the sync's own record of each run
@@ -52,6 +59,10 @@ GOAL_MET, GOAL_NOT_MET, GOAL_UNKNOWN = "met", "not met", "unknown"
 NO_LOG_REASON = "no sync run log in the state dir (runs.jsonl)"
 NO_ROWS_REASON = "no sync run in the audit window"
 FEW_KNOWN_REASON = "fewer than a week of sync runs name their stale inputs"
+WEEK_DAYS = 7                    # "this week": the last seven local days of the window, today included
+LOOP_STOPPED_ONCE, LOOP_STOPPED_FEW = "the loop stopped once this week", "the loop stopped a few times this week"
+LOOP_NOT_RUN = "the loop has not run for"
+FOR_MINUTES, FOR_HOURS, FOR_DAYS = "under an hour", "hours", "over a day"
 GOAL_WORDS = {GOAL_MET: "uptime goal met", GOAL_NOT_MET: "uptime goal not met",
               GOAL_UNKNOWN: "uptime goal unknown: too many days without input words"}
 
@@ -128,12 +139,52 @@ def target(cfg: Optional[Mapping] = None) -> float:
     return float(v) if ok else TARGET
 
 
+def gap_limit(cfg: Optional[Mapping] = None) -> Optional[float]:
+    """Config ``loop_gap_limit_s`` (seconds, a finite number above zero); None (the default: GAP_SPACINGS times
+    the usual spacing of the window's runs) for anything else."""
+    v = cfg.get(GAP_LIMIT_CONFIG) if isinstance(cfg, Mapping) else None
+    ok = isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0
+    return float(v) if ok else None
+
+
+def usual_spacing(times: Iterable) -> Optional[float]:
+    """The median of the positive spacings between consecutive run times (seconds); None with no such spacing."""
+    ts = sorted(times)
+    steps = sorted(b - a for a, b in zip(ts, ts[1:]) if b > a)
+    if not steps:
+        return None
+    k = len(steps) // 2
+    return steps[k] if len(steps) % 2 else (steps[k - 1] + steps[k]) / 2
+
+
+def _iso(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def loop_gaps(times: Iterable, limit: Optional[float] = None, now: Optional[float] = None) -> dict:
+    """The stretches when the loop did not run, from the run times alone (T0). A gap is two consecutive runs
+    further apart than the limit (``limit``, else GAP_SPACINGS times usual_spacing); open_s is how long the
+    newest run is older than ``now`` when that is over the limit (None without ``now``). Runs after ``now`` are
+    left out. No clock time: only the spacing of the runs themselves."""
+    ts = sorted(t for t in times if now is None or t <= now)
+    spacing = usual_spacing(ts)
+    lim = limit if limit is not None else (GAP_SPACINGS * spacing if spacing else None)
+    out = {"spacing_s": spacing, "limit_s": lim, "gaps": [], "open_s": None}
+    if not lim or not ts:
+        return out
+    out["gaps"] = [{"from": _iso(a), "to": _iso(b), "s": b - a} for a, b in zip(ts, ts[1:]) if b - a > lim]
+    if now is not None and now - ts[-1] > lim:
+        out["open_s"] = now - ts[-1]
+    return out
+
+
 def _day(r: dict, tz: Optional[tzinfo]) -> date:
     return datetime.fromtimestamp(_at(r), tz).date()
 
 
 def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Optional[date] = None,
-          tz: Optional[tzinfo] = None, ignore: Iterable = (), target: float = TARGET, skipped: int = 0) -> dict:
+          tz: Optional[tzinfo] = None, ignore: Iterable = (), target: float = TARGET, skipped: int = 0,
+          now: Optional[float] = None, gap_limit: Optional[float] = None) -> dict:
     """The uptime audit of ``rows`` over the ``days`` local days ending ``today`` (default: the newest row's
     day). T0 counts per input (fresh, stale, unknown days) and per day. See the module doc."""
     good, bad = [], int(skipped or 0)
@@ -173,6 +224,10 @@ def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Opt
             out["known_days"] += 1
             out["all_fresh_days"] += int(not stale)
     out["inputs"] = per
+    out["loop"] = loop = loop_gaps([_at(r) for d in window for r in by_day[d]], gap_limit, now)
+    week = today - timedelta(days=WEEK_DAYS - 1) if today is not None else None
+    this_week = [g["s"] for g in loop["gaps"] if week is not None and _day({"at": g["to"]}, tz) >= week]
+    loop["week_gaps"], loop["week_longest_s"] = len(this_week), max(this_week, default=None)
     out["target"] = target
     out["all_fresh_share"] = out["all_fresh_days"] / len(window) if window else None
     out["goal"] = _goal(out)
@@ -218,6 +273,21 @@ def phrase(c: Mapping, n_days: int) -> str:
     return STALE_MOST if s * 2 > k else FRESH_HALF
 
 
+def for_words(seconds: float) -> str:
+    """How long a loop-down stretch lasted, in words: under an hour, hours, over a day."""
+    return FOR_MINUTES if seconds < 3600 else FOR_HOURS if seconds <= 86400 else FOR_DAYS
+
+
+def loop_words(loop: Mapping) -> str:
+    """The closed gaps of the last seven days in one clause ("the loop stopped once this week for hours"); ""
+    when there was none. Words only: no count, no time, no host."""
+    n = loop.get("week_gaps") or 0
+    if not n:
+        return ""
+    how = for_words(loop["week_longest_s"])
+    return f"{LOOP_STOPPED_ONCE} for {how}" if n == 1 else f"{LOOP_STOPPED_FEW}, the longest for {how}"
+
+
 def _and(parts: list) -> str:
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
@@ -232,4 +302,7 @@ def _words(out: dict) -> str:
         groups.setdefault(phrase(c, n), []).append(name_words(name))
     order = PHRASES + tuple(p for p in groups if p not in PHRASES)
     parts = [f"{_and(groups[p])} {p}" for p in order if p in groups] or [NONE_NAMED]
-    return "; ".join(parts + [GOAL_WORDS[out["goal"]]])
+    loop = out.get("loop") or {}
+    down = [f"{LOOP_NOT_RUN} {for_words(loop['open_s'])}"] if loop.get("open_s") else []
+    stopped = loop_words(loop)
+    return "; ".join(down + parts + ([stopped] if stopped else []) + [GOAL_WORDS[out["goal"]]])
