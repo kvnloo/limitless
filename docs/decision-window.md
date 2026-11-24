@@ -131,6 +131,26 @@ to the host's class through one table:
 `current` reads events, never a clock time, and never raises (an error is none). Config
 `window_provider` is on by default; `false` or `"off"` registers nothing.
 
+## Job fields for the Hermes cron gate
+
+The same gate stores two fields on a recurring cron job: `window_class` and `stale_after_s` (an occurrence due
+longer ago than that is dropped, not sent late). `limitless.jobs.to_cron_fields(spec)` reads both from the
+job's own spec through one table, `CRON_WINDOW` (`peak`, `trough`, `anytime` and `wind_down` map to the
+same host class); a spec with no window gives no fields. Both need a cron or interval schedule on the host.
+
+| job | `window_class` | `stale_after_s` |
+| --- | --- | --- |
+| wake brief | `anytime`; `peak` when it carries a decision | three hours |
+| back from nap | `anytime` | one hour |
+| the bedtime question (MIQ) | `wind_down` | three hours |
+| habit check-in, week review | `anytime` | three hours |
+| break nudge | `anytime` | six hours |
+| outage recap, sender confirmation | `anytime` | twelve hours |
+| the jobs that send nothing (NOOP export, the ingests) | `anytime` | none: never stale |
+
+The event that ends a job (`expires`, e.g. Sleep mode going on) has no cron field; the plugin's own
+`should_fire` still applies it.
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
