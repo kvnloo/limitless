@@ -14,6 +14,7 @@ word from the kind's allowed set; anything else, a non-zero exit, a timeout or a
 rule label instead. A value the rules call unknown or missing is never sent to the model. Run it on the
 CPU: the child gets CUDA_VISIBLE_DEVICES="" and HIP_VISIBLE_DEVICES="", and the command must not take a
 GPU that another job owns (pick a CPU build or flags; never point it at a shared GPU server).
+bin/limitless-t1-local is such a command for a llama.cpp-style CLI on the CPU (limitless/t1_local.py).
 """
 from __future__ import annotations
 
