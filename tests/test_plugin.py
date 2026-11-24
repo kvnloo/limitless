@@ -302,6 +302,12 @@ class Wiring(unittest.TestCase):
                 cfg = st / "delivery-config.json"
                 cfg.write_text(json.dumps({"push_log": "push-log.jsonl"}))
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(cfg)}
+            if name == "limitless_uptime":   # a synthetic week of sync runs that name their stale inputs
+                (st / "uptime").mkdir()
+                (st / "uptime" / "runs.jsonl").write_text("".join(json.dumps(
+                    {"at": NOW - 3600 - n * 86400, "job": "sync", "ok": True, "inputs": "stale"}) + "\n"
+                    for n in range(7)))
+                env = {"LIMITLESS_STATE": str(st / "uptime")}
             if name == "limitless_loop":   # one synthetic decided week
                 from limitless import stop_rule
                 (st / "loop").mkdir()
