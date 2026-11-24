@@ -85,5 +85,21 @@ class LimitlessScorecardCli(unittest.TestCase):
         self.assertEqual(tree(FIX), fix_before)
 
 
+    def test_an_existing_state_dir_adds_the_measured_lines(self):
+        st = self.home / "state"
+        st.mkdir()
+        r = self.run_cli(str(FIX / "scorecard.md"), LIMITLESS_STATE=str(st))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = r.stdout.splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertEqual(lines[1:4], ["- 6 green, 2 amber, 2 red of 10", "- not all green yet", "- Habit logging: red"])
+        self.assertEqual(lines[4], "- Measured: loop uptime: unknown: no sync run log in the state dir (runs.jsonl)")
+        self.assertEqual(lines[5], "- Measured: delivery: unknown: no push log set")
+        self.assertEqual(tree(st), [])
+
+    def test_no_state_dir_keeps_the_plain_block(self):
+        r = self.run_cli(str(FIX / "thresholds.md"), LIMITLESS_STATE=str(self.home / "absent"))
+        self.assertEqual((r.returncode, r.stdout), (0, BLOCK), r.stderr)
+
 if __name__ == "__main__":
     unittest.main()
