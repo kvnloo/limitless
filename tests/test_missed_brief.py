@@ -1,7 +1,7 @@
 """A wake brief that never reached the phone can be read in any Hermes chat (missed_brief).
 
 Missed = today's wake brief row is in kevin-push's log (config push_log, the row titled the wake brief's send
-title), today is a wake day, the delivery audit's rule finds no delivered brief today, and the newest brief row
+title), today is a wake day (or, with no wake known, today's log holds that brief row with text), the delivery audit's rule finds no delivered brief today, and the newest brief row
 is no older than the wake job's stale_after_s. The state card then says so on a line of its own after the push
 reach line; limitless_missed_brief returns the text through tier_audit.gate (digits masked without the raw
 opt-in). Read-only: only the gate's content-free audit row is written.
@@ -177,11 +177,20 @@ class NotMissed(Base):
         self.assertNotIn(LINE, self.card(now=late)["lines"])
         self.assert_none(self.tool(now=late))
 
-    def test_no_wake_today_is_not_offered(self):
+    def test_no_wake_and_no_brief_row_today_is_not_offered(self):
         self.wakes(local(TODAY - timedelta(days=1), 7))
-        self.write_log([row(SENT_AT, HELD)])
-        self.assert_none(self.tool())
+        self.write_log([row(SENT_AT, HELD, title="Pick one")])
+        res = self.tool()
+        self.assert_none(res)
+        self.assertEqual(res["reason"], missed_brief.NO_WAKE)
         self.assertNotIn(LINE, self.card()["lines"])
+
+    def test_no_wake_and_a_brief_row_with_no_text_is_not_offered(self):
+        self.wakes(local(TODAY - timedelta(days=1), 7))
+        self.write_log([row(SENT_AT, HELD, body="  ")])
+        res = self.tool()
+        self.assert_none(res)
+        self.assertEqual(res["reason"], missed_brief.NO_WAKE)
 
     def test_other_titles_never_count_as_a_brief(self):
         self.write_log([row(SENT_AT, HELD, title="Pick one")])
@@ -275,11 +284,114 @@ class Cache(Base):
 
     def test_a_new_wake_event_rebuilds(self):
         self.wakes(local(TODAY - timedelta(days=1), 7))
-        self.write_log([row(SENT_AT, HELD)])
+        self.write_log([row(SENT_AT, HELD, title="Pick one")])
         self.assertNotIn(LINE, self.get())
+        self.write_log([row(SENT_AT, HELD, title="Pick one"), row(SENT_AT + 60, HELD)])
+        self.bump(self.log)
+        self.assertIn(LINE, self.get())              # no wake yet: the brief row alone offers it
         self.wakes(WAKE)
         self.bump(self.st / "events.jsonl")
         self.assertIn(LINE, self.get())
+        self.assertEqual(self.c.builds, 3)
+
+
+class NoWake(Base):
+    """No wake proxy fired today, but the older sender still logged today's brief row: that row is the evidence
+    that the morning ran, so an undelivered one is offered (find only; the delivery audit is unchanged)."""
+
+    def setUp(self):
+        super().setUp()
+        self.wakes(local(TODAY - timedelta(days=1), 7))   # a wake yesterday only: today is no known wake day
+
+    def test_a_undelivered_brief_today_is_missed_on_the_card_and_in_the_tool(self):
+        self.write_log([row(SENT_AT, HELD)])
+        f = missed_brief.find({"push_log": "push-log.jsonl"}, self.st, NOW, self.env)
+        self.assertTrue(f["missed"])
+        self.assertEqual(f["until"], SENT_AT + jobs.WAKE_BRIEF.stale_after_s)
+        self.assertIn(LINE, self.card()["lines"])
+        res = self.tool()
+        self.assertEqual(res["value"]["brief"], MASKED)
+        self.assertEqual(res["value"]["why"], delivery_audit.MISS_SLEEP)
+        self.assertEqual(self.tool(raw=True)["value"]["brief"], BRIEF)
+
+    def test_a_failed_send_is_offered_and_the_newest_attempt_wins(self):
+        self.write_log([row(SENT_AT - 600, RC1, body="old words"), row(SENT_AT, RC1)])
+        res = self.tool()
+        self.assertEqual(res["value"]["brief"], MASKED)
+        self.assertEqual(res["value"]["why"], delivery_audit.MISS_LOGGED)
+
+    def test_b_a_delivered_brief_today_is_not_missed(self):
+        self.write_log([row(SENT_AT - 600, HELD), row(SENT_AT, "telegram")])
+        res = self.tool()
+        self.assertIsNone(res["value"])
+        self.assertEqual(res["reason"], missed_brief.DELIVERED)
+        self.assertNotIn(LINE, self.card()["lines"])
+
+    def test_c_a_brief_row_yesterday_only_is_not_missed(self):
+        y = TODAY - timedelta(days=1)
+        self.write_log([row(local(y, 23, 30), HELD)])
+        now = local(TODAY, 0, 30)          # within stale_after_s of yesterday's row, but on a new local day
+        res = self.tool(now=now)
+        self.assertIsNone(res["value"])
+        self.assertEqual(res["reason"], missed_brief.NO_WAKE)
+        self.assertNotIn(LINE, self.card(now=now)["lines"])
+
+    def test_c_the_local_date_follows_the_tz_parameter(self):
+        from datetime import timezone
+        at = datetime(2030, 1, 15, 23, 30, tzinfo=timezone.utc).timestamp()
+        now = at + 3600                     # 00:30 UTC on the next day; still the same day five hours west
+        west = timezone(timedelta(hours=-5))
+        self.wakes(at - 3 * 86400)
+        self.write_log([row(at, HELD)])
+        cfg = {"push_log": "push-log.jsonl"}
+        self.assertEqual(missed_brief.find(cfg, self.st, now, self.env, tz=timezone.utc)["reason"],
+                         missed_brief.NO_WAKE)
+        self.assertTrue(missed_brief.find(cfg, self.st, now, self.env, tz=west)["missed"])
+
+    def test_d_a_brief_older_than_stale_after_is_stale(self):
+        self.write_log([row(SENT_AT, HELD)])
+        late = SENT_AT + jobs.WAKE_BRIEF.stale_after_s + 60
+        self.assertEqual(datetime.fromtimestamp(late).date(), TODAY)   # sanity: still today
+        res = self.tool(now=late)
+        self.assertIsNone(res["value"])
+        self.assertEqual(res["reason"], missed_brief.STALE)
+        self.assertNotIn(LINE, self.card(now=late)["lines"])
+
+    def test_e_the_card_cache_rebuilds_once_the_offer_goes_stale(self):
+        self.write_log([row(SENT_AT, HELD)])
+        c = card.CardCache()
+        self.assertIn(LINE, c.get(self.r, NOW, TODAY, env=self.env))
+        self.assertIn(LINE, c.get(self.r, NOW + 60, TODAY, env=self.env))
+        self.assertEqual(c.builds, 1)
+        self.assertNotIn(LINE, c.get(self.r, SENT_AT + jobs.WAKE_BRIEF.stale_after_s + 1, TODAY, env=self.env))
+        self.assertEqual(c.builds, 2)
+
+    def test_the_tool_output_holds_no_digit_without_the_opt_in(self):
+        self.write_log([row(SENT_AT, HELD)])
+        res = self.tool()
+        self.assertEqual(re.findall(r"\d", res["value"]["brief"]), [])
+        self.assertEqual(re.findall(r"\d", json.dumps(res["value"])), [])
+
+    def test_the_delivery_audit_numbers_do_not_grow_from_brief_rows(self):
+        from limitless import jobs_runner, tools
+        self.write_log([row(SENT_AT, HELD)])
+        rows = delivery_audit.read_log(self.log)[0]
+
+        def audit():
+            return delivery_audit.audit(rows, wake_days=jobs_runner.delivery_wake_days(self.st, NOW, self.env),
+                                        today=TODAY, sleep=delivery_audit.sleep_rows(self.st, self.env))
+
+        before = audit()
+        self.assertTrue(self.tool()["value"])           # find offers it ...
+        after = audit()
+        self.assertEqual(after, before)                 # ... and the audit is the same
+        self.assertEqual(after["wake"]["wake_days"], 0)
+        self.assertIs(after["days"][-1]["wake_day"], False)
+        self.assertEqual(after["misses"]["days"], {})   # today is no miss day for the audit
+        self.assertEqual(after["misses"]["missed"], 0)
+        label = tools.delivery(self.r, NOW, raw=True, env=self.env)["label"]["label"]
+        self.assertIn(delivery_audit.BRIEF_UNKNOWN, label)
+        self.assertNotIn(delivery_audit.MISS_SLEEP, label)
 
 
 class Wiring(unittest.TestCase):

@@ -14,13 +14,16 @@ loader outside this repo and is not read: its shape is not defined here.
 Missed, all of:
 
 - today (``now``'s local date, ``tz``; this machine's zone by default) is a wake day
-  (jobs_runner.delivery_wake_days: the wake events the plugin already merges);
+  (jobs_runner.delivery_wake_days: the wake events the plugin already merges), or no wake is known today but
+  today's rows hold a wake-brief row with a text: the older sender logs its brief even on a morning no wake
+  proxy fired, and that row shows the morning ran. It makes today a wake day for this offer only; the delivery
+  audit's own wake days are left as they are;
 - delivery_audit.brief_misses over today's rows says today had no delivered wake brief and had a brief row (the
   delivery audit's own rule: rows titled delivery_audit.WAKE_TITLE, ``how`` ``telegram`` is a delivery);
 - the newest undelivered brief row of today with a text is no older than jobs.WAKE_BRIEF.stale_after_s.
 
 A brief from a previous day is never offered, nor one older than the wake job's stale_after_s: hours later it
-is noise. Unknown (no push log set, unreadable, no wake known) is not missed and says why in words.
+is noise. Unknown (no push log set, unreadable, no wake and no brief row today) is not missed and says why in words.
 
 The state card adds CARD_LINE, digit-free, after the push-reach line (outside card.MAX_LINES, like it). The tool
 returns the text with every digit masked unless the raw opt-in is set, through tier_audit.gate (hook HOOK; the
@@ -59,6 +62,11 @@ def _not(reason: str) -> dict:
     return {"missed": False, "text": None, "at": None, "why": None, "reason": reason, "until": None}
 
 
+def _brief(r: Mapping) -> bool:
+    """A wake-brief row (title delivery_audit.WAKE_TITLE) with a non-empty text."""
+    return r.get("title") == _delivery.WAKE_TITLE and isinstance(r.get("body"), str) and bool(r["body"].strip())
+
+
 def find(cfg: Optional[Mapping], state_dir, now: float, env: Optional[Mapping[str, str]] = None,
          home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
     """Today's missed wake brief (see the module doc). ``until`` is when the offer goes stale (None when nothing
@@ -71,17 +79,18 @@ def find(cfg: Optional[Mapping], state_dir, now: float, env: Optional[Mapping[st
         if got is None:
             return _not(UNREADABLE)
         today = datetime.fromtimestamp(now, tz).date()
+        rows = [r for r in got[0] if float(r["at"]) <= now and _delivery._day(r, tz) == today]
         wakes = jobs_runner.delivery_wake_days(state_dir, now, env, home, tz) or []
         if today not in wakes:
-            return _not(NO_WAKE)
-        rows = [r for r in got[0] if float(r["at"]) <= now and _delivery._day(r, tz) == today]
+            if not any(_brief(r) for r in rows):
+                return _not(NO_WAKE)
+            wakes = [today]   # today's own brief row shows the morning ran: a wake day for this offer only
         m = _delivery.brief_misses(rows, [today], tz, days=[today],
                                    sleep=_delivery.sleep_rows(state_dir, env))
         why = m["days"].get(today.isoformat())
         if why is None:
             return _not(DELIVERED if m["known"] else NO_BRIEF)
-        briefs = [r for r in rows if r.get("title") == _delivery.WAKE_TITLE and not _delivery.delivered(r)
-                  and isinstance(r.get("body"), str) and r["body"].strip()]
+        briefs = [r for r in rows if _brief(r) and not _delivery.delivered(r)]
         if why == _delivery.MISS_NONE or not briefs:
             return _not(NO_BRIEF)
         newest = max(briefs, key=lambda r: float(r["at"]))

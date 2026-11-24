@@ -16,13 +16,24 @@ not read.
 
 All of:
 
-- today is a wake day (the wake events the plugin already merges: Sleep mode, screen-event wakes, events.jsonl);
+- today is a wake day (the wake events the plugin already merges: Sleep mode, screen-event wakes, events.jsonl),
+  or no wake is known today but today's log holds a wake-brief row with text (see below);
 - the delivery audit's own rule (`delivery_audit.brief_misses`) says today had no delivered wake brief, and
   today has a brief row with text;
 - the newest such row is no older than the wake job's `stale_after_s`.
 
 A brief from an earlier day is never offered, nor a stale one. Unknown (no push log set, an unreadable log, no
-wake known) is not missed.
+wake and no brief row today) is not missed.
+
+### No wake detected, but a brief was logged
+
+The older brief sender also logs its brief on a morning when no wake proxy fired (the brief then says the sleep
+proxy is unavailable). That row is itself evidence that the morning ran. So when no wake is known today but
+today's log holds a wake-brief row with text, today counts as a wake day for this offer only, and the same rules
+apply: a delivered brief today means nothing is missed, and the offer goes stale `stale_after_s` after the newest
+undelivered brief row. "Today" is the local date: a row from yesterday is never taken as today's, even just after
+midnight. With no brief row and no wake the reason stays "no wake today is known". The delivery audit is not
+changed: its wake-day counts come only from wake events, never from brief rows.
 
 ## State card
 
