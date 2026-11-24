@@ -83,10 +83,13 @@ class Base(unittest.TestCase):
                 self.addCleanup(p.stop)
 
     def live(self, name, ready=True):
+        # a live profile carries a Hermes identity marker (hermes_constants._PROFILE_IDENTITY_MARKERS)
         p = self.profiles / name
         p.mkdir(parents=True, exist_ok=True)
         if ready:
             (p / ".env").write_text(READY_ENV)
+        else:
+            (p / "config.yaml").write_text("model: made-up\n")
         return p
 
     def tombstone(self, name=None):
@@ -138,10 +141,11 @@ class Tombstoned(Base):
         self.tombstone("helper")      # another profile's tombstone says nothing about the sender
         self.assertIs(self.tombstoned(), False)
 
-    def test_a_live_dir_of_the_same_name_wins(self):
+    def test_a_dir_beside_its_tombstone_is_still_tombstoned(self):
+        # hermes_constants.named_profile_is_live: a tombstone beside the dir makes it not live, so -p refuses it
         self.tombstone()
         self.live(SENDER)
-        self.assertIs(self.tombstoned(), False)
+        self.assertIs(self.tombstoned(), True)
 
     def test_default_and_unresolvable_names_are_never_tombstoned(self):
         self.tombstone("default")
@@ -288,7 +292,8 @@ class DigitName(Base):
 
 
 class Unchanged(Base):
-    """No tombstone (or a live dir beside it): every string is today's, byte for byte."""
+    """A missing or ghost sender with no tombstone keeps today's strings byte for byte; a sender dir with its
+    tombstone beside it now reads deleted, as Hermes' named_profile_is_live decides."""
 
     def check_old_words(self):
         self.write_log(FAILING_LAST)
@@ -306,14 +311,22 @@ class Unchanged(Base):
         self.check_old_words()
 
     def test_a_live_sender_beside_its_tombstone(self):
+        # Hermes' rule (hermes_constants.named_profile_is_live): a dir with its tombstone beside it is deleted,
+        # not live; `hermes -p courier` refuses it, so every string says deleted and offers the restore.
         self.tombstone()
         self.live(SENDER, ready=True)
         self.write_log(FAILING_LAST)
-        self.assertEqual(self.row(), {"name": "push sender", "kind": "source", "status": "live", "reason": "ready"})
-        self.assertEqual(self.reason(), push_reach.SEND_FAILING)
-        self.assertEqual(self.hint(), GENERIC)
-        # candidates still skip a name with a tombstone (unchanged): only the wording rule is under test here
-        self.assertEqual(self.stage(), ("missing", WAITING + "; no profile can reach Telegram"))
+        self.assertEqual(self.row(), {"name": "push sender", "kind": "source", "status": "missing",
+                                      "reason": DELETED_ROW})
+        self.assertEqual(self.reason(), DELETED_REASON)
+        self.assertEqual(self.hint(), RESTORE)
+        self.assertEqual(self.stage(), ("missing", WAITING + DELETED_TAIL + "; no profile can reach Telegram"))
+        self.assertEqual(self.outage(), [PREFIX + DELETED_REASON + ". " + RESTORE])
+
+    def test_a_ghost_sender_dir_keeps_the_missing_words(self):
+        # a dir with no identity marker (left by cron or log side effects) is not a profile for Hermes
+        (self.profiles / SENDER / "logs").mkdir(parents=True)
+        self.check_old_words()
 
     def test_a_live_sender_keeps_the_ready_hint(self):
         self.live(SENDER, ready=False)
