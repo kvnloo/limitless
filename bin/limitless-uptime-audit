@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""limitless-uptime-audit [--json]: were the inputs fresh day by day? Read from the sync's own runs.jsonl.
+
+Prints the uptime audit's words (limitless_uptime's label): each input fresh every day, most days or stale all
+month, and whether the uptime goal was met, e.g. "phone apps fresh every day; whoop stale all month; uptime goal
+not met"; or "unknown: <why>". --json prints the counts instead: fresh, stale and unknown days per input, the
+every-input-fresh days, the window and the target. The state dir is $LIMITLESS_STATE, else "state" in config.json;
+config uptime_days, uptime_target and outage_ignore apply; days are local to this machine's zone.
+Read-only: it never writes a file, restarts anything or sends. Exit 0.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+import argparse  # noqa: E402
+import json  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import tools  # noqa: E402
+from limitless.state_reader import StateReader, state_dir  # noqa: E402
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="limitless-uptime-audit",
+                                 description="Read-only: input uptime per day from the sync's runs.jsonl.")
+    ap.add_argument("--json", action="store_true", help="print the counts as JSON")
+    a = ap.parse_args(argv[1:])
+    res = tools.uptime(StateReader(state_dir()), time.time(), raw=True)
+    words, reason = res["label"]["label"], res.get("reason")
+    if a.json:
+        out = dict(res["value"] or {"label": words})
+        if reason:
+            out["reason"] = reason
+        print(json.dumps(out, indent=1, sort_keys=True))
+    else:
+        print(f"{words}: {reason}" if reason else words)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

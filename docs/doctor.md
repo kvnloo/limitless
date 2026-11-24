@@ -20,6 +20,7 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `state dir` | state | exists and is readable | | does not exist, or is not readable | |
 | `input <name>`, one per name in `inputs.json` | input | recording: within `STALE_H` (the `limitless_status` rule: the snapshot's age plus the input's age) | over the threshold, or reported `down` | no age for it; no `inputs.json` at all is one `inputs` row | |
 | `last sync run` | run | the last valid row of `runs.jsonl` is at most `STALE_H` old and did not fail | older, or it failed | no timestamped row | |
+| `uptime`, right after the last sync run | source | every input was fresh on at least config `uptime_target` of the last `uptime_days` local days of `runs.jsonl` (the uptime goal met); the reason is `limitless_uptime`'s words, never a count | the goal was not met, even counting every unknown day as fresh | no `runs.jsonl`, no run in the window, fewer than a week of runs that name their stale inputs, or too many unknown days to tell ([uptime-audit.md](uptime-audit.md)) | |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
 | `NOOP MCP`, right after the tools | mcp | | | config `noop_mcp` is set but malformed; `refused: t0_tools does not cover its tools`; or set and covered, to be added to the host's `mcp_servers` by hand (the host has no plugin API for it; the doctor cannot see `mcp_servers`) | `noop_mcp` is unset (the default) ([noop-mcp.md](noop-mcp.md)) |
 | `desktop AW`, after the NOOP MCP row | source | config `desktop_aw_url` (or `desktop_aw_export`) is set and shows active app time within `STALE_H`, its age in words | it answers with no active app time in that time | `unreachable:` it does not answer, or what it sends cannot be used (no window bucket, no afk bucket, not ActivityWatch data); the plain reason | neither is set (the default); nothing is called ([desktop-aw.md](desktop-aw.md)) |
@@ -65,6 +66,7 @@ input phone: live: recording: updated within the last day
 input scale: stale: not recording: no update for over a day
 input wearable: live: recording: updated within the last day
 last sync run: live: the last sync run was about an hour ago and finished ok
+uptime: missing: fewer than a week of sync runs name their stale inputs
 tool limitless_status: live: answers from direct evidence
 tool limitless_state: live: answers from a proxy
 tool limitless_window: live: answers from a proxy
