@@ -74,7 +74,9 @@ CREATE TABLE events(id INTEGER PRIMARY KEY, bucketrow INTEGER REFERENCES buckets
 
 
 def aw_db(path, spans):
-    """A synthetic ActivityWatch DB: ``spans`` are (start_s, end_s, app) app-in-foreground spans."""
+    """A synthetic ActivityWatch DB (a fresh file): ``spans`` are (start_s, end_s, app) app-in-foreground spans."""
+    if path.exists():
+        path.unlink()
     con = sqlite3.connect(str(path))
     try:
         con.executescript(SCHEMA)
@@ -196,6 +198,106 @@ class Foundation(Fixture):
             if nights:
                 self.sleep(nights)
             self.assertIsNone(DIGIT.search(self.row(5)["label"]), self.row(5))
+
+
+class Flow(Fixture):
+    WORK, FEED = "synthetic-editor", "synthetic-scroller"
+
+    def activity(self, days_ago=3, db="aw.db"):
+        """A synthetic AW DB: an hour of the work app then half an hour of the feed app ``days_ago`` days back."""
+        aw_db(self.st / db, [(local(days_ago, 9), local(days_ago, 10), self.WORK),
+                             (local(days_ago, 10), local(days_ago, 10.5), self.FEED)])
+        self.set(aw_db=db)
+
+    def glide(self, days_ago=3):
+        """A synthetic Glide attention file whose focus block covers the AW rows' morning."""
+        path = self.root / "attention.json"
+        path.write_text(json.dumps({"block": {"start": local(days_ago, 8.5), "end": local(days_ago, 11),
+                                              "minutes": 150}, "queue": [], "resume": None, "nudged": ""}))
+        self.set(glide_attention=str(path))
+
+    def full(self):
+        self.activity()
+        self.glide()
+        self.set(flow_work_apps=[self.WORK], feed_apps=[self.FEED])
+
+    def test_row_six_is_flow(self):
+        m = self.row(6)
+        self.assertEqual(m["criterion_words"], "flow")
+        self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
+
+    def test_no_work_apps_set_is_unknown_even_with_data(self):
+        self.activity()
+        self.glide()
+        self.set(feed_apps=[self.FEED])
+        m, a = self.audits()[6]
+        self.assertEqual((m["goal"], m["label"]), ("unknown", "unknown: no work apps set"))
+        self.assertIsNone(a)
+
+    def test_work_apps_from_env_config_or_apps_json_all_count(self):
+        self.activity()
+        self.env["LIMITLESS_FLOW_WORK_APPS"] = self.WORK
+        self.assertNotEqual(self.row(6)["goal"], "unknown")
+        del self.env["LIMITLESS_FLOW_WORK_APPS"]
+        (self.st / "apps.json").write_text(json.dumps({"work_apps": [self.WORK]}))
+        self.assertNotEqual(self.row(6)["goal"], "unknown")
+        (self.st / "apps.json").unlink()
+        self.set(flow_work_apps=self.WORK)
+        self.assertNotEqual(self.row(6)["goal"], "unknown")
+
+    def test_no_activity_data_is_unknown(self):
+        self.set(flow_work_apps=[self.WORK])
+        m, a = self.audits()[6]                       # no AW DB set at all
+        self.assertEqual(m["goal"], "unknown")
+        self.assertTrue(m["label"].startswith("unknown: "), m)
+        self.activity(days_ago=20)                    # data, but none in the last finished week
+        self.assertEqual(self.row(6)["goal"], "unknown")
+        self.activity(days_ago=0)                     # today only: the running day is not a finished week
+        self.assertEqual(self.row(6)["goal"], "unknown")
+
+    def test_deep_work_and_feed_leak_known_is_met(self):
+        self.full()
+        m, a = self.audits()[6]
+        self.assertEqual(m["goal"], "met")
+        self.assertEqual(m["label"], "deep work and feed leak measured for the last finished week")
+        self.assertEqual((a["deep_min"], a["feed_leak_min"], a["days_with_data"]), (60.0, 30.0, 1))
+        self.assertEqual(a["label"]["label"], m["label"])
+
+    def test_feed_leak_unknown_is_not_met_and_says_why(self):
+        self.activity()
+        self.set(flow_work_apps=[self.WORK], feed_apps=[self.FEED])
+        m = self.row(6)                               # no Glide block: the leak has nothing to be inside
+        self.assertEqual(m["goal"], "not met")
+        self.assertEqual(m["label"], "deep work measured but feed leak unknown for the last finished week: "
+                                     "no focus blocks")
+        self.glide()
+        self.set(feed_apps=[])
+        m = self.row(6)
+        self.assertEqual(m["goal"], "not met")
+        self.assertTrue(m["label"].endswith("no feed apps set"), m)
+
+    def test_a_broken_activity_db_is_unknown_not_a_traceback(self):
+        self.set(flow_work_apps=[self.WORK], aw_db="aw.db")
+        (self.st / "aw.db").write_bytes(b"not a database at all")
+        self.assertEqual(self.row(6)["goal"], "unknown")
+        self.full()
+        (self.root / "attention.json").write_text("{\"block\": ")    # a torn Glide file: no block, no traceback
+        self.assertEqual(self.row(6)["goal"], "not met")
+
+    def test_the_trend_is_never_judged(self):
+        self.full()
+        self.set(aw_db="trend.db")
+        aw_db(self.st / "trend.db", [(local(10, 9), local(10, 12), self.WORK), (local(3, 9), local(3, 9.25), self.WORK),
+                                     (local(3, 10), local(3, 10.5), self.FEED)])   # far less than the week before
+        m = self.row(6)
+        self.assertEqual(m["goal"], "met")
+        for word in ("up", "down", "same", "better", "worse", "score", "good", "bad", "less", "more"):
+            self.assertNotIn(word, m["label"].split(), m)
+
+    def test_label_has_no_digit(self):
+        for setup in (lambda: None, self.activity, lambda: self.set(flow_work_apps=[self.WORK]), self.full):
+            setup()
+            self.assertIsNone(DIGIT.search(self.row(6)["label"]), self.row(6))
 
 
 class Layout(Fixture):

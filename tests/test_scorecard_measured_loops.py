@@ -319,7 +319,7 @@ class Lines(Fixture):
         m = list(reversed(self.measured()))
         lines = sc.measured_lines([], m, limit=len(m))
         self.assertEqual([ln.split(":")[1].strip() for ln in lines],
-                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "privacy"])
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "flow", "privacy"])
 
     def test_measured_lines_over_five_fold_the_rest_into_one_line(self):
         self.not_met_everywhere()
@@ -405,9 +405,9 @@ class Tool(Fixture):
 
     def test_measured_lists_all_five_rows(self):
         out = self.tool()
-        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 5, 7])
+        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 5, 6, 7])
         self.assertEqual([m["criterion_words"] for m in out["measured"]],
-                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "privacy"])
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "flow", "privacy"])
         for m in out["measured"]:
             self.assertEqual(set(m["label"]), {"label", "tier", "modality"})
             self.assertEqual(m["label"]["tier"], "T1")

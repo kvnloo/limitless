@@ -334,7 +334,12 @@ def glide_blocks(env: Optional[Mapping[str, str]] = None, home: Optional[Path] =
     [] when the file has none or cannot be read; None when Glide is not configured. Glide keeps only its
     current block (a stopped block is cleared), so this sees at most one block."""
     env = os.environ if env is None else env
-    path = env.get(glide_provider.ENV_KEY) or config(env, home).get(glide_provider.CONFIG_KEY)
+    return blocks_at(env.get(glide_provider.ENV_KEY) or config(env, home).get(glide_provider.CONFIG_KEY))
+
+
+def blocks_at(path) -> Optional[list]:
+    """glide_blocks for the attention.json at ``path``: None when ``path`` names nothing, [] when the file has no
+    block or cannot be read."""
     if not isinstance(path, str) or not path:
         return None
     try:

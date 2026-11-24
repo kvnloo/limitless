@@ -326,11 +326,56 @@ def _foundation_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> 
     return a["label"]["label"], a["goal"], a
 
 
+FLOW_ROW = 6
+FLOW_WORDS = "flow"
+FLOW_MET = "deep work and feed leak measured for the last finished week"
+FLOW_PART = "{}{} unknown for the last finished week: {}"
+NO_WORK_APPS = "no work apps set"
+NO_FLOW_DATA = "no activity data in the last finished week"
+FLOW_RAW_KEYS = ("deep_min", "block_hours", "feed_leak_min", "leak_per_block_hour", "days_with_data")
+
+
+def _flow_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row six: flow_week.week over the last finished week (the seven local days before
+    today), from the inputs flow_week.for_week reads: the ActivityWatch DB ($LIMITLESS_AW_DB, else config
+    ``aw_db``), the desktop's ActivityWatch (config desktop_aw_url or desktop_aw_export), the work and feed apps
+    (env, else config, else apps.json in the state dir, as apps_reply.list_for reads them) and Glide's block.
+    Met when the deep-work amount and the feed leak are both known; the trend is never judged."""
+    from . import apps_reply, aw_desktop, flow_week, glide_provider
+    env = os.environ if env is None else env
+    st = Path(state_dir)
+    work = apps_reply.list_for(apps_reply.WORK, cfg, st, env)[0]
+    if not work:
+        return UNKNOWN_PREFIX + NO_WORK_APPS, "unknown", None
+    db = env.get("LIMITLESS_AW_DB") or cfg.get("aw_db")
+    db = Path(db).expanduser() if isinstance(db, str) and db else None
+    db = st / db if db is not None and not db.is_absolute() else db         # as StateReader.aw_db_path
+    today = datetime.fromtimestamp(now, tz).date()
+    r = flow_week.week(db, today - timedelta(days=flow_week.DAYS), tz,
+                       blocks=flow_week.blocks_at(env.get(glide_provider.ENV_KEY) or cfg.get(glide_provider.CONFIG_KEY)),
+                       work_apps=work, feed_apps=apps_reply.list_for(apps_reply.FEED, cfg, st, env)[0],
+                       desktop=lambda lo, hi: aw_desktop.from_settings(cfg, st, lo, hi))
+    if not r.get("days_with_data"):
+        return UNKNOWN_PREFIX + NO_FLOW_DATA, "unknown", None
+    deep, leak = r.get("deep_min") is not None, r.get("leak_per_block_hour") is not None
+    if deep and leak:
+        label, goal = FLOW_MET, "met"
+    else:
+        unknown = " and ".join(p for p, ok in (("deep work", deep), ("feed leak", leak)) if not ok)
+        have = "deep work measured but " if deep else "feed leak measured but " if leak else ""
+        why = flow_week._why(r, "leak" if deep else "deep")
+        label, goal = FLOW_PART.format(have, unknown, why), "not met"
+    audit = {k: r.get(k) for k in FLOW_RAW_KEYS}
+    audit["label"] = {"label": label}
+    return label, goal, audit
+
+
 _READS = ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
           (HABIT_ROW, HABIT_WORDS, _habit_measured),
           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
           (FOUNDATION_ROW, FOUNDATION_WORDS, _foundation_measured),
+          (FLOW_ROW, FLOW_WORDS, _flow_measured),
           (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured))
 
 
