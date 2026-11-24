@@ -556,10 +556,11 @@ SCORECARD_MODALITY = "measured"   # the measured rows: the audits read the loop'
 def scorecard_measured(rows: list, state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None,
                        raw: bool = False, env: Optional[Mapping[str, str]] = None,
                        home: Optional[Path] = None) -> list:
-    """limitless_scorecard's ``measured`` field: rows one, two, three, four and seven as code measured them
-    (scorecard.measured_audits: the uptime and delivery audits, the habit loop, the evidence loop and the tier
-    audit), ``[{n, criterion_words, label: T1, goal}]`` plus ``note`` when the hand row is green and the goal is
-    not met. The audit's counts sit in ``counts`` only with ``raw``."""
+    """limitless_scorecard's ``measured`` field: rows one to eight and ten as code measured them
+    (scorecard.measured_audits: the uptime and delivery audits, the habit loop, the evidence loop, sleep coverage,
+    the weekly flow, the tier audit, the local integrations and the ranked ledger), ``[{n, criterion_words,
+    label: T1, goal}]`` plus ``note`` when the hand row is green and the goal is not met. The audit's counts sit
+    in ``counts`` only with ``raw``."""
     raw_keys = {_scorecard.UPTIME_ROW: UPTIME_RAW_KEYS, _scorecard.DELIVERY_ROW: DELIVERY_RAW_KEYS,
                 _scorecard.HABIT_ROW: _scorecard.HABIT_RAW_KEYS, _scorecard.EVIDENCE_ROW: _scorecard.EVIDENCE_RAW_KEYS,
                 _scorecard.PRIVACY_ROW: _scorecard.PRIVACY_RAW_KEYS,
@@ -584,8 +585,8 @@ def scorecard(path: Optional[Path], now: float, state_dir=None, cfg: Optional[Ma
     """The weekly review's scorecard block: at most 5 plain-word lines (counts, the stop rule, the criteria
     furthest from green). Self-reported, aged by the file's mtime. Reasons never echo the path.
 
-    ``measured`` beside the envelope (scorecard_measured) says what code measured for rows one, two, three, four
-    and seven, from ``state_dir`` (default the configured one) and ``cfg`` (default the host config); it never changes a
+    ``measured`` beside the envelope (scorecard_measured) says what code measured for rows one to eight and ten,
+    from ``state_dir`` (default the configured one) and ``cfg`` (default the host config); it never changes a
     status. The value and the envelope's shape are the same with or without it."""
     if state_dir is None:
         state_dir = _state_dir(env, home)

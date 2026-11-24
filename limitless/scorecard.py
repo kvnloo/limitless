@@ -157,7 +157,7 @@ def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -
     return Path(p) if isinstance(p, str) and p else None
 
 
-# --- measured rows: north-star rows one, two, three, four and seven as code measured them ---------------------
+# --- measured rows: north-star rows one to eight and ten as code measured them (docs/scorecard-measured.md) -----
 
 UPTIME_ROW, DELIVERY_ROW = 1, 2
 UPTIME_WORDS, DELIVERY_WORDS = "loop uptime", "delivery"
@@ -585,16 +585,17 @@ def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[
 
 def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[dict]:
-    """North-star rows one, two, three, four and seven as code measured them: ``[{n, criterion_words, label,
-    goal}]``.
+    """North-star rows one to eight and ten as code measured them: ``[{n, criterion_words, label, goal}]``.
 
     Row one is the uptime audit of the state dir's runs.jsonl, row two the delivery audit of kevin-push's log
     (config ``push_log``), row three the habit loop (the stop rule's loop rows in predictions.jsonl and the habit
-    files), row four the evidence loop (the locks and receipts in predictions.jsonl) and row seven privacy
-    (tier_audit.check over the audit log for the last seven days). ``label`` is the audit's own T1 words (no
-    digit) or ``unknown: <why>``; ``goal`` is
-    met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
-    nothing is written or sent, and no hand status is changed.
+    files), row four the evidence loop (the locks and receipts in predictions.jsonl), row five the foundation (the
+    sleep coverage audit, its own goal), row six flow (flow_week over the last finished week), row seven privacy
+    (tier_audit.check over the audit log for the last seven days), row eight the local integrations (Glide, the
+    call brief, the asks queue, the voice MIQ) and row ten the top items (the optional ranked ledger). ``label`` is
+    the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is met, not met or unknown. A missing or
+    unreadable log is unknown, never an error and never met. Read-only: nothing is written or sent, and no hand
+    status is changed.
     """
     return [row for row, _audit in measured_audits(state_dir, cfg, now, tz, env=env, home=home)]
 

@@ -133,7 +133,6 @@ class Fixture(unittest.TestCase):
         jsonl(self.st / "sleep.jsonl", rows)
         self.set(sleep_file="sleep.jsonl")
 
-
     def phone(self, nights):
         """Two synthetic unlocks around one quiet span from late evening on each of ``nights``."""
         rows = []
@@ -142,6 +141,59 @@ class Fixture(unittest.TestCase):
             rows += [{"ts": int(s * 1000), "type": "KEYGUARD_HIDDEN", "pkg": "synthetic"},
                      {"ts": int((s + 8 * H) * 1000), "type": "KEYGUARD_HIDDEN", "pkg": "synthetic"}]
         jsonl(self.st / "screen-events.jsonl", rows)
+
+    # --- row six: synthetic activity, Glide block and app lists ------------------------------------------------
+    WORK, FEED = "synthetic-editor", "synthetic-scroller"
+
+    def activity(self, days_ago=3, db="aw.db"):
+        """A synthetic AW DB: an hour of the work app then half an hour of the feed app ``days_ago`` days back."""
+        aw_db(self.st / db, [(local(days_ago, 9), local(days_ago, 10), self.WORK),
+                             (local(days_ago, 10), local(days_ago, 10.5), self.FEED)])
+        self.set(aw_db=db)
+
+    def glide(self, days_ago=3):
+        """A synthetic Glide attention file whose focus block covers the AW rows' morning."""
+        path = self.root / "attention.json"
+        path.write_text(json.dumps({"block": {"start": local(days_ago, 8.5), "end": local(days_ago, 11),
+                                              "minutes": 150}, "queue": [], "resume": None, "nudged": ""}))
+        self.set(glide_attention=str(path))
+
+    def full(self):
+        self.activity()
+        self.glide()
+        self.set(flow_work_apps=[self.WORK], feed_apps=[self.FEED])
+
+    # --- row eight: synthetic local integrations -------------------------------------------------------------
+    def glide_file(self, text='{"block": null, "queue": [], "resume": null, "nudged": ""}'):
+        path = self.root / "attention.json"
+        path.write_text(text)
+        self.set(glide_attention=str(path))
+        return path
+
+    def brief(self, age_s=600.0, name="call-brief.md"):
+        """A synthetic call brief file (config call_brief_file, relative: in the state dir), ``age_s`` old."""
+        path = self.st / name
+        path.write_text("<!-- limitless call brief; generated: synthetic -->\nTLDR: peak window\n")
+        os.utime(path, (NOW - age_s, NOW - age_s))
+        self.set(call_brief_file=name)
+        return path
+
+    def asks(self, rows=({"id": "a", "title": "Pick one", "cls": "decision"},)):
+        path = jsonl(self.root / "asks.jsonl", rows)
+        self.set(asks_path=str(path))
+        return path
+
+    def voice(self, sessions=True):
+        d = self.root / "sessions"
+        if sessions:
+            d.mkdir(exist_ok=True)
+        self.set(voice_miq="dry_run", voice_miq_sessions=str(d))
+
+    def all_live(self):
+        self.glide_file()
+        self.brief()
+        self.asks()
+        self.voice()
 
 
 class Foundation(Fixture):
@@ -201,26 +253,6 @@ class Foundation(Fixture):
 
 
 class Flow(Fixture):
-    WORK, FEED = "synthetic-editor", "synthetic-scroller"
-
-    def activity(self, days_ago=3, db="aw.db"):
-        """A synthetic AW DB: an hour of the work app then half an hour of the feed app ``days_ago`` days back."""
-        aw_db(self.st / db, [(local(days_ago, 9), local(days_ago, 10), self.WORK),
-                             (local(days_ago, 10), local(days_ago, 10.5), self.FEED)])
-        self.set(aw_db=db)
-
-    def glide(self, days_ago=3):
-        """A synthetic Glide attention file whose focus block covers the AW rows' morning."""
-        path = self.root / "attention.json"
-        path.write_text(json.dumps({"block": {"start": local(days_ago, 8.5), "end": local(days_ago, 11),
-                                              "minutes": 150}, "queue": [], "resume": None, "nudged": ""}))
-        self.set(glide_attention=str(path))
-
-    def full(self):
-        self.activity()
-        self.glide()
-        self.set(flow_work_apps=[self.WORK], feed_apps=[self.FEED])
-
     def test_row_six_is_flow(self):
         m = self.row(6)
         self.assertEqual(m["criterion_words"], "flow")
@@ -301,37 +333,6 @@ class Flow(Fixture):
 
 
 class Integrated(Fixture):
-    def glide_file(self, text='{"block": null, "queue": [], "resume": null, "nudged": ""}'):
-        path = self.root / "attention.json"
-        path.write_text(text)
-        self.set(glide_attention=str(path))
-        return path
-
-    def brief(self, age_s=600.0, name="call-brief.md"):
-        """A synthetic call brief file (config call_brief_file, relative: in the state dir), ``age_s`` old."""
-        path = self.st / name
-        path.write_text("<!-- limitless call brief; generated: synthetic -->\nTLDR: peak window\n")
-        os.utime(path, (NOW - age_s, NOW - age_s))
-        self.set(call_brief_file=name)
-        return path
-
-    def asks(self, rows=({"id": "a", "title": "Pick one", "cls": "decision"},)):
-        path = jsonl(self.root / "asks.jsonl", rows)
-        self.set(asks_path=str(path))
-        return path
-
-    def voice(self, sessions=True):
-        d = self.root / "sessions"
-        if sessions:
-            d.mkdir(exist_ok=True)
-        self.set(voice_miq="dry_run", voice_miq_sessions=str(d))
-
-    def all_live(self):
-        self.glide_file()
-        self.brief()
-        self.asks()
-        self.voice()
-
     def test_row_eight_is_integrated(self):
         m = self.row(8)
         self.assertEqual(m["criterion_words"], "integrated")
@@ -578,6 +579,202 @@ class Layout(Fixture):
     def test_no_digit_in_any_bullet_but_the_counts(self):
         for ln in self.bullets(table())[1:]:
             self.assertIsNone(DIGIT.search(ln), ln)
+
+
+class NineRows(Fixture):
+    """All nine measured rows together: their order, the block, the notes and the tool field."""
+
+    ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10]
+    WORDS = ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "flow", "privacy", "integrated",
+             "top items"]
+
+    def not_met_new_rows(self):
+        """Rows five, six, eight and ten all not met, from synthetic files."""
+        self.sleep(range(1, 11))
+        self.phone(range(1, 29))
+        aw_db(self.st / "aw.db", [(local(3, 9), local(3, 10), "synthetic-editor")])
+        self.set(aw_db="aw.db", flow_work_apps=["synthetic-editor"])              # no Glide block: leak unknown
+        jsonl(self.root / "asks.jsonl", [])
+        self.set(asks_path=str(self.root / "asks.jsonl"), call_brief_file="absent-brief.md")
+        jsonl(self.root / "ranked.jsonl", [{"id": "a", "status": "verified", "by": "agent", "evidence": ""},
+                                           {"id": "b", "status": "dropped", "by": "agent", "evidence": "x"}])
+        self.set(ranked_ledger=str(self.root / "ranked.jsonl"))
+
+    def met_new_rows(self):
+        """Rows five, six, eight and ten all met, from synthetic files."""
+        self.sleep(range(1, 29))
+        self.all_live()
+        self.full()                                   # after all_live: its Glide file has a block
+        jsonl(self.root / "ranked.jsonl", [{"id": "a", "status": "verified", "by": "agent", "evidence": "receipt"},
+                                           {"id": "b", "status": "dropped", "by": "owner", "evidence": ""}])
+        self.set(ranked_ledger=str(self.root / "ranked.jsonl"))
+
+    def tool(self, raw=False, md=None):
+        p = self.root / "scorecard.md"
+        p.write_text(table() if md is None else md)
+        return tools.scorecard(p, NOW, state_dir=self.st, cfg=self.cfg, tz=UTC, raw=raw, env=self.env,
+                               home=self.root)
+
+    def test_measured_rows_in_row_order(self):
+        got = self.measured()
+        self.assertEqual([m["n"] for m in got], self.ORDER)
+        self.assertEqual([m["criterion_words"] for m in got], self.WORDS)
+        self.assertEqual(list(sc.MEASURED_ROWS), self.ORDER)
+
+    def test_unknown_is_never_met(self):
+        for m in self.measured():
+            self.assertEqual(m["goal"], "unknown", m)
+            self.assertTrue(m["label"].startswith("unknown: "), m)
+
+    def test_goals_are_only_the_three_words_and_labels_have_no_digit(self):
+        for setup in (lambda: None, self.not_met_new_rows, self.met_new_rows):
+            setup()
+            for m in self.measured():
+                self.assertIn(m["goal"], ("met", "not met", "unknown"))
+                self.assertIsNone(DIGIT.search(m["label"]), m)
+
+    def test_new_rows_met_and_not_met(self):
+        self.not_met_new_rows()
+        got = {m["n"]: m["goal"] for m in self.measured()}
+        self.assertEqual([got[n] for n in (5, 6, 8, 10)], ["not met"] * 4)
+        self.met_new_rows()
+        got = {m["n"]: m["goal"] for m in self.measured()}
+        self.assertEqual([got[n] for n in (5, 6, 8, 10)], ["met"] * 4)
+
+    def test_a_note_for_every_new_row_when_green_and_not_met(self):
+        self.not_met_new_rows()
+        rows = sc.parse(table())
+        m = {r["n"]: r for r in self.measured()}
+        for n in (5, 6, 8, 10):
+            note = sc.disagreement(rows, m[n])
+            self.assertEqual(note, f"Row {sc._name(NAMES[n])} {NOTE}")
+            self.assertIsNone(DIGIT.search(note), note)
+        amber = sc.parse(table({5: "amber", 6: "red", 8: "amber", 10: "red"}))
+        for n in (5, 6, 8, 10):
+            self.assertIsNone(sc.disagreement(amber, m[n]))
+        self.met_new_rows()
+        for r in self.measured():
+            if r["n"] in (5, 6, 8, 10):
+                self.assertIsNone(sc.disagreement(rows, r))
+
+    def test_unknown_rows_never_get_a_note(self):
+        rows = sc.parse(table())
+        for m in self.measured():
+            self.assertIsNone(sc.disagreement(rows, m))
+
+    def test_the_block_keeps_the_counts_line_first_and_at_most_five_bullets(self):
+        for status in ({}, {5: "red", 6: "red", 8: "red", 10: "red"}, {n: "amber" for n in NAMES}):
+            for setup in (lambda: None, self.not_met_new_rows, self.met_new_rows):
+                setup()
+                rows = sc.parse(table(status))
+                block = sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.measured()))
+                bullets = [ln[2:] for ln in block.splitlines()[1:]]
+                self.assertTrue(all(ln.startswith("- ") for ln in block.splitlines()[1:]), block)
+                self.assertEqual(bullets[0], sc.summary(rows)[0])
+                self.assertLessEqual(len(bullets), sc.MAX_LINES)
+                self.assertEqual(bullets[-1], MORE)
+                for ln in bullets[1:]:
+                    self.assertIsNone(DIGIT.search(ln), ln)
+
+    def test_folded_rows_are_whole_and_in_order(self):
+        rows = sc.parse(table())
+        lines = sc.measured_lines(rows, self.measured(), limit=len(self.ORDER))
+        self.assertEqual([ln.split(":")[1].strip() for ln in lines], self.WORDS)
+        self.not_met_new_rows()
+        lines = sc.measured_lines(rows, self.measured(), limit=100)
+        for i, ln in enumerate(lines):
+            if ln.startswith("Row "):
+                self.assertTrue(lines[i - 1].startswith("Measured: "), lines)
+
+    def test_the_tool_lists_all_nine_rows_with_t_one_labels(self):
+        out = self.tool()
+        self.assertEqual([m["n"] for m in out["measured"]], self.ORDER)
+        self.assertEqual([m["criterion_words"] for m in out["measured"]], self.WORDS)
+        for m in out["measured"]:
+            self.assertEqual(m["label"]["tier"], "T1")
+            self.assertNotIn("counts", m)
+
+    def test_counts_only_with_the_raw_opt_in(self):
+        self.met_new_rows()
+        for m in self.tool()["measured"]:
+            self.assertNotIn("counts", m)
+        got = {m["n"]: m for m in self.tool(raw=True)["measured"]}
+        self.assertEqual(set(got[5]["counts"]), set(tools.SLEEP_COVERAGE_RAW_KEYS))
+        self.assertEqual(set(got[6]["counts"]), set(sc.FLOW_RAW_KEYS))
+        self.assertEqual(set(got[8]["counts"]), set(sc.INTEGRATED_RAW_KEYS))
+        self.assertEqual(got[8]["counts"]["z0_registry"], "z0 registry: not measured here")
+        self.assertEqual(got[10]["counts"], {"items": 2, "verified": 1, "owner_dropped": 1, "not_counted": 0,
+                                             "open": 0})
+
+    def test_notes_ride_on_the_tool_rows(self):
+        self.not_met_new_rows()
+        got = {m["n"]: m for m in self.tool()["measured"]}
+        for n in (5, 6, 8, 10):
+            self.assertEqual(got[n]["note"], f"Row {sc._name(NAMES[n])} {NOTE}")
+
+    def test_no_digit_outside_the_raw_opt_in(self):
+        for setup in (self.not_met_new_rows, self.met_new_rows):
+            setup()
+            got = self.tool()["measured"]
+            text = json.dumps([[m["label"]["label"], m["criterion_words"], m["goal"], m.get("note", "")] for m in got])
+            self.assertIsNone(DIGIT.search(text), text)
+
+    def test_passes_tier_audit(self):
+        for setup in (self.not_met_new_rows, self.met_new_rows):
+            setup()
+            out = self.tool()
+            audit = self.root / "tool-audit.jsonl"
+            got = tier_audit.audit_result("tool:limitless_scorecard", out, False,
+                                          env={"LIMITLESS_AUDIT": str(audit)}, home=self.root, now=NOW)
+            self.assertEqual(got, out)
+            line = json.loads(audit.read_text().splitlines()[-1])
+            self.assertEqual((line["tier"], line["blocked"], line["digits"]), ("T1", False, 0))
+
+    def test_statuses_are_never_changed_and_never_marked_green(self):
+        self.not_met_new_rows()
+        rows = sc.parse(table({5: "red", 6: "amber", 8: "red", 10: "amber"}))
+        before = [dict(r) for r in rows]
+        lines = sc.measured_lines(rows, self.measured(), limit=100)
+        sc.weekly_block(sc.summary(rows), lines)
+        self.tool(md=table({5: "red", 6: "amber", 8: "red", 10: "amber"}))
+        self.assertEqual(rows, before)
+        self.assertNotIn("green", " ".join(lines).replace("says green", ""))
+
+    def test_reads_only(self):
+        self.met_new_rows()
+        before = sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in self.root.rglob("*"))
+        self.tool(raw=True)
+        after = sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in self.root.rglob("*"))
+        self.assertEqual([a for a in after if not a[0].endswith("scorecard.md")],
+                         [b for b in before if not b[0].endswith("scorecard.md")])
+
+
+class Definitions(unittest.TestCase):
+    """The four definitions, as the docs give them."""
+
+    def doc(self):
+        return " ".join((ROOT / "docs" / "scorecard-measured.md").read_text().split())
+
+    def test_the_doc_defines_rows_five_six_eight_and_ten(self):
+        text = self.doc()
+        want = (ROW5, ROW6, ROW8, ROW10, "sleep_coverage", "last finished week", "work-app list", "never judged",
+                "z0 registry: not measured here", "call_brief.STALE_S", "ranked_ledger", "LIMITLESS_RANKED_LEDGER",
+                "newest row per id wins", 'by == "owner"', "non-empty evidence", "all, most, some, few or none",
+                "More measured rows in limitless_scorecard.", "counts line")
+        self.assertEqual([w for w in want if w not in text], [])
+        for d in (ROW5_DEF, ROW6_DEF, ROW8_DEF, ROW10_DEF):
+            self.assertTrue(d)
+
+    def test_the_config_docs_name_the_ranked_ledger_with_a_synthetic_example(self):
+        text = self.doc()
+        want = ('"ranked_ledger"', '{"id": "synthetic-item-a", "status": "verified", "by": "owner", "evidence":')
+        self.assertEqual([w for w in want if w not in text], [])
+
+    def test_the_readme_names_the_new_measured_rows(self):
+        text = (ROOT / "README.md").read_text()
+        want = ("Measured: foundation", "Measured: flow", "Measured: integrated", "Measured: top items",
+                "`ranked_ledger`")
+        self.assertEqual([w for w in want if w not in text], [])
 
 
 if __name__ == "__main__":
