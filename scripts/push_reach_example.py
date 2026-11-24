@@ -64,6 +64,7 @@ with tempfile.TemporaryDirectory() as tmp:
         (hermes / "profiles" / "other").mkdir(parents=True)
         if sender:
             (hermes / "profiles" / PROFILE).mkdir()
+            (hermes / "profiles" / PROFILE / "config.yaml").write_text("")   # a Hermes identity marker: live
         elif sender is None:     # a tombstone: hermes profile delete moved it under profiles/.deleted/
             (hermes / "profiles" / ".deleted" / PROFILE).mkdir(parents=True)
         if helper:

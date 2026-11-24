@@ -2,10 +2,11 @@
 
     profile(cfg, env) / target(cfg, env)   # env var > (profile only: the owner's reply) > config key > default
     hermes_root(env)                       # the Hermes home the Hermes CLI resolves ``-p`` against
+    is_live(root, name)                    # Hermes' named_profile_is_live: dir + identity marker, no tombstone
     check(cfg, env, hermes_home=None)      # "set: ..." / "broken: ..." / "unknown: <reason>", words only
     readiness(cfg, env, hermes_home=None)  # "ready" / "no Telegram bot token ..." / "no Telegram chat ..." /
                                            # "missing: ..." / "unknown: <reason>", words only, report-only
-    candidates(cfg, env, hermes_home=None) # [(name, readiness)] for every profile ``-p`` resolves, or None
+    candidates(cfg, env, hermes_home=None) # [(name, readiness)] for every live profile ``-p`` resolves, or None
     tombstoned(cfg, env, hermes_home=None) # the missing sender was deleted (``profiles/.deleted/<name>``)
 
 kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else the
@@ -15,7 +16,8 @@ config ``push_profile``, else PROFILE_DEFAULT; the
 target is ``$KEVIN_PUSH_TO``, else config ``push_to``, else TARGET_DEFAULT. A blank or non-string value is
 skipped, and so is a reply file that is missing, broken or names no profile Hermes could resolve. When the profile is removed every send fails with a
 non-zero rc that is only logged, so ``check`` says, from files alone, whether ``-p <profile>`` can resolve: the
-profile is ``default``, or ``<Hermes home>/profiles/<profile>`` is a directory. It never runs hermes, never
+profile is ``default``, or ``<Hermes home>/profiles/<profile>`` is live the way Hermes decides it (``is_live``:
+a directory holding an identity marker, with no tombstone beside it). It never runs hermes, never
 starts a process and never sends. Its words never hold the profile name, the target, a path or a digit.
 kevin-push asks ``check`` before each send: BROKEN starts no hermes and logs NO_SENDER_HOW instead (SET and
 ``unknown: ...`` try the send). There is never a fallback sender: choosing one is the owner's call.
@@ -23,19 +25,21 @@ kevin-push asks ``check`` before each send: BROKEN starts no hermes and logs NO_
 every send with no Telegram bot token in its ``.env`` / ``config.yaml`` / environment, or no chat to send to (no
 home channel for a bare ``telegram`` target, no channel directory entry for a named one). It reads only whether
 a key is present and non-empty, never a value; kevin-push never asks it, so a wrong guess cannot block a send.
-``candidates`` asks readiness once per profile Hermes could resolve (``default`` and each live dir under
+``candidates`` asks readiness once per profile Hermes could resolve (``default`` and each ``is_live`` dir under
 ``profiles/``), so the doctor's "sender candidates" row and the push recovery words can name the profiles the owner
 may reply ``push via <name>`` with. Profile names are the owner's own labels and appear only there.
-``tombstoned`` says whether a missing sender was deleted by Hermes (a dir at ``profiles/.deleted/<name>``, presence
+``tombstoned`` says whether a missing sender was deleted by Hermes (``profiles/.deleted/<name>`` exists, presence
 only), so the doctor, the card and the push recovery words can say that restoring it brings pushes back.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -159,13 +163,91 @@ def hermes_root(env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
     return Path(user) / (".hermes" + env.get("HERMES_DATA_DIR_SUFFIX", ""))
 
 
+# hermes_constants._DELETED_PROFILES_DIR: ``hermes profile delete`` leaves a tombstone at
+# ``<root>/profiles/.deleted/<name>`` and ``-p <name>`` then refuses it (named_profile_is_live).
+DELETED_DIR = ".deleted"
+DEFAULT_NAME = "default"
+# hermes_constants._PROFILE_IDENTITY_MARKERS: a dir under profiles/ is a profile only when one of these is a regular
+# file or a symlink in it; cron heartbeats, log rotation and caches leave dirs that hold none of them.
+IDENTITY_MARKERS = ("config.yaml", ".env", "SOUL.md", "profile.yaml", "auth.json", "state.db")
+
+
+def _absent(err: OSError) -> bool:
+    """An error a stat raises for a path that is not there (pathlib's own ignored errnos: ENOENT, ENOTDIR,
+    EBADF, ELOOP), as opposed to one that cannot be read."""
+    return isinstance(err, (FileNotFoundError, NotADirectoryError)) or err.errno in (errno.EBADF, errno.ELOOP)
+
+
+def _live(root: Path, name: str) -> bool:
+    """named_profile_is_live for ``<root>/profiles/<name>`` from stats alone (``name`` already normalized and a
+    PROFILE_ID). Raises OSError when a stat fails for any reason other than the path not being there."""
+    home = root / "profiles" / name
+    try:
+        if not stat.S_ISDIR(os.stat(home).st_mode):
+            return False
+    except OSError as err:
+        if _absent(err):
+            return False
+        raise
+    has_identity = False
+    for marker in IDENTITY_MARKERS:       # named_profile_has_identity: is_file() or is_symlink()
+        try:
+            mode = os.lstat(home / marker).st_mode
+        except OSError as err:
+            if _absent(err):
+                continue
+            raise
+        if stat.S_ISREG(mode) or stat.S_ISLNK(mode):
+            has_identity = True
+            break
+    if not has_identity:
+        return False
+    try:                                  # named_profile_is_deleted: profile_tombstone_path(home).exists()
+        os.stat(root / "profiles" / DELETED_DIR / name)
+    except OSError as err:
+        if _absent(err):
+            return True
+        raise
+    return False
+
+
+def is_live(root: "Path | str | None", name) -> bool:
+    """Whether ``hermes -p <name>`` resolves under the Hermes home ``root``, the way Hermes decides it.
+
+    Mirrors NousResearch/hermes-agent hermes_constants.py ``named_profile_is_live(home)``: ``home.is_dir() and
+    named_profile_has_identity(home) and not named_profile_is_deleted(home)``, with ``home`` =
+    ``<root>/profiles/<name>``. Identity is any of IDENTITY_MARKERS (``_PROFILE_IDENTITY_MARKERS``) being a regular
+    file or a symlink in ``home`` (an empty ``.env`` counts: only the stricter
+    ``named_profile_has_servable_identity``, which ``-p`` never asks, wants it non-empty). Deleted is the tombstone
+    ``profile_tombstone_path(home)`` = ``<root>/profiles/.deleted/<name>`` existing (``mark_named_profile_deleted``
+    writes it, ``clear_named_profile_deleted`` removes it). hermes_cli/profiles.py ``resolve_profile_env`` refuses
+    ``-p`` for a profile that is not live. The name is normalized as ``normalize_profile_name`` does (stripped,
+    lowercased); ``default`` (any case) is the Hermes home itself and always live; a name Hermes never resolves
+    (PROFILE_ID) is not. Stats only: no file is opened, no secret is read, hermes and no process are run. False when
+    there is no root or anything cannot be read; never raises."""
+    try:
+        if not isinstance(name, str):
+            return False
+        name = name.strip()
+        if name.casefold() == DEFAULT_NAME:
+            return True
+        name = name.lower()
+        if root is None or not PROFILE_ID.match(name):
+            return False
+        return _live(Path(root), name)
+    except Exception:  # noqa: BLE001 - unreadable is not live
+        return False
+
+
 def check(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
           hermes_home: "Path | str | None" = None) -> str:
-    """Whether kevin-push's sender profile can exist, from files only: SET when it is ``default`` (any case,
-    Hermes' normalize_profile_name) or ``<hermes_home>/profiles/<name lowercased>`` is a directory; BROKEN when
-    the Hermes home exists and that directory does not, or the name is one Hermes never resolves; else an
-    ``unknown: <reason>`` (no home known, the home does not exist or cannot be read). ``hermes_home`` defaults
-    to hermes_root(env). Never runs hermes or any process; the words never hold a name, a target or a path."""
+    """Whether kevin-push's sender profile can exist, from stats only: SET when it is ``default`` (any case,
+    Hermes' normalize_profile_name) or ``<hermes_home>/profiles/<name lowercased>`` is live (``is_live``: Hermes'
+    named_profile_is_live); BROKEN when the Hermes home exists and that profile is not live (no such dir, a dir
+    with no identity marker, or a dir with its tombstone beside it), or the name is one Hermes never resolves;
+    else an ``unknown: <reason>`` (no home known, the home does not exist, or it or the profile dir cannot be
+    read: kevin-push still tries the send then). ``hermes_home`` defaults to hermes_root(env). Never opens a file,
+    never runs hermes or any process; the words never hold a name, a target or a path."""
     env = os.environ if env is None else env
     name = profile(cfg, env).lower()
     if name.casefold() == "default":
@@ -178,7 +260,9 @@ def check(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
             return HOME_MISSING
         if not PROFILE_ID.match(name):
             return BROKEN
-        return SET if (root / "profiles" / name).is_dir() else BROKEN
+        if not (root / "profiles" / name).is_dir():
+            return BROKEN
+        return SET if _live(root, name) else BROKEN
     except (OSError, ValueError):
         return HOME_UNREADABLE
 
@@ -386,12 +470,6 @@ def readiness(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
 
 # -- candidates: every profile that could be the sender, with its readiness (report-only) ---------------------------
 
-# hermes_constants._DELETED_PROFILES_DIR: ``hermes profile delete`` leaves a tombstone at
-# ``<root>/profiles/.deleted/<name>`` and ``-p <name>`` then refuses it (named_profile_is_live).
-DELETED_DIR = ".deleted"
-DEFAULT_NAME = "default"
-
-
 # The push sender row's words when the sender profile is missing and a tombstone of it is there (tombstoned).
 DELETED = "missing: the sender profile was deleted; restoring it should bring pushes back"
 
@@ -400,7 +478,8 @@ def tombstoned(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
                hermes_home: "Path | str | None" = None) -> bool:
     """True only when the sender profile (the name ``readiness`` resolves) is not a live profile (check is BROKEN)
     and ``<hermes_home>/profiles/.deleted/<name>`` exists: the marker file ``hermes profile delete`` writes (Hermes'
-    own check is ``.exists()``), so restoring the profile brings the sender back. Presence only: no file inside is opened, no secret is read, hermes is
+    own check is ``.exists()``), so restoring the profile brings the sender back. A profile dir still standing
+    beside its tombstone is not live for Hermes (named_profile_is_live), so it is tombstoned too. Presence only: no file inside is opened, no secret is read, hermes is
     never run. ``default`` and names Hermes never resolves are never tombstoned. False on anything that cannot be
     read; never raises."""
     try:
@@ -419,8 +498,9 @@ def tombstoned(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
 def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
                hermes_home: "Path | str | None" = None) -> Optional[list]:
     """Every profile ``hermes -p <name>`` could resolve, as ``[(name, readiness words)]`` sorted by name: DEFAULT_NAME
-    (the Hermes home itself) and each dir under ``<home>/profiles/`` whose name Hermes resolves (PROFILE_ID) and
-    that carries no tombstone (``profiles/.deleted/<name>``). Each answer is ``readiness`` with that profile as the
+    (the Hermes home itself) and each dir under ``<home>/profiles/`` that ``is_live`` (a name Hermes resolves,
+    PROFILE_ID, an identity marker in it, no tombstone ``profiles/.deleted/<name>``; one that cannot be read is
+    left out). Each answer is ``readiness`` with that profile as the
     sender and kevin-push's own target, so a name listed READY is one the owner can reply ``push via <name>`` with.
     None when no Hermes home is known, it does not exist or cannot be listed. ``hermes_home`` defaults to
     hermes_root(env). Files only and presence only, like readiness: never runs hermes or any process, and never
@@ -437,8 +517,7 @@ def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
         if profiles.is_dir():
             for entry in profiles.iterdir():
                 name = entry.name
-                if (name != DEFAULT_NAME and PROFILE_ID.match(name) and entry.is_dir()
-                        and not (profiles / DELETED_DIR / name).exists()):
+                if name != DEFAULT_NAME and PROFILE_ID.match(name) and is_live(root, name):
                     names.append(name)
     except (OSError, ValueError):
         return None

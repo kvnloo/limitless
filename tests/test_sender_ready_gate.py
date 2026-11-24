@@ -96,6 +96,8 @@ class Home(unittest.TestCase):
             (home / ".env").write_text(env_text)
         if config_text is not None:
             (home / "config.yaml").write_text(config_text)
+        elif env_text is None and name != "default":
+            (home / "config.yaml").write_text("")   # a Hermes identity marker: the dir is a live profile
 
     def ingest(self, replies, write=True, now=NOW, cfg=None):
         return sr.ingest(self.st, replies, now, write=write, env=self.env, cfg=self.cfg if cfg is None else cfg)

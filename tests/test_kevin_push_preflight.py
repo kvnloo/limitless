@@ -56,7 +56,9 @@ class Preflight(unittest.TestCase):
         self.tmp.cleanup()
 
     def profile(self, name):
-        (self.hermes_home / "profiles" / name).mkdir(parents=True)
+        p = self.hermes_home / "profiles" / name
+        p.mkdir(parents=True)
+        (p / "config.yaml").write_text("")   # a Hermes identity marker: the dir is a live profile
 
     def push(self, *args, **env):
         return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(self.env, **env),

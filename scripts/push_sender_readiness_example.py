@@ -26,6 +26,8 @@ with tempfile.TemporaryDirectory() as tmp:
         home.mkdir(parents=True)
         if env_lines:
             (home / ".env").write_text("".join(f"{line}\n" for line in env_lines))
+        else:
+            (home / "config.yaml").write_text("")   # a Hermes identity marker: a live profile with no token
         for fname, data in (files or {}).items():
             (home / fname).write_text(json.dumps(data))
 

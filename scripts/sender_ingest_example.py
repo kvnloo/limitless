@@ -41,6 +41,7 @@ def main():
         for name in ("sender-old", "sender-new"):
             ready_profile(hermes / "profiles" / name)     # a placeholder bot token and chat: ready
         (hermes / "profiles" / "sender-botless").mkdir()   # exists, but no Telegram bot
+        (hermes / "profiles" / "sender-botless" / "config.yaml").write_text("")   # a Hermes identity marker
         cfg_path = root / "config.json"
         env = {"LIMITLESS_CONFIG": str(cfg_path), "LIMITLESS_STATE": str(st), "HERMES_HOME": str(hermes)}
         db = st / "hermes.db"

@@ -123,6 +123,7 @@ class Recovery(unittest.TestCase):
         (prof / ".env").write_text("TELEGRAM_BOT_TOKEN=placeholder-token-not-real\n"
                                    "TELEGRAM_HOME_CHANNEL=placeholder-chat\n")
         (self.hermes / "profiles" / BOTLESS).mkdir()
+        (self.hermes / "profiles" / BOTLESS / "config.yaml").write_text("")   # a Hermes identity marker, no bot
         (self.hermes / "profiles" / VAULT).mkdir()
         (self.hermes / "profiles" / VAULT / "config.yaml").write_text("secrets:\n  vault:\n    kind: placeholder\n")
         self.db = self.st / "hermes.db"

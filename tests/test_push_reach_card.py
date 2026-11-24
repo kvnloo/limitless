@@ -66,7 +66,9 @@ class Base(unittest.TestCase):
         p = self.hermes / "profiles" / PROFILE
         if present:
             p.mkdir(exist_ok=True)
+            (p / "config.yaml").write_text("")   # a Hermes identity marker: the dir is a live profile
         elif p.exists():
+            (p / "config.yaml").unlink()
             p.rmdir()
 
     def build(self, **kw):

@@ -46,6 +46,7 @@ class Home:
             (self.hermes / "profiles" / "other").mkdir(parents=True)
             if sender:
                 (self.hermes / "profiles" / PROFILE).mkdir()
+                (self.hermes / "profiles" / PROFILE / "config.yaml").write_text("")   # a Hermes identity marker
         self.log = self.state / "push-log.jsonl"
         if rows is not None:
             self.log.write_text("".join(json.dumps(r) + "\n" for r in rows))

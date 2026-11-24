@@ -54,6 +54,7 @@ class Base(unittest.TestCase):
         shutil.copytree(FIX, self.st)
         self.hermes = root / "hermes"
         (self.hermes / "profiles" / PROFILE).mkdir(parents=True)   # the sender: there, but no bot
+        (self.hermes / "profiles" / PROFILE / "config.yaml").write_text("")   # a Hermes identity marker
         self.log = self.st / "push-log.jsonl"
         self.cfg_path = root / "config.json"
         self.cfg = {"push_profile": PROFILE, "push_to": "telegram", "push_log": "push-log.jsonl"}
@@ -74,6 +75,8 @@ class Base(unittest.TestCase):
             env_file.unlink()
         if kind == "maybe":
             (p / "config.yaml").write_text("secrets:\n  vault:\n    kind: example\n")
+        elif kind == "none":
+            (p / "config.yaml").write_text("")   # a Hermes identity marker: live, but no token
         return p
 
     def write_log(self, rows):

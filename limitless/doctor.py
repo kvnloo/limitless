@@ -202,7 +202,8 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
                     hermes_home: "Path | str | None" = None) -> dict:
     """Whether bin/kevin-push's sender profile can reach Telegram (push_sender.readiness over the profile
     $KEVIN_PUSH_PROFILE, else config ``push_profile``, else the default, and its target): live when ``ready``;
-    missing when the profile does not exist (push_sender.MISSING, its leading ``missing:`` dropped so the line
+    missing when the profile does not exist, i.e. is not live by Hermes' own rule (push_sender.is_live: a dir with
+    an identity marker and no tombstone; push_sender.MISSING, its leading ``missing:`` dropped so the line
     says it once; push_sender.DELETED instead when push_sender.tombstoned: Hermes deleted it and restoring it
     should bring pushes back), has no Telegram bot token or no chat to send to,
     or it cannot be told (``unknown: ...``). Files only, and only whether a key is present: hermes is never run,
@@ -235,7 +236,7 @@ _MAYBE_OTHER = ("it cannot be told", "it cannot be told")
 def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
                           hermes_home: "Path | str | None" = None, state_dir: "Path | str | None" = None) -> dict:
     """Which Hermes profiles the owner could reply ``push via <name>`` with (push_sender.candidates: ``default`` and
-    each live profile dir, each with its readiness for kevin-push's target): off when no Hermes home is set or it
+    each profile dir push_sender.is_live calls live, each with its readiness for kevin-push's target): off when no Hermes home is set or it
     does not exist; else ``ready: a, b`` (live), then ``maybe: c (why)`` for those readiness cannot tell, grouped
     by why, or ``none can reach Telegram`` (missing) when no profile is ready or a maybe. Missing too when only
     maybes are left. A maybe already proven unable to send (push_recovery.proven_failed over ``state_dir``: the

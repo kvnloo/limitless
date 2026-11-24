@@ -71,8 +71,15 @@ class Check(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def live(self, name):
+        # a live profile carries a Hermes identity marker (hermes_constants._PROFILE_IDENTITY_MARKERS)
+        p = self.root / "profiles" / name
+        p.mkdir()
+        (p / "config.yaml").write_text("")
+        return p
+
     def test_the_profile_dir_exists(self):
-        (self.root / "profiles" / "sender-a").mkdir()
+        self.live("sender-a")
         self.assertEqual(ps.check({"push_profile": "sender-a"}, {}, self.root), SET)
 
     def test_the_profile_dir_is_missing(self):
@@ -84,15 +91,15 @@ class Check(unittest.TestCase):
 
     def test_the_built_in_default_profile_is_checked_too(self):
         self.assertEqual(ps.check({}, {}, self.root), BROKEN)
-        (self.root / "profiles" / "intake").mkdir()
+        self.live("intake")
         self.assertEqual(ps.check({}, {}, self.root), SET)
 
     def test_the_name_is_matched_lowercase_as_hermes_stores_it(self):
-        (self.root / "profiles" / "sender-a").mkdir()
+        self.live("sender-a")
         self.assertEqual(ps.check({"push_profile": "Sender-A"}, {}, self.root), SET)
 
     def test_env_profile_beats_config(self):
-        (self.root / "profiles" / "sender-a").mkdir()
+        self.live("sender-a")
         self.assertEqual(ps.check({"push_profile": "sender-a"}, {"KEVIN_PUSH_PROFILE": "sender-b"}, self.root),
                          BROKEN)
         self.assertEqual(ps.check({"push_profile": "sender-b"}, {"KEVIN_PUSH_PROFILE": "sender-a"}, self.root), SET)
@@ -107,7 +114,7 @@ class Check(unittest.TestCase):
         self.assertEqual(ps.check({"push_profile": "sender-a"}, {}, self.root), BROKEN)
 
     def test_the_home_from_hermes_home_when_none_is_passed(self):
-        (self.root / "profiles" / "sender-a").mkdir()
+        self.live("sender-a")
         env = {"HERMES_HOME": str(self.root / "profiles" / "other")}
         self.assertEqual(ps.check({"push_profile": "sender-a"}, env), SET)
         self.assertEqual(ps.check({"push_profile": "sender-b"}, env), BROKEN)

@@ -52,6 +52,8 @@ class Home(unittest.TestCase):
             (home / ".env").write_text(env_text)
         if config_text is not None:
             (home / "config.yaml").write_text(config_text)
+        elif env_text is None and name != "default":
+            (home / "config.yaml").write_text("")   # a Hermes identity marker: the dir is a live profile
         return home
 
     def ready(self, profile="sender-a", to="telegram", **env):
@@ -235,6 +237,7 @@ class ReportOnly(unittest.TestCase):
         hermes.chmod(0o755)
         self.hermes_home = self.home / "hermes-home"
         (self.hermes_home / "profiles" / "sender-a").mkdir(parents=True)   # exists, but no .env at all
+        (self.hermes_home / "profiles" / "sender-a" / "config.yaml").write_text("")   # a Hermes identity marker
         state = self.home / "state"
         state.mkdir()
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("KEVIN_PUSH_", "TELEGRAM_"))}
