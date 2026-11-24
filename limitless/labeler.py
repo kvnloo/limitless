@@ -14,6 +14,7 @@ word from the kind's allowed set; anything else, a non-zero exit, a timeout or a
 rule label instead. A value the rules call unknown or missing is never sent to the model. Run it on the
 CPU: the child gets CUDA_VISIBLE_DEVICES="" and HIP_VISIBLE_DEVICES="", and the command must not take a
 GPU that another job owns (pick a CPU build or flags; never point it at a shared GPU server).
+bin/limitless-t1-local is such a command for a llama.cpp-style CLI on the CPU (limitless/t1_local.py).
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ import math
 import os
 import shlex
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping, Optional, Sequence, Union
 
@@ -150,5 +152,19 @@ def t1_model_cmd(env: Optional[Mapping[str, str]] = None, home: Optional[Path] =
     return v if isinstance(v, str) and v.strip() else None
 
 
+_RULES_ONLY = []
+
+
+@contextmanager
+def rules_only():
+    """Inside this block from_config gives the rule labeler, so the local model is never run. For
+    limitless-doctor, whose read-only tool calls must not start the configured model."""
+    _RULES_ONLY.append(True)
+    try:
+        yield
+    finally:
+        _RULES_ONLY.pop()
+
+
 def from_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> LocalModelLabeler:
-    return LocalModelLabeler(t1_model_cmd(env, home))
+    return LocalModelLabeler(None if _RULES_ONLY else t1_model_cmd(env, home))
