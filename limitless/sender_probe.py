@@ -1,6 +1,7 @@
 """Sender probe: settle an ``unknown: ...`` sender candidate with Hermes' own ``hermes -p <name> send --list telegram``.
 
     probe(cfg, env=None, hermes_home=None, timeout=TIMEOUT_S) -> [(name, verdict words, fingerprint)]
+    probe(..., reasons=True)                                  -> [(name, verdict words, fingerprint, reason)]
     save(state_dir, results, now)                             # push_sender.PROBE_FILE, atomic, 0600
     verdict(rc, out, err)                                      # TARGETS_FOUND / NO_TARGETS / CHECK_FAILED
 
@@ -20,6 +21,11 @@ filtered listing prints ``telegram:`` then its channels (or "(no channels discov
 non-zero exit, a missing binary, an unexpected output) is CHECK_FAILED. The output is read only to pick the
 verdict: it is never printed, stored or returned. hermes_cli/main.py loads the profile's ``.env`` and its external
 secret sources (``load_hermes_dotenv``) before any subcommand, so a token kept in a secret source counts.
+
+For the operator's command only, ``probe(..., reasons=True)`` adds why a CHECK_FAILED failed, in words:
+REASON_NOT_FOUND (no binary, or not executable: e.g. ``hermes`` off a non-login shell's PATH, fixed by config
+``hermes_bin``), REASON_TOO_LONG or REASON_UNEXPECTED; None for any other verdict. The verdict words, ``run_one``
+and the stored file are the same either way.
 
 ``save`` merges TARGETS_FOUND / NO_TARGETS verdicts into push_sender.PROBE_FILE with the time and the profile's
 fingerprint (push_sender.fingerprint: ``config.yaml`` and ``.env`` st_mtime_ns); a CHECK_FAILED leaves that
@@ -46,6 +52,10 @@ HERMES_BIN_CONFIG, HERMES_BIN_DEFAULT = "hermes_bin", "hermes"
 # hermes_cli/send_cmd.py _list_targets: the filtered no-match failure (stderr, exit 1) and the empty notice (stdout)
 _NO_TARGETS_ERR = "no targets found for platform 'telegram'"
 _NOTHING_CONFIGURED = "No messaging platforms configured"
+# Why a CHECK_FAILED failed, for bin/limitless-sender-probe only: words, never Hermes' output, a path or a number.
+REASON_NOT_FOUND = "hermes was not found (set hermes_bin in the config)"
+REASON_TOO_LONG = "hermes took too long"
+REASON_UNEXPECTED = "hermes exited with an unexpected answer"
 
 
 def hermes_bin(cfg: Optional[Mapping]) -> str:
@@ -68,12 +78,18 @@ def verdict(rc: Optional[int], out: str, err: str) -> str:
 def run_one(binary: str, name: str, env: Mapping[str, str], timeout: float = TIMEOUT_S) -> str:
     """Run ``<binary> -p <name> send --list telegram`` in its own process group with ``env`` and no stdin; the
     verdict words. A timeout kills that group (the child this started, nothing else). Never raises."""
+    return run_one_why(binary, name, env, timeout)[0]
+
+
+def run_one_why(binary: str, name: str, env: Mapping[str, str], timeout: float = TIMEOUT_S) -> tuple:
+    """``(verdict, reason)`` for run_one's run: reason None unless the verdict is CHECK_FAILED, then
+    REASON_NOT_FOUND (it could not start: no such file, not executable), REASON_TOO_LONG or REASON_UNEXPECTED."""
     argv = [binary, "-p", name, "send", "--list", "telegram"]
     try:
         p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              env=dict(env), start_new_session=True)
     except (OSError, ValueError, subprocess.SubprocessError):
-        return CHECK_FAILED
+        return CHECK_FAILED, REASON_NOT_FOUND
     with p:
         try:
             out, err = p.communicate(timeout=timeout)
@@ -83,20 +99,22 @@ def run_one(binary: str, name: str, env: Mapping[str, str], timeout: float = TIM
             except OSError:
                 p.kill()
             p.communicate()
-            return CHECK_FAILED
+            return CHECK_FAILED, REASON_TOO_LONG
         except Exception:  # noqa: BLE001 - a broken pipe is a failed check
             p.kill()
             p.communicate()
-            return CHECK_FAILED
-    return verdict(p.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace"))
+            return CHECK_FAILED, REASON_UNEXPECTED
+    words = verdict(p.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace"))
+    return words, (REASON_UNEXPECTED if words == CHECK_FAILED else None)
 
 
 def probe(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None, hermes_home=None,
-          timeout: float = TIMEOUT_S) -> Optional[list]:
+          timeout: float = TIMEOUT_S, reasons: bool = False) -> Optional[list]:
     """``[(name, verdict, fingerprint)]`` for each candidate whose own readiness (push_sender.candidates with no
     probe applied) starts with ``unknown: ``, sorted by name; None when no Hermes home is known (nothing ran).
     The fingerprint is taken before the run, so a file changed meanwhile makes the record stale; a profile whose
-    files cannot be stat'ed is CHECK_FAILED and hermes is not run for it."""
+    files cannot be stat'ed is CHECK_FAILED and hermes is not run for it. With ``reasons`` each row is
+    ``(name, verdict, fingerprint, reason)``, the reason from run_one_why (None for an unstat'able profile)."""
     env = os.environ if env is None else env
     cfg = cfg if isinstance(cfg, Mapping) else {}
     root = Path(hermes_home) if hermes_home is not None else push_sender.hermes_root(env)
@@ -108,16 +126,17 @@ def probe(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None, herme
         if not words.startswith(push_sender.UNKNOWN_PREFIX):
             continue
         fp = push_sender.fingerprint(push_sender.profile_dir(root, name))
-        out.append((name, run_one(binary, name, env, timeout) if fp is not None else CHECK_FAILED, fp))
+        got, why = run_one_why(binary, name, env, timeout) if fp is not None else (CHECK_FAILED, None)
+        out.append((name, got, fp, why) if reasons else (name, got, fp))
     return out
 
 
 def save(state_dir, results: Optional[list], now: float) -> None:
-    """Merge ``results`` (probe's) into push_sender.PROBE_FILE in ``state_dir``: each TARGETS_FOUND / NO_TARGETS
-    as ``{"verdict": words, "at": now, "files": fingerprint}``; a CHECK_FAILED keeps that profile's old entry.
+    """Merge ``results`` (probe's, either shape) into push_sender.PROBE_FILE in ``state_dir``: each TARGETS_FOUND /
+    NO_TARGETS as ``{"verdict": words, "at": now, "files": fingerprint}``; a CHECK_FAILED keeps the old entry.
     Atomic (a temp file there, then a rename), mode 0600. No output of hermes is ever stored."""
     data = push_sender.load_probes(state_dir)
-    for name, words, fp in results or ():
+    for name, words, fp, *_ in results or ():   # a reasons=True row's fourth item is never stored
         if words in (TARGETS_FOUND, NO_TARGETS) and fp is not None:
             data[name] = {"verdict": words, "at": float(now), "files": dict(fp)}
     d = Path(state_dir)

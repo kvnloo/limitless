@@ -4,12 +4,14 @@
 For each Hermes profile push_sender.candidates answers ``unknown: ...`` for (e.g. a token that may sit in a secret
 source; never a ready, botless, chatless or missing one) it runs ``hermes -p <name> send --list telegram`` once
 (config ``hermes_bin``, default ``hermes`` on PATH; this process's env; fifteen seconds at most) and prints one
-line per profile: ``<name>: targets found``, ``<name>: no targets`` or ``<name>: unknown: the check failed``.
-Hermes' own output is never printed or stored. Dry run by default: nothing is written. ``--write`` saves the
-verdicts to ``sender-probe.json`` in the state dir ($LIMITLESS_STATE, else config ``state``), atomic, 0600, with
-the profile's ``config.yaml`` / ``.env`` mtimes, so limitless-doctor's sender candidates row and the push recovery
-words stop offering a profile Hermes found no Telegram target for, until its files change. An operator command
-only: no job or timer runs it. It never sends a message. Exit 0, or 2 with a usage line. See docs/doctor.md.
+line per profile: ``<name>: targets found``, ``<name>: no targets`` or ``<name>: unknown: the check failed: <why>``
+with the why in words: ``hermes was not found (set hermes_bin in the config)``, ``hermes took too long`` or
+``hermes exited with an unexpected answer``. Hermes' own output is never printed or stored. Dry run by default:
+nothing is written. ``--write`` saves the verdicts to ``sender-probe.json`` in the state dir ($LIMITLESS_STATE,
+else config ``state``), atomic, 0600, with the profile's ``config.yaml`` / ``.env`` mtimes, so limitless-doctor's
+sender candidates row and the push recovery words stop offering a profile Hermes found no Telegram target for,
+until its files change. An operator command only: no job or timer runs it. It never sends a message. Exit 0, or
+2 with a usage line. See docs/doctor.md.
 """
 import sys
 import time
@@ -32,15 +34,15 @@ def main(argv):
         print(USAGE, file=sys.stderr)
         return 2
     cfg = config()
-    results = sender_probe.probe(cfg)
+    results = sender_probe.probe(cfg, reasons=True)
     if results is None:
         print("no Hermes home is known; nothing to check")
         return 0
     if not results:
         print("no sender candidate is unknown; nothing to check")
         return 0
-    for name, words, _ in results:
-        print(f"{name}: {words}")
+    for name, words, _, why in results:
+        print(f"{name}: {words}: {why}" if why else f"{name}: {words}")
     if args == ["--write"]:
         sender_probe.save(state_dir(), results, time.time())
         print("saved")

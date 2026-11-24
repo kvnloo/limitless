@@ -237,6 +237,9 @@ seconds at most). That command only lists targets; nothing is sent. The verdict 
 `unknown: the check failed` (a timeout, another exit, no binary). Hermes' output is never printed or stored.
 `--write` keeps each verdict with the profile's `config.yaml` / `.env` mtimes (atomic, 0600); a failed check
 leaves the old entry alone. No job or timer runs it.
+A failed check prints its reason in words after the verdict: `hermes was not found (set hermes_bin in the config)`
+(no binary or not executable, e.g. `hermes` off a non-login shell's PATH: set config `hermes_bin` to its full
+path), `hermes took too long`, or `hermes exited with an unexpected answer`; the stored verdict stays the same.
 
 While those files are unchanged, `push_sender.candidates` reads the record: `no targets` makes the profile `no
 Telegram target: hermes send found none` (not a maybe, not ready), so this row names it last as `<name>: no

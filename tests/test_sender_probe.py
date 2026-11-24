@@ -440,9 +440,8 @@ class Cli(Home):
         self.vault("delta")
         r = self.run_bin(env=dict(self.env, PATH=str(self.dir / "empty-path-dir")))
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout, "default: unknown: the check failed: hermes was not found (set hermes_bin in the config)\n"
-                                   "delta: unknown: the check failed: hermes was not found (set hermes_bin in the config)\n"
-                                   "dry run: nothing saved (pass --write to save)\n")
+        why = "unknown: the check failed: hermes was not found (set hermes_bin in the config)\n"
+        self.assertEqual(r.stdout, f"default: {why}delta: {why}dry run: nothing saved (pass --write to save)\n")
         self.assertEqual(self.called(), [])
 
     def test_another_exit_says_unexpected_answer_and_never_hermes_output(self):
@@ -461,7 +460,8 @@ class Cli(Home):
     def test_a_settled_line_has_no_reason(self):
         self.vault("delta")
         r = self.run_bin()
-        self.assertEqual(r.stdout, "default: no targets\ndelta: no targets\ndry run: nothing saved (pass --write to save)\n")
+        self.assertEqual(r.stdout,
+                         "default: no targets\ndelta: no targets\ndry run: nothing saved (pass --write to save)\n")
         self.assertNotIn(MARK, r.stdout + r.stderr)
 
     def test_nothing_unknown_runs_nothing(self):
