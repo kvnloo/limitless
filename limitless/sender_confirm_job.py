@@ -10,7 +10,9 @@ the ingest applies in a pass is confirmed in the same pass). Its event is jobs' 
 (push_sender.reply_at, written by sender_reply for a profile that exists) records a reply newer than the last one
 the mark settled (jobs.sender_changed_verdict), never a clock time. Config ``sender_confirm``: ``off`` (the
 default: no row, nothing read), ``dry_run`` (the row says what it would send; nothing is pushed or written) or
-``write``. A pass that is itself a dry run (``limitless-jobs`` without ``--send``, or no ``push``) is a dry run too.
+``write``. A pass that is itself a dry run (``limitless-jobs`` without ``--send``, or no ``push``) is a dry run too;
+``limitless-jobs --ingest --confirm`` (run_once ``confirm``) is the one pass that is a dry run for every other job and
+still sends this confirmation.
 
 In write mode the confirmation (title TITLE_SENT "Pushes", body BODY: plain words, never the profile name, a path,
 a card id or a digit) goes once through ``push`` (bin/limitless-jobs: ``kevin-push --once sender_confirm:<reply

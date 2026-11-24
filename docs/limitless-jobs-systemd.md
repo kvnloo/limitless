@@ -100,17 +100,26 @@ run`, so a `push via <profile>` reply ([push-sender-reply.md](push-sender-reply.
 is written, `write`: writes), exactly as `--send` runs them, and keeps every other job a plain dry run: it never
 calls `kevin-push` or `limitless-brief`, never sends and starts no process. `--ingest --send` is `--send`.
 
+`--ingest --confirm` adds exactly one send: the sender confirmation (`sender_confirm`,
+[sender-confirm.md](sender-confirm.md)), so a `push via <profile>` reply the pass applies is proven by its own
+delivery without a hand-run `--send`. It goes through the same `kevin-push` call `--send` uses (the normal send
+gate, `--once sender_confirm:<reply time>`, `KEVIN_PUSH_STRICT=1`) and only when config `sender_confirm` is
+`write`. Every other job stays as `--ingest` leaves it: no other `kevin-push` call, `limitless-brief` is never
+called, the outage recap stays a dry run and nothing else is logged as sent.
+`--confirm` without `--ingest` is a usage error (exit 2); `--send` with anything is `--send`.
+
 An example service for that timer (example text only: nothing here installs or touches a unit):
 
 ```ini
 [Unit]
-Description=Limitless jobs pass: the reply ingests run, nothing is sent
+Description=Limitless jobs pass: the reply ingests run, only the sender confirmation is sent
 
 [Service]
 Type=oneshot
-ExecStart=%h/src/limitless/bin/limitless-jobs --ingest
+ExecStart=%h/src/limitless/bin/limitless-jobs --ingest --confirm
 ```
 
-The timer unit above drives it as is. While a sync waits for its ingest, `limitless-doctor`'s `job apps ingest`,
-`job ranked ingest` and `job sender ingest` rows say `(limitless-jobs --ingest or --send runs it)`
-([doctor.md](doctor.md)).
+Drop `--confirm` for a pass that sends nothing at all. The timer unit above drives it as is. While a sync waits for
+its ingest, `limitless-doctor`'s `job apps ingest`, `job ranked ingest` and `job sender ingest` rows say
+`(limitless-jobs --ingest or --send runs it)`, and while a sender change waits for its confirmation the
+`job sender confirm` row says `(limitless-jobs --ingest --confirm or --send sends it)` ([doctor.md](doctor.md)).

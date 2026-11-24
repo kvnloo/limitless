@@ -42,7 +42,8 @@ sender ingest's row, so a reply the ingest applies in a pass is confirmed in tha
 - `write`: the confirmation goes through `limitless-jobs`' kevin-push call (`KEVIN_PUSH_STRICT=1`,
   `CIRCADIAN_CLASS=decision`): the normal send gate, its Sleep-mode hold, quiet and the daily cap included.
 
-A `limitless-jobs` pass without `--send` is a dry run too.
+A `limitless-jobs` pass without `--send` is a dry run too, except `--ingest --confirm` (the timer's pass): it sends
+this confirmation in write mode and nothing else ([limitless-jobs-systemd.md](limitless-jobs-systemd.md)).
 
 - At most one confirmation per change: the push carries `--once sender_confirm:<sender reply time>`, so a replay
   never sends twice, whatever polls it.

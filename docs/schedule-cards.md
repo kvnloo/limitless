@@ -93,7 +93,9 @@ When config `sender_confirm` is `dry_run` or `write`, `cards(confirm=True)` adds
 ingest's and before the outage recap's: `schedule_cards.sender_confirm_card()`, id `sender_confirm`, on the
 `sender_changed` event ("right after your reply changes the sender for your pushes"), ending when the next reply
 changes the sender again, sender `plugin`, budget the send gate's daily cap, once-key
-`sender_confirm:<sender reply time>`. It never names a profile ([sender-confirm.md](sender-confirm.md)).
+`sender_confirm:<sender reply time>`. `limitless-jobs --ingest --confirm or --send` (in `words.runs`) sends it: the
+timer's `--ingest --confirm` pass sends this one message and nothing else. It never names a profile
+([sender-confirm.md](sender-confirm.md)).
 
 ## The outage recap's card
 

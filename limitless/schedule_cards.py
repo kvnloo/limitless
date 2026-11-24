@@ -196,11 +196,11 @@ def sender_confirm_card() -> dict:
     """The sender confirmation's one card (jobs.SENDER_CONFIRM, sender_confirm_job): limitless-jobs sends one short
     plain message right after the owner's reply changes the sender (the sender_changed event), once per change, so
     a broken new sender shows up at once. Not a jobs.SPECS job: no decision window holds it, but it goes through
-    the send gate like every limitless push (budget the daily cap). It has no clock time and never names a
-    profile."""
+    the send gate like every limitless push (budget the daily cap). ``runs`` names the pass that sends it
+    (jobs.CONFIRM_RUNS). It has no clock time and never names a profile."""
     spec = jobs.SENDER_CONFIRM
     w = jobs.to_schedule_card(spec)
-    w.update(window=CONFIRM_WINDOW)
+    w.update(window=CONFIRM_WINDOW, runs=jobs.CONFIRM_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {w["delivery"]}'
     return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,

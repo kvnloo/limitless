@@ -391,6 +391,7 @@ class EveryJobDue(Fakes):
 class Runner(Base):
     """The doctor rows and the schedule cards name --ingest (or --send) as what runs the three ingests."""
     RUNS = "limitless-jobs --ingest or --send"
+    CONFIRM_RUNS = "limitless-jobs --ingest --confirm or --send"
 
     def rows(self):
         cfg = json.loads(self.cfg_path.read_text())
@@ -421,12 +422,30 @@ class Runner(Base):
             self.assertEqual(card["words"]["runs"], self.RUNS, card["id"])
         self.assertEqual(schedule_cards.noop_export_card()["words"]["runs"], "limitless-jobs --send")
 
+    def test_the_confirm_card_says_which_pass_sends_it(self):
+        self.assertEqual(schedule_cards.sender_confirm_card()["words"]["runs"], self.CONFIRM_RUNS)
+
+    def test_a_waiting_confirmation_names_the_pass_that_sends_it(self):
+        self.config("write", sender_confirm="write")
+        (self.st / sender_reply.SENDER_FILE).write_text(json.dumps({"profile": GOOD, "at": self.now - 120}))
+        cfg = json.loads(self.cfg_path.read_text())
+        row = doctor.sender_confirm_row(StateReader(self.st), cfg, self.now, env=self.env)
+        self.assertIn("waiting: the sender changed; the next pass sends the confirmation", row["reason"])
+        self.assertIn(f"({self.CONFIRM_RUNS} sends it)", row["reason"])
+        self.assertNotIn(GOOD, row["reason"])
+
     def test_the_doctor_doc_names_ingest_for_the_three_ingest_rows(self):
         text = (ROOT / "docs" / "doctor.md").read_text(encoding="utf-8")
         for name in ("job apps ingest", "job ranked ingest", "job sender ingest"):
             line = [ln for ln in text.splitlines() if ln.startswith(f"| `{name}`")]
             self.assertEqual(len(line), 1, name)
             self.assertIn("`limitless-jobs --ingest` or `--send` runs it", line[0])
+
+    def test_the_doctor_doc_names_the_confirm_pass_for_the_sender_confirm_row(self):
+        text = (ROOT / "docs" / "doctor.md").read_text(encoding="utf-8")
+        line = [ln for ln in text.splitlines() if ln.startswith("| `job sender confirm`")]
+        self.assertEqual(len(line), 1)
+        self.assertIn("`limitless-jobs --ingest --confirm` or `--send` sends it", line[0])
 
 
 
@@ -435,19 +454,29 @@ class TimerDoc(unittest.TestCase):
         text = (ROOT / "docs" / "limitless-jobs-systemd.md").read_text(encoding="utf-8")
         at = text.index("## Timer: the reply ingests without sending (`--ingest`)")
         section = text[at:]
-        self.assertIn("ExecStart=%h/src/limitless/bin/limitless-jobs --ingest\n", section)
+        self.assertIn("ExecStart=%h/src/limitless/bin/limitless-jobs --ingest --confirm\n", section)
         for word in ("apps_ingest", "ranked_ingest", "sender_ingest", "never sends", "`--ingest --send` is `--send`",
                      "example text only"):
             self.assertIn(word, section)
         self.assertNotIn("systemctl", section)
 
+    def test_the_systemd_doc_says_which_pass_sends_the_sender_confirmation(self):
+        text = (ROOT / "docs" / "limitless-jobs-systemd.md").read_text(encoding="utf-8")
+        section = text[text.index("## Timer: the reply ingests without sending (`--ingest`)"):]
+        for word in ("sender_confirm", "`--ingest --confirm`", "`--confirm` without `--ingest` is a usage error",
+                     "outage recap stays a dry run"):
+            self.assertIn(word, section)
+        self.assertIn("`job sender confirm`", section)
+
     def test_the_schedule_cards_doc_says_what_runs_the_ingest_cards(self):
         text = (ROOT / "docs" / "schedule-cards.md").read_text(encoding="utf-8")
         self.assertIn("`limitless-jobs --ingest or --send` (in `words.runs`)", text)
+        self.assertIn("`limitless-jobs --ingest --confirm or --send` (in `words.runs`)", text)
 
     def test_the_cli_docstring_names_ingest(self):
         head = CLI.read_text(encoding="utf-8").split('"""')[1]
         self.assertIn("--ingest", head.splitlines()[0])
+        self.assertIn("--confirm", head.splitlines()[0])
         self.assertIn("--ingest with --send is --send", head)
 
 

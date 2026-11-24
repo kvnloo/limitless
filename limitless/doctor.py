@@ -452,9 +452,9 @@ def sender_confirm_row(reader: StateReader, cfg: Mapping, now: float,
     the sender the owner's reply set works. From kevin-push's log (config ``push_log``: the newest confirmation row
     after the reply), else its mark sender-confirm.json (sender_confirm_job.state): off by config; missing when the
     confirmation's send failed ("the new sender did not reach you"); else live: it reached you (with when, in
-    words), it waits (Sleep mode held it, or the next pass sends it), it was not sent, or there is no sender change
-    to confirm; then the mode. Never the profile name, a message or a path; never sends; read-only."""
-    from . import sender_confirm_job as job   # sender_confirm_job -> jobs_runner -> card
+    words), it waits (Sleep mode held it, or the next pass sends it: jobs.CONFIRM_RUNS, named in the row), it was not
+    sent, or there is no sender change to confirm; then the mode. Never the profile name, a message or a path; never sends; read-only."""
+    from . import jobs, sender_confirm_job as job   # sender_confirm_job -> jobs_runner -> card
     cfg = cfg if isinstance(cfg, Mapping) else {}
     head = "sender confirm: "
     st, at = job.state(reader.path, cfg, now, env)
@@ -467,7 +467,8 @@ def sender_confirm_row(reader: StateReader, cfg: Mapping, now: float,
     else:
         said = {job.S_TOLD: f"the new sender reached you: its confirmation was delivered{ago}",
                 job.S_HELD: "waits: Sleep mode held the confirmation; it goes out once Sleep mode is off",
-                job.S_WAITING: "waiting: the sender changed; the next pass sends the confirmation",
+                job.S_WAITING: (f"waiting: the sender changed; the next pass sends the confirmation "
+                                f"({jobs.CONFIRM_RUNS} sends it)"),
                 job.S_DROPPED: "not proven: the confirmation was not sent (quiet, or the same one went out lately)",
                 job.S_ENV: f"{job.ENV_WINS}, so no confirmation is sent",
                 job.S_NOTHING: ("no sender change to confirm" if at is None else
