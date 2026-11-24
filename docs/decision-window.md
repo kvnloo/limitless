@@ -106,6 +106,31 @@ The instructions an agent follows when it wants something from the person (appen
 one-tap reply, let the window decide, one status board) are the plugin's `limitless:chief`
 skill ([chief-skill.md](chief-skill.md)).
 
+## Hermes cron window provider
+
+A Hermes host whose plugin API has `ctx.register_window_provider(provider)` holds a due cron job
+that declares a `window_class` until the provider says that window is open. `register(ctx)` offers
+it one `limitless.window_provider.WindowProvider`; a host without that method gets nothing and one
+content-free log line, so nothing changes there.
+
+`current(now)` reads the same window `limitless_window` plans asks against (Sleep mode, the wake
+event, the last unlock, a Glide focus block or wind-down, focused mode) and maps the plugin's word
+to the host's class through one table:
+
+| plugin window | host `window_class` open |
+| --- | --- |
+| `peak` | `peak` |
+| `trough` | `trough` |
+| `anytime` | `anytime` (every class opens) |
+| `wind_down` | `wind_down` |
+| `asleep` | none: every windowed job holds |
+| `focus_block` (Glide block or focused mode) | none: every windowed job holds |
+| `unknown` | none: every windowed job holds |
+
+"None" is the host's unknown window: a job with no `window_class`, or `anytime`, still fires.
+`current` reads events, never a clock time, and never raises (an error is none). Config
+`window_provider` is on by default; `false` or `"off"` registers nothing.
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
