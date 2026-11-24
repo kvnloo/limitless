@@ -29,7 +29,9 @@ BIN = ROOT / "bin" / "limitless-cron-spec"
 # The host's WindowClass values: cron/decision_window.py lines 30-34.
 HERMES_WINDOW_CLASSES = frozenset({"peak", "trough", "anytime", "wind_down"})
 
-# create_job's keyword parameters a payload may use: cron/jobs.py lines 1779-1810 (a subset of them).
+# create_job's keyword parameters a payload may use: cron/jobs.py lines 1779-1810 (a subset of them); prompt and
+# schedule have no default there (lines 1780-1781), so create_job(**payload) needs both.
+CREATE_JOB_REQUIRED = frozenset({"prompt", "schedule"})
 CREATE_JOB_KWARGS = frozenset({"prompt", "schedule", "name", "deliver", "script", "no_agent",
                                "window_class", "stale_after_s"})
 
@@ -94,6 +96,8 @@ class JobSpec(unittest.TestCase):
         for p in sending:
             with self.subTest(job=p["name"]):
                 self.assertLessEqual(set(p), CREATE_JOB_KWARGS)
+                self.assertLessEqual(CREATE_JOB_REQUIRED, set(p))
+                self.assertEqual(p["prompt"], "")   # no_agent: the script is the job (cron/jobs.py lines 1853-1855)
                 schedule = fork_parse_every(p["schedule"])
                 self.assertEqual(schedule["kind"], "interval")
                 wc = fork_normalize_window_class(p["window_class"])

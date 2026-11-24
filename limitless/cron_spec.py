@@ -7,6 +7,7 @@ neither ``hermes cron create`` nor the cronjob tool takes them; the Python job A
 ``cron/jobs.json``. ``job_spec(spec)`` is therefore create_job's keyword arguments for one plugin job:
 
 - ``name``: ``limitless-<job>``;
+- ``prompt``: empty. create_job requires the argument; with ``no_agent`` the script is the whole job;
 - ``schedule``: POLL, an interval. The cues are events (a wake, a wind-down); the interval only polls for them,
   it is never the time a message is meant for;
 - ``no_agent`` + ``script``: the job runs a script, never an agent turn. ``script`` is a plain file name the
@@ -44,7 +45,7 @@ def job_spec(spec: Any) -> dict:
     fields = jobs.to_cron_fields(spec)
     if not fields:
         raise ValueError(f"job {getattr(spec, 'name', spec)!r} has no window; it would fire ungated")
-    out = {"name": f"limitless-{spec.name}", "schedule": POLL, "no_agent": True,
+    out = {"name": f"limitless-{spec.name}", "prompt": "", "schedule": POLL, "no_agent": True,
            "script": f"limitless-{spec.name}.sh", "deliver": "local"}
     out.update(fields)
     return out

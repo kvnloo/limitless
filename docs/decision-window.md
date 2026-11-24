@@ -170,6 +170,7 @@ arguments for `cron.jobs.create_job(**payload)`:
 | key | value | why |
 | --- | --- | --- |
 | `name` | `limitless-<job>` | one host job per plugin job |
+| `prompt` | empty | create_job requires it. With `no_agent` the script is the whole job |
 | `schedule` | `every 5m` | an interval, which is recurring, as the window fields require. The cues are events, so this only polls for them and is never the time a message is meant for |
 | `no_agent`, `script` | `true`, `limitless-<job>.sh` | the job runs a script, never an agent turn. The host wants a plain file name in its scripts dir |
 | `deliver` | `local` | the plugin's send gate does the sending. The host never delivers the script's output |
