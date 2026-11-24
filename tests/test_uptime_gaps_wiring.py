@@ -18,7 +18,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from limitless import doctor, scorecard as sc, tools  # noqa: E402
+from limitless import doctor, scorecard as sc, tools, uptime_audit as ua  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
 
 BIN = ROOT / "bin" / "limitless-uptime-audit"
@@ -106,12 +106,12 @@ class Wiring(unittest.TestCase):
         self.assertEqual([g["s"] for g in loop["gaps"]], [8 * H])
         self.assertEqual((loop["week_gaps"], loop["week_longest_s"]), (1, 8 * H))
 
-    def test_too_few_rows_keep_the_unknown_reason(self):
+    def test_too_few_rows_keep_the_unknown_reason_after_the_open_gap(self):
         write(self.st, NOW, last_ago=2 * D, days=4)
         r = self.row()
         self.assertEqual((r["status"], r["reason"]), (doctor.MISSING, tools.uptime_reason(
             tools.uptime_audit(StateReader(self.st), NOW))))
-        self.assertNotIn("loop", r["reason"])
+        self.assertEqual(r["reason"], "the loop has not run for over a day; " + ua.FEW_KNOWN_REASON)
 
 
 class Cli(unittest.TestCase):

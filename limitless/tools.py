@@ -1465,12 +1465,13 @@ def uptime_audit(reader: StateReader, now: float, env: Optional[Mapping[str, str
 
 def uptime_reason(a: Optional[dict]) -> Optional[str]:
     """Why an uptime audit is unknown (no runs.jsonl, no run in the window, fewer than a week of runs that name
-    their stale inputs); None when its label is known. Words only, never a path."""
+    their stale inputs, that last one after the loop-gap clauses: uptime_audit.unknown_words); None when its label
+    is known. Words only, never a path."""
     if a is None:
         return _uptime.NO_LOG_REASON
     if not any(d["runs"] for d in a["days"]):
         return _uptime.NO_ROWS_REASON
-    return _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None
+    return _uptime.unknown_words(a) if a["label"]["label"] == _uptime.UNKNOWN else None
 
 
 def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,

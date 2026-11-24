@@ -151,8 +151,9 @@ def uptime_row(reader: StateReader, now: float) -> dict:
     """The uptime audit (tools.uptime_audit over runs.jsonl, config uptime_days, uptime_target and
     outage_ignore): live when the uptime goal was met over the window, stale when it was not, missing when it is
     unknown (no run log, no run in the window, too few runs that name their stale inputs, or too many unknown
-    days). The reason is the audit's T1 words or why it is unknown, never a count. Kind ``source``: --strict does
-    not count it. Read-only."""
+    days). The reason is the audit's T1 words or why it is unknown, never a count; too few runs that name their
+    inputs keeps the loop-gap clauses before that reason (uptime_audit.unknown_words). Kind ``source``: --strict
+    does not count it. Read-only."""
     from . import uptime_audit as ua
     a = tools.uptime_audit(reader, now)
     if a is None:
@@ -161,7 +162,7 @@ def uptime_row(reader: StateReader, now: float) -> dict:
         return _row(UPTIME_ROW, "source", MISSING, ua.NO_ROWS_REASON)
     words = a["label"]["label"]
     if words == ua.UNKNOWN:
-        return _row(UPTIME_ROW, "source", MISSING, ua.FEW_KNOWN_REASON)
+        return _row(UPTIME_ROW, "source", MISSING, ua.unknown_words(a))   # loop gaps first, then the reason
     return _row(UPTIME_ROW, "source", _UPTIME_STATUS.get(a["goal"], MISSING), words)
 
 

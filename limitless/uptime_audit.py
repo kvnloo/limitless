@@ -27,7 +27,8 @@ Loop gaps (loop_gaps): from the rows' own ``at`` times, a gap is two consecutive
 ``loop_gap_limit_s`` (seconds), else GAP_SPACINGS times the median spacing of the window's runs; it is open when
 the caller's ``now`` is that far past the newest run. The words say an open gap first ("the loop has not run for
 hours") and the closed gaps of the last seven days before the goal ("the loop stopped once this week for
-hours"); never a digit, a time stamp or a host, and never a status.
+hours"); never a digit, a time stamp or a host, and never a status. The gaps need no ``inputs`` field, so they
+are known while the goal is not: unknown_words puts the same clauses before FEW_KNOWN_REASON.
 Pure: no clock (``now`` is the caller's), no file except read_log, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -288,6 +289,23 @@ def loop_words(loop: Mapping) -> str:
     return f"{LOOP_STOPPED_ONCE} for {how}" if n == 1 else f"{LOOP_STOPPED_FEW}, the longest for {how}"
 
 
+def loop_clauses(loop: Optional[Mapping]) -> tuple:
+    """(open, closed): the open-gap clause ("the loop has not run for hours") and this week's closed gaps
+    (loop_words) as lists of at most one clause each; empty when there is none. Words only."""
+    loop = loop if isinstance(loop, Mapping) else {}
+    down = [f"{LOOP_NOT_RUN} {for_words(loop['open_s'])}"] if loop.get("open_s") else []
+    stopped = loop_words(loop)
+    return down, [stopped] if stopped else []
+
+
+def unknown_words(out: Mapping) -> str:
+    """FEW_KNOWN_REASON with the loop clauses before it (the open gap first, then this week's closed gaps): the
+    loop gaps come from the runs' ``at`` times, so they are known while too few runs name their inputs. Words
+    only; it never sets a goal or a status."""
+    down, stopped = loop_clauses(out.get("loop") if isinstance(out, Mapping) else None)
+    return "; ".join(down + stopped + [FEW_KNOWN_REASON])
+
+
 def _and(parts: list) -> str:
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
@@ -302,7 +320,5 @@ def _words(out: dict) -> str:
         groups.setdefault(phrase(c, n), []).append(name_words(name))
     order = PHRASES + tuple(p for p in groups if p not in PHRASES)
     parts = [f"{_and(groups[p])} {p}" for p in order if p in groups] or [NONE_NAMED]
-    loop = out.get("loop") or {}
-    down = [f"{LOOP_NOT_RUN} {for_words(loop['open_s'])}"] if loop.get("open_s") else []
-    stopped = loop_words(loop)
-    return "; ".join(down + parts + ([stopped] if stopped else []) + [GOAL_WORDS[out["goal"]]])
+    down, stopped = loop_clauses(out.get("loop"))
+    return "; ".join(down + parts + stopped + [GOAL_WORDS[out["goal"]]])
