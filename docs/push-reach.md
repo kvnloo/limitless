@@ -6,16 +6,18 @@ any Hermes chat instead, so it says so there, in words, on one line:
 
     Phone pushes are not reaching you: <reason>
 
-`limitless/push_reach.py` decides the reason from two facts main already has:
+`limitless/push_reach.py` decides the reason from three facts main already has:
 
 | Reason | When |
 |---|---|
 | `the sender profile is missing` | `push_sender.check` is broken: kevin-push's profile (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json`, else config `push_profile`) is not `default` and `<Hermes home>/profiles/<profile>` is not a directory |
+| `the profile you named was set but could not send, so it may have no Telegram bot; reply push via another profile` | `push_recovery.stage` over the same log is `UNKNOWN_FAILED`: an outage is open, the owner's `push via <name>` reply was applied on an `unknown:` readiness answer (the ingest mark's `applied_unknown`, e.g. a token that may sit in a secret source) and its confirmation failed to send; held by Sleep mode or not sent yet says nothing new |
 | `the last pushes failed to send` | the delivery audit of config `push_log` over the last seven local days has `send_failures` failing: the window's last transport attempts are `delivery_audit.SEND_FAIL_RUN` or more `log (telegram rc=N)` rows in a row (`delivery_audit.SEND_FAILING`) |
 
 The rules:
 
-- A broken sender wins when both are true: one line, never two.
+- One line, never two: a broken sender wins, then the named profile that could not send, then the failing
+  pushes.
 - No line when the sender is set and the last transport attempt was delivered, and none when neither fact can be
   told (no Hermes home, no push log set, a log that cannot be read, no row this week): unknown is silent, never
   alarming. One failure after a delivery is not yet an outage (the audit's own run length).
@@ -23,7 +25,8 @@ The rules:
 - On the card the line sits after the `MAX_LINES` cap, so a full card never cuts it, and before the memory
   palace and explain-back offers, which stay last. It goes through `tier_audit.gate` with the rest of the card.
 - Cached with the card (`card.CardCache`): each turn only stats the config file, the profile directory and the
-  push log (`push_reach.key`); the config and the log are read only when the card is rebuilt.
+  push log, plus `push-sender.json` and the sender ingest and sender confirm marks (`push_reach.key`); the config
+  and the log are read only when the card is rebuilt.
 
 ## limitless_status and the context packet
 

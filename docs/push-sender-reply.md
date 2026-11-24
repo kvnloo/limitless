@@ -44,7 +44,10 @@ environment), and only whether a key is present, never a value. A definite no is
 - no chat for the target: "your reply named a profile with no Telegram chat to send to, so it was not applied".
 
 `ready`, or any `unknown:` answer (the token may sit in a secret source, the target is not Telegram, the files
-cannot be read), still applies, as before: an unknown is never a refusal. A refused reply, like a missing
+cannot be read), still applies, as before: an unknown is never a refusal. The mark then keeps
+`applied_unknown: true`, and if that profile's one confirmation fails to send while the outage is open, the
+doctor's `push recovery` row and the state card say "pushes are failing; the profile you named was set but could
+not send, so it may have no Telegram bot; reply push via another profile" instead of only "failed to send". A refused reply, like a missing
 profile, is not asked about again; the owner sends a new `push via <name>`. While the push outage is open, the
 doctor's `job sender ingest` and `push recovery` rows say "pushes are failing; your last reply named a profile
 that cannot reach Telegram" until a later reply is applied.
@@ -72,7 +75,9 @@ The mark `push-sender-ingest.json` (atomic, 0600) holds epochs and words only, n
 `row_at` (the sync row it acted on), `ran_at`, `mode`, `action` (`nothing`, `would write`, `write`, `missing`,
 `unknown`, `no bot`, `no chat`), `after` (the newest owner message a write pass read; a first run reads only the
 last day) and `refused_at` (when the newest refused reply was sent: `missing`, `no bot` or `no chat`; kept across
-passes until a later reply is applied). A dry run
+passes until a later reply is applied) and `applied_unknown` (`true` only, no other value: the reply in
+`push-sender.json` was applied on an `unknown:` readiness answer; dropped by the next applied reply that is
+`ready`, kept by a dry run, a refusal or a pass with nothing new). A dry run
 never moves `after`, so switching to `write` later still applies the reply. The job sends nothing and logs nothing
 as sent.
 
