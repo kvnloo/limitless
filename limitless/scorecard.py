@@ -6,9 +6,10 @@ is never read into a row: it may hold private detail and has no place in a summa
 """
 from __future__ import annotations
 
+import json
 import os
 import re
-from datetime import datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import List, Mapping, Optional
 
@@ -185,14 +186,79 @@ def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tu
     return a["label"]["label"], da.goal(a), a
 
 
+HABIT_ROW, EVIDENCE_ROW, PRIVACY_ROW = 3, 4, 7
+HABIT_WORDS, EVIDENCE_WORDS, PRIVACY_WORDS = "habit loop", "evidence loop", "privacy"
+
+CYCLES = 4                    # row three: the last four habit weeks each closed with a Keep or Drop
+HABIT_MET = "the last four habit weeks each closed with a Keep or Drop decision"
+HABIT_OPEN = "a finished habit week has no Keep or Drop decision"
+HABIT_FEW = "fewer than four habit weeks closed with a decision so far"
+HABIT_RAW_KEYS = ("weeks_started", "weeks_decided", "recent_closed", "recent_open", "cycles")
+
+
+def _week_of(v) -> Optional[date]:
+    try:
+        return date.fromisoformat(v) if isinstance(v, str) else None
+    except ValueError:
+        return None
+
+
+def _habit_weeks(state_dir) -> set:
+    """The start dates of every confirmed habit week: habit.json and each kept habit-<week_of>.json that names a
+    habit and a week_of (habit_start writes them only after the person said yes). An unreadable file is skipped."""
+    from . import jobs
+    from .habit_replies import HABIT_FILE
+    st = Path(state_dir)
+    weeks = set()
+    for p in [st / HABIT_FILE] + sorted(st.glob("habit-*.json")):
+        try:
+            h = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        start = jobs._week_start(h if isinstance(h, dict) else None)
+        if start is not None:
+            weeks.add(start)
+    return weeks
+
+
+def _habit_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row three from the stop rule's loop rows (predictions.jsonl) and the habit files.
+
+    A cycle is a started habit week with a Keep or Drop loop row (stop_rule.record_loop writes one only for a
+    started week, so a loop row's week counts as started too). The weeks judged are the last four that are
+    decided or finished (day eight on): the running, undecided week is still open and never counts against the
+    goal. Day answers are not read, so a skipped or unanswered day never counts against a cycle."""
+    from . import jobs, stop_rule
+    loops = stop_rule.loop_rows(state_dir)
+    decided = {_week_of(r.get("week_of")) for r in loops if r.get("decision") in jobs.DECISIONS} - {None}
+    started = _habit_weeks(state_dir) | ({_week_of(r.get("week_of")) for r in loops} - {None})
+    if not started:
+        return UNKNOWN_PREFIX + jobs.NO_WEEK, "unknown", None
+    today = datetime.fromtimestamp(now, tz).date()
+    judged = sorted(w for w in started
+                    if w in decided or today >= w + timedelta(days=jobs.HABIT_WEEK_DAYS))[-CYCLES:]
+    open_ = [w for w in judged if w not in decided]
+    if open_:
+        label, goal = HABIT_OPEN, "not met"
+    elif len(judged) >= CYCLES:
+        label, goal = HABIT_MET, "met"
+    else:
+        label, goal = HABIT_FEW, "not met"
+    audit = {"weeks_started": len(started), "weeks_decided": len(decided), "recent_closed": len(judged) - len(open_),
+             "recent_open": len(open_), "cycles": CYCLES, "label": {"label": label}}
+    return label, goal, audit
+
+
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
-    """``[(row, audit)]`` for rows one and two: ``row`` as measured() gives it, ``audit`` the audit's own dict
-    (its T0 counts) or None when there was no log to audit."""
+    """``[(row, audit)]`` for rows one, two, three, four and seven, in that order: ``row`` as measured() gives
+    it, ``audit`` the audit's own dict (its T0 counts, and its ``label``) or None when there was nothing to
+    audit."""
     cfg = cfg if isinstance(cfg, Mapping) else {}
     out = []
     for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
-                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured)):
+                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
+                           (HABIT_ROW, HABIT_WORDS, _habit_measured)):
         try:
             label, goal, audit = read(state_dir, cfg, now, tz, env, home)
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review

@@ -556,9 +556,12 @@ SCORECARD_MODALITY = "measured"   # the measured rows: the audits read the loop'
 def scorecard_measured(rows: list, state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None,
                        raw: bool = False, env: Optional[Mapping[str, str]] = None,
                        home: Optional[Path] = None) -> list:
-    """limitless_scorecard's ``measured`` field: rows one and two as the uptime and delivery audits measured
-    them (scorecard.measured_audits), ``[{n, criterion_words, label: T1, goal}]`` plus ``note`` when the hand
-    row is green and the goal is not met. The audit's counts sit in ``counts`` only with ``raw``."""
+    """limitless_scorecard's ``measured`` field: rows one, two, three, four and seven as code measured them
+    (scorecard.measured_audits: the uptime and delivery audits, the habit loop, the evidence loop and the tier
+    audit), ``[{n, criterion_words, label: T1, goal}]`` plus ``note`` when the hand row is green and the goal is
+    not met. The audit's counts sit in ``counts`` only with ``raw``."""
+    raw_keys = {_scorecard.UPTIME_ROW: UPTIME_RAW_KEYS, _scorecard.DELIVERY_ROW: DELIVERY_RAW_KEYS,
+                _scorecard.HABIT_ROW: _scorecard.HABIT_RAW_KEYS}
     out = []
     for m, a in _scorecard.measured_audits(state_dir, cfg, now, tz, env=env, home=home):
         item = dict(m, label=_t1(m["label"], SCORECARD_MODALITY))
@@ -566,9 +569,8 @@ def scorecard_measured(rows: list, state_dir, cfg: Optional[Mapping], now: float
         if note:
             item["note"] = note
         # counts only beside a known label, as limitless_uptime and limitless_delivery give them
-        if raw and a is not None and m["label"] == a["label"]["label"]:
-            keys = UPTIME_RAW_KEYS if m["n"] == _scorecard.UPTIME_ROW else DELIVERY_RAW_KEYS
-            item["counts"] = {k: a[k] for k in keys}
+        if raw and a is not None and m["n"] in raw_keys and m["label"] == a["label"]["label"]:
+            item["counts"] = {k: a[k] for k in raw_keys[m["n"]]}
         out.append(item)
     return out
 
