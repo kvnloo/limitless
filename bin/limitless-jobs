@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""limitless-jobs [--send | --ingest]: one pass over the event-triggered jobs; prints one line per job.
+"""limitless-jobs [--send | --ingest [--confirm]]: one pass over the event-triggered jobs; prints one line per job.
 
 Without --send it is a dry run: verdicts only, nothing is pushed or written.
 With --ingest (the timer's pass) the reply ingests (apps, ranked, sender; each by its own config mode) run for real,
 exactly as --send runs them, and every other job is a plain dry run: kevin-push and limitless-brief are never called,
 nothing is sent and no process is started. --ingest with --send is --send.
+With --ingest --confirm the pass also sends the one sender confirmation (below) through the same kevin-push call
+--send uses, in config "sender_confirm" write mode only; nothing else is pushed or logged as sent, limitless-brief is
+never called and the outage recap stays a dry run. --confirm without --ingest is a usage error (exit 2); --send with
+anything is --send.
 With --send, a deliver verdict goes out through `kevin-push limitless <title> <body> --once <job>:<event time>`
 and --why <the verdict's reason> (its "Why now" line), with KEVIN_PUSH_STRICT=1 (any other sender for the same event should pass the same --once key), and the job is logged as sent (jobs-sent.jsonl in the state dir) only when
 kevin-push reports a real Telegram delivery. kevin-push is $KEVIN_PUSH_BIN, else `kevin-push` on PATH.
@@ -29,7 +33,7 @@ runs.jsonl, --send reads the "work apps: ..." / "feed apps: ..." reply from the 
 pushes nothing.
 
 Sender confirmation: with config "sender_confirm" set to "dry_run" or "write", one more line. Right after the owner's
-"push via <profile>" reply changed the sender (push-sender.json), --send in write mode pushes one plain
+"push via <profile>" reply changed the sender (push-sender.json), --send (or --ingest --confirm) in write mode pushes one plain
 confirmation ("Pushes") through the same kevin-push call, with --once sender_confirm:<reply time>; its delivery
 result is the proof the new sender works (the doctor's "job sender confirm" row). When it pushed in a pass, the
 outage recap waits for the next pass.
@@ -101,14 +105,19 @@ def limitless_brief():
     return how
 
 
+USAGE = "usage: limitless-jobs [--send | --ingest [--confirm]]"
+
+
 def main(argv):
     args = argv[1:]
-    if any(a not in ("--send", "--ingest") for a in args):
-        print("usage: limitless-jobs [--send | --ingest]", file=sys.stderr)
+    send, ingest, confirm = "--send" in args, "--ingest" in args, "--confirm" in args
+    if any(a not in ("--send", "--ingest", "--confirm") for a in args) or (confirm and not ingest and not send):
+        print(USAGE, file=sys.stderr)
         return 2
-    send = "--send" in args
-    rows = jobs_runner.run_once(state_dir(), time.time(), push=kevin_push if send else None, dry_run=not send,
-                                brief=limitless_brief if send else None, ingest="--ingest" in args)
+    confirm = confirm and ingest and not send   # --send with anything is --send
+    rows = jobs_runner.run_once(state_dir(), time.time(), push=kevin_push if send or confirm else None,
+                                dry_run=not send, brief=limitless_brief if send else None, ingest=ingest,
+                                confirm=confirm)
     for r in rows:
         print(f"{r['job']}: {r['action']}: {r['reason']}")
     return 0

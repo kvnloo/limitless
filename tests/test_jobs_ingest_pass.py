@@ -44,7 +44,8 @@ NOT_RUN = "dry run of limitless-jobs: not run"
 RECORDER = """#!{py}
 import json, os, sys
 with open(os.environ["FAKE_CALLS"], "a") as f:
-    f.write(json.dumps({{"bin": os.path.basename(sys.argv[0]), "argv": sys.argv[1:]}}) + "\\n")
+    f.write(json.dumps({{"bin": os.path.basename(sys.argv[0]), "argv": sys.argv[1:],
+                        "strict": os.environ.get("KEVIN_PUSH_STRICT")}}) + "\\n")
 print("kevin-push: telegram")
 """
 
@@ -281,6 +282,49 @@ class IngestCli(Fakes):
         r = self.run_cli("--nope")
         self.assertEqual(r.returncode, 2)
         self.assertIn("--ingest", r.stderr)
+        self.assertIn("--confirm", r.stderr)
+
+    def test_confirm_without_ingest_is_a_usage_error(self):
+        r = self.run_cli("--confirm")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("--confirm", r.stderr)
+        self.assertEqual(r.stdout, "")
+        self.assertEqual(self.calls_made(), [])
+        self.assertFalse((self.st / sender_reply.SENDER_FILE).exists())
+
+    def test_send_with_confirm_is_send(self):
+        r = self.run_cli("--send", "--confirm")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(any(c["argv"][:2] == ["limitless", "Back from nap"] for c in self.calls_made()),
+                        self.calls_made())
+        self.assertTrue((self.st / jobs_runner.SENT_LOG).exists())
+
+    def test_ingest_confirm_sends_only_the_confirmation(self):
+        self.config("write", outage_recap="write", push_log="push-log.jsonl", sender_confirm="write")
+        r = self.run_cli("--ingest", "--confirm")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        calls = self.calls_made()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual((calls[0]["bin"], calls[0]["argv"][:2], calls[0]["strict"]),
+                         ("kevin-push", ["limitless", "Pushes"], "1"))
+        lines = r.stdout.splitlines()
+        self.assertTrue(any(ln.startswith("Sender confirm: deliver") and ln.endswith("; sent") for ln in lines),
+                        r.stdout)
+        self.assertTrue(any(ln.startswith("Back from nap: deliver") for ln in lines), r.stdout)
+        self.assertTrue(any(ln.startswith("Outage recap: deliver") and "nothing sent" in ln for ln in lines),
+                        r.stdout)
+        self.assertNothingSent()
+        self.assertFalse((self.st / "outage-recap.json").exists())
+        self.assertWrote()
+
+    def test_ingest_without_confirm_leaves_the_confirmation_due(self):
+        self.config("write", outage_recap="write", push_log="push-log.jsonl", sender_confirm="write")
+        r = self.run_cli("--ingest")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(any(ln.startswith("Sender confirm: deliver") and "nothing sent" in ln
+                            for ln in r.stdout.splitlines()), r.stdout)
+        self.assertEqual(self.calls_made(), [])
+        self.assertFalse((self.st / "sender-confirm.json").exists())
 
 
 class EveryJobDue(Fakes):
@@ -310,6 +354,37 @@ class EveryJobDue(Fakes):
         rc, out = self.main("--send")
         self.assertEqual(rc, 0)
         self.assertNotEqual(self.calls_made(), [], out)
+
+    def due_everything(self):
+        """Wake brief, habit check-in, outage recap and the sender confirmation all due in one pass."""
+        self.config("write", outage_recap="write", push_log="push-log.jsonl", sender_confirm="write")
+        today = datetime.fromtimestamp(self.now).date().isoformat()
+        (self.st / "habit.json").write_text(json.dumps({"habit": "synthetic habit", "week_of": today}))
+
+    def test_ingest_confirm_with_everything_due_makes_exactly_one_call_the_confirmation(self):
+        self.due_everything()
+        rc, out = self.main("--ingest", "--confirm")
+        self.assertEqual(rc, 0)
+        got = {ln.split(": ")[0]: ln for ln in out.splitlines()}
+        for job in ("Wake-up brief", "Habit check-in", "Outage recap", "Sender confirm"):
+            self.assertIn(f"{job}: deliver: ", got.get(job, ""), out)
+        self.assertIn("nothing sent", got["Outage recap"])
+        self.assertTrue(got["Sender confirm"].endswith("; sent"), got["Sender confirm"])
+        calls = self.calls_made()
+        self.assertEqual(len(calls), 1, calls)
+        argv = calls[0]["argv"]
+        self.assertEqual((calls[0]["bin"], argv[:2], calls[0]["strict"]), ("kevin-push", ["limitless", "Pushes"], "1"))
+        reply_at = json.loads((self.st / sender_reply.SENDER_FILE).read_text())["at"]
+        self.assertEqual(argv[argv.index("--once") + 1], f"sender_confirm:{int(reply_at)}")
+        self.assertNothingSent()
+        self.assertFalse((self.st / "outage-recap.json").exists())
+        self.assertWrote()
+
+    def test_with_everything_due_send_calls_more_than_the_confirmation(self):
+        self.due_everything()
+        rc, out = self.main("--send")
+        self.assertEqual(rc, 0)
+        self.assertGreater(len(self.calls_made()), 1, out)
 
 
 
