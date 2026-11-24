@@ -97,10 +97,12 @@ def run(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, 
 
 def refusal_words(state_dir, cfg: Optional[Mapping], now: float) -> Optional[str]:
     """push_recovery.REFUSED ("pushes are failing; your last reply named a profile that cannot reach Telegram")
-    while the push outage is open and the owner's last reply after it began was refused; else None. Read-only."""
+    while the push outage is open and the owner's last reply after it began was refused; else None. Only the
+    constant: the profiles push_recovery names after it stay in the push recovery and sender candidates rows, so
+    this row never holds a profile name. Read-only."""
     from . import push_recovery     # late: push_recovery reads the sender confirm and recap jobs
     _, words = push_recovery.from_state(state_dir, cfg if isinstance(cfg, Mapping) else {}, now)
-    return words if words == push_recovery.REFUSED else None
+    return push_recovery.REFUSED if words.startswith(push_recovery.REFUSED) else None
 
 
 def state(state_dir, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> tuple:

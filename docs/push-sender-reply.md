@@ -8,6 +8,14 @@ words to pick another profile and answers with one whole message:
 push via default
 ```
 
+Which names qualify: the doctor's `sender candidates` row ([doctor.md](doctor.md#sender-candidates-row),
+`push_sender.candidates`) lists every profile `hermes -p` could resolve that the readiness check below calls
+ready (`ready: alpha, beta`), then the ones it cannot tell (`maybe: delta (keeps its token in a secret source)`),
+or says `none can reach Telegram`. While pushes fail and the owner's reply is awaited or was refused, the
+`push recovery` row's words end with the same names, e.g. `pushes are failing; waiting for a sender reply; ready
+profiles: alpha, beta` (`; ready profiles: `, else `; profiles that may reach Telegram: `, else `; no profile can
+reach Telegram`). Files only and presence only, as below; hermes is never run.
+
 The sender ingest job applies that reply by itself, the way the apps ingest
 ([apps-ingest.md](apps-ingest.md#as-an-event-job)) and the ranked drop ingest
 ([ranked-ledger.md](ranked-ledger.md#as-an-event-job)) apply theirs. Nobody has to hand-edit config
@@ -154,4 +162,5 @@ files in the state dir: hermes.db, push-sender-ingest.json, push-sender.json, ru
 - It never sends a message, never runs hermes and never starts, stops or restarts a process.
 - It never reads a secret value: the readiness gate asks only whether a key is present.
 - It never edits the config file and never picks a sender the owner did not name.
-- It never prints the profile name in a job line, the doctor row or the schedule card.
+- It never prints the profile name in a job line, the doctor row or the schedule card. (Only the doctor's
+  `sender candidates` row and the `push recovery` row's reply stages name the profiles the owner may pick.)

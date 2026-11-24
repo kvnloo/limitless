@@ -23,7 +23,8 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `uptime`, right after the last sync run | source | every input was fresh on at least config `uptime_target` of the last `uptime_days` local days of `runs.jsonl` (the uptime goal met); the reason is `limitless_uptime`'s words, never a count, including when the loop itself stopped (config `loop_gap_limit_s`; these words never change the status, and they come before the unknown reason too) | the goal was not met, even counting every unknown day as fresh | no `runs.jsonl`, no run in the window, fewer than a week of runs that name their stale inputs, or too many unknown days to tell ([uptime-audit.md](uptime-audit.md)) | |
 | `delivery`, right after the uptime row | source | north-star row two met as the scorecard measures it (`delivery_audit.goal` over config `push_log`, complaints from config `hermes_db` and `quiet.json`); the reason is `limitless_delivery`'s words, never a count or a reply | the goal was not met (over the push limit, a missed brief, a push with no reply line, a quiet or stop request, or "the last pushes failed to send") | the goal is unknown: an unreadable log, no row this week, unknown wake days, or complaints unknown (no Hermes DB set, or it cannot be read) ([delivery-audit.md](delivery-audit.md)) | no `push_log` set |
 | `push sender`, right after the delivery row | source | `ready`: the Hermes profile `bin/kevin-push` sends through (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json` ([push-sender-reply.md](push-sender-reply.md)), else config `push_profile`, else the default) exists (`default`, or its dir under the Hermes home's `profiles/`, the home as `hermes -p` resolves it: `HERMES_HOME`, or its grandparent when it is a `<root>/profiles/<name>` profile home, else `~/.hermes`), has a non-empty `TELEGRAM_BOT_TOKEN`, and has a chat for the target (`KEVIN_PUSH_TO`, else config `push_to`, else the default) ([below](#push-sender-row)); files only, hermes is never run, nothing is sent and no secret value is read | | `missing: the sender profile does not exist` (every send would fail and only be logged), `no Telegram bot token in the sender profile`, `no Telegram chat set for the sender profile`, or `unknown:` no Hermes home is set, it does not exist or cannot be read, the target is not Telegram, or the token may sit in a secret source; never a value, the profile name, the target or a path | |
-| `push recovery`, right after the push sender row | source | no outage (`no outage: pushes are reaching you`: none open in kevin-push's log, config `push_log`, and none closed within the outage recap's stale window), or pushes are back and the recap was sent or settled (`pushes are back; recap sent`, `pushes are back; settled without a recap`, from `outage-recap.json`) ([below](#push-recovery-row)) | the owner's `push via <name>` reply set the sender (`push-sender.json`) but its confirmation has not been delivered yet (held while Sleep mode was on, failed to send, or not sent yet: kevin-push's log, else `sender-confirm.json`); or pushes are back and the recap waits for the next pass (or the recap is off, or in dry run mode) | `pushes are failing; waiting for a sender reply`, `pushes are failing; your last reply named a profile that cannot reach Telegram` (the newest reply after the outage began was not applied: the profile does not exist, or has no Telegram bot token or no chat), or `unknown:` no `push_log` set or it cannot be read; never a digit, a path or the profile name | |
+| `sender candidates`, right after the push sender row | source | `ready: a, b`: the profiles the owner could reply `push via <name>` with (`push_sender.candidates`: `default` and each dir under the Hermes home's `profiles/` that `hermes -p` would resolve, a tombstoned one in `profiles/.deleted/` skipped), each one `ready` by the `push sender` row's own check for kevin-push's target; then `maybe: c (keeps its token in a secret source)` for those it cannot tell ([below](#sender-candidates-row)) | | only maybes, or `none can reach Telegram`: no profile is ready or a maybe; `unknown: the Hermes home cannot be read` | no Hermes home is set, or it does not exist |
+| `push recovery`, right after the sender candidates row | source | no outage (`no outage: pushes are reaching you`: none open in kevin-push's log, config `push_log`, and none closed within the outage recap's stale window), or pushes are back and the recap was sent or settled (`pushes are back; recap sent`, `pushes are back; settled without a recap`, from `outage-recap.json`) ([below](#push-recovery-row)) | the owner's `push via <name>` reply set the sender (`push-sender.json`) but its confirmation has not been delivered yet (held while Sleep mode was on, failed to send, or not sent yet: kevin-push's log, else `sender-confirm.json`); or pushes are back and the recap waits for the next pass (or the recap is off, or in dry run mode) | `pushes are failing; waiting for a sender reply`, `pushes are failing; your last reply named a profile that cannot reach Telegram` (the newest reply after the outage began was not applied: the profile does not exist, or has no Telegram bot token or no chat), both followed by the profiles the owner can name (`; ready profiles: a, b`, `; profiles that may reach Telegram: c` or `; no profile can reach Telegram`); or `unknown:` no `push_log` set or it cannot be read; never a digit or a path, and no profile name but the candidates' | |
 | `Sleep mode`, right after the push recovery row | source | the last row of `sleepmode.jsonl` (`LIMITLESS_SLEEPMODE`, else the state dir; the file kevin-push's Sleep hold reads) is `off`, or `on since <age in words>`; an on row adds "the Sleep mode poll is not fresh, so pushes are not held" while `sleepmode-poll.json` is not ok or older than kevin-push's limit (it fails open) | `left on, ignored since the owner was seen up`: the last row is the poller's inferred off row with `left_on`; or `stale: on far longer than a night; pushes are being held`: on longer than `sleepmode.NIGHT_H` with no such row ([below](#sleep-mode-row)) | `unknown:` no file, it cannot be read, no row with a time and an on or off, or the last row is in the future | |
 | `local labeler`, right after the Sleep mode row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
@@ -135,6 +136,53 @@ push sender: missing: missing: the sender profile does not exist
 push sender: missing: unknown: the send target is not a Telegram chat
 ```
 
+## Sender candidates row
+
+While pushes fail because the sender profile is gone, the owner is asked to reply `push via <name>` with a profile
+that has a Telegram bot. The `sender candidates` row names the ones that qualify (`push_sender.candidates`), from
+files alone:
+
+- Which profiles: `default` (the Hermes home itself) and each dir under `<Hermes home>/profiles/` whose name
+  `hermes -p` resolves (lowercase letters, digits, `-` and `_`). A profile `hermes profile delete` left a
+  tombstone for (`profiles/.deleted/<name>`) is skipped, as `hermes -p` refuses it.
+- Each one gets the `push sender` row's own answer (`push_sender.readiness`) as if it were the sender, for
+  kevin-push's target: the same `.env`, `config.yaml` and channel directory reads, presence only.
+- `ready: a, b` lists the ready ones (live). `maybe: c (why)` lists the ones it cannot tell, grouped by why:
+  `keeps its token in a secret source`, `the send target is not a Telegram chat`, `its files cannot be read`. A
+  `maybe` reply is still applied by the sender ingest; a profile with no token or no chat is not listed (the
+  ingest would refuse it). `none can reach Telegram` (missing) when no profile is ready or a maybe; only maybes
+  is missing too.
+- Off when no Hermes home is set or it does not exist; `unknown: the Hermes home cannot be read` is missing.
+
+This is the one row that names profiles: they are the owner's own labels, not secrets. A name with a digit is
+never printed, only counted (`one more whose name holds a digit`); never a value, a path, a host or the target.
+It never runs hermes or any process and never reads a secret value. Report-only: nothing gates on it. Kind
+`source`: `--strict` never counts it.
+
+The same names close the `push recovery` row's words while the owner must reply (below): `; ready profiles: a,
+b`, else `; profiles that may reach Telegram: c`, else `; no profile can reach Telegram`; nothing is added when
+no Hermes home is known. The `job sender ingest` row keeps only the bare refusal words.
+
+The real output of `python3 -I scripts/sender_candidates_example.py` (a made-up Hermes home, made-up profiles, a
+made-up token that is never printed):
+
+```text
+# alpha and beta have a bot token and a home channel; gamma has no token; default has none
+sender candidates: live: ready: alpha, beta
+# delta keeps its token in a secret source
+sender candidates: live: ready: alpha, beta; maybe: delta (keeps its token in a secret source)
+# epsilon is ready but deleted (profiles/.deleted/epsilon): skipped
+sender candidates: live: ready: alpha, beta; maybe: delta (keeps its token in a secret source)
+# a Hermes home where no profile has a bot token
+sender candidates: missing: none can reach Telegram
+# HERMES_HOME names a dir that does not exist
+sender candidates: off: the Hermes home does not exist
+# two pushes failed in a row; no reply yet
+push recovery: missing: pushes are failing; waiting for a sender reply; ready profiles: alpha, beta
+# the same, on the Hermes home where no profile has a bot token
+push recovery: missing: pushes are failing; waiting for a sender reply; no profile can reach Telegram
+```
+
 ## Push recovery row
 
 During a push outage the recovery runs in stages across several `limitless-jobs --ingest --confirm` passes:
@@ -147,7 +195,9 @@ log, else `sender-confirm.json`); the outage recap goes out a pass later, or is 
 - `no outage: pushes are reaching you` (live): no outage is open (`outage_recap.outage`: two or more failed
   sends in a row with no delivery after), and none closed within the recap's stale window.
 - `pushes are failing; waiting for a sender reply` (missing): an outage is open and no reply set the sender
-  after it began.
+  after it began. This and the refusal below go on with the profiles the owner can name
+  ([sender candidates](#sender-candidates-row)): `; ready profiles: a, b`, else `; profiles that may reach
+  Telegram: c`, else `; no profile can reach Telegram`.
 - `pushes are failing; your last reply named a profile that cannot reach Telegram` (missing): an outage is open
   and the owner's newest `push via <name>` reply after it began was not applied, because the profile does not
   exist or has no Telegram bot token or no chat (the sender ingest mark's `refused_at`, newer than any applied
@@ -161,7 +211,8 @@ log, else `sender-confirm.json`); the outage recap goes out a pass later, or is 
   guess.
 
 It only reads: no file is written, nothing is sent and no process is started. Words only: never a digit, a
-time stamp, a path or the profile name. Kind `source`: `--strict` never counts it.
+time stamp or a path, and no profile name but the candidates' named after the two reply stages. Kind `source`:
+`--strict` never counts it.
 
 The real output of `python3 -I scripts/push_recovery_example.py` (a made-up state dir, made-up log rows, a
 made-up profile name that is never printed):
@@ -228,6 +279,7 @@ last sync run: live: the last sync run was about an hour ago and finished ok
 uptime: missing: fewer than a week of sync runs name their stale inputs
 delivery: off: no push log set (config push_log)
 push sender: live: ready
+sender candidates: live: ready: intake
 push recovery: missing: unknown: no push log set (config push_log)
 Sleep mode: live: off
 local labeler: off: no local model command set, so the rule labels are used

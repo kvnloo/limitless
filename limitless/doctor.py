@@ -11,10 +11,12 @@ never setting the status), the delivery row
 stale when not, missing when unknown; kind source, words only), the push sender row (whether kevin-push's
 Hermes profile can reach Telegram, push_sender.readiness: live when ready, missing when the profile does not
 exist, has no Telegram bot token or no chat, or it cannot be told; hermes is never run and no secret value is
-read; kind source, words only), the push recovery row (push_recovery.from_state: where a push-outage recovery
+read; kind source, words only), the sender candidates row (push_sender.candidates: the profiles the owner could
+reply ``push via <name>`` with, ready ones then maybes, or none can reach Telegram; off with no Hermes home; the
+one row that names profiles), the push recovery row (push_recovery.from_state: where a push-outage recovery
 stands, from kevin-push's log, push-sender.json and the sender confirm and outage recap marks: no outage, waiting
 for a sender reply, the confirmation not delivered yet, the recap waiting, or recap sent / settled; missing with
-no push log; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
+no push log; kind source, words only, the two reply stages ending with the candidates), the Sleep mode row (sleepmode.jsonl's last row as
 kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
 or unknown; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
@@ -211,20 +213,79 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
     return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.READY else MISSING, words)
 
 
+SENDER_CANDIDATES_ROW = "sender candidates"
+CANDIDATES_NONE = "none can reach Telegram"
+# Why a candidate is only a maybe (its readiness ``unknown: ...``), one and several: (singular, plural).
+_MAYBE_WHY = {
+    "SECRET_SOURCE": ("keeps its token in a secret source", "keep their tokens in a secret source"),
+    "NOT_TELEGRAM": ("the send target is not a Telegram chat", "the send target is not a Telegram chat"),
+    "FILES_UNREADABLE": ("its files cannot be read", "their files cannot be read"),
+}
+_MAYBE_OTHER = ("it cannot be told", "it cannot be told")
+
+
+def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
+                          hermes_home: "Path | str | None" = None) -> dict:
+    """Which Hermes profiles the owner could reply ``push via <name>`` with (push_sender.candidates: ``default`` and
+    each live profile dir, each with its readiness for kevin-push's target): off when no Hermes home is set or it
+    does not exist; else ``ready: a, b`` (live), then ``maybe: c (why)`` for those readiness cannot tell, grouped
+    by why, or ``none can reach Telegram`` (missing) when no profile is ready or a maybe. Missing too when only
+    maybes are left. The one row that names profiles (the owner's own labels); a name with a digit is only counted,
+    and never a value, a path or the target. Files only: hermes is never run and no secret value is read.
+    Report-only. Kind ``source``: --strict does not count it."""
+    from . import push_sender as ps
+    env = os.environ if env is None else env
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    cands = ps.candidates(cfg, env, hermes_home)
+    if cands is None:
+        root = Path(hermes_home) if hermes_home is not None else ps.hermes_root(env)
+        why = ps.NO_HOME if root is None else ps.HOME_MISSING if not _is_dir(root) else ps.HOME_UNREADABLE
+        status = MISSING if why == ps.HOME_UNREADABLE else OFF
+        return _row(SENDER_CANDIDATES_ROW, "source", status,
+                    why if status == MISSING else why[len(ps.UNKNOWN_PREFIX):])
+    parts = []
+    ready = ps.ready_names(cands)
+    if ready:
+        parts.append("ready: " + ", ".join(ready))
+    whys = {getattr(ps, k): v for k, v in _MAYBE_WHY.items()}
+    groups: dict = {}
+    for name, w in cands:
+        if w.startswith(ps.UNKNOWN_PREFIX):
+            groups.setdefault(w, []).append(name)
+    maybe = []
+    for w, names in sorted(groups.items(), key=lambda kv: list(whys).index(kv[0]) if kv[0] in whys else len(whys)):
+        one, many = whys.get(w, _MAYBE_OTHER)
+        maybe.append(f"{', '.join(ps.maybe_names([(n, w) for n in names]))} ({one if len(names) == 1 else many})")
+    if maybe:
+        parts.append("maybe: " + "; ".join(maybe))
+    return _row(SENDER_CANDIDATES_ROW, "source", LIVE if ready else MISSING, "; ".join(parts) or CANDIDATES_NONE)
+
+
+def _is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except (OSError, ValueError):
+        return True   # it is there but cannot be told: unreadable, not missing
+
+
 PUSH_RECOVERY_ROW = "push recovery"
 
 
-def push_recovery_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
+def push_recovery_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None,
+                      hermes_home: "Path | str | None" = None) -> dict:
     """Where a push-outage recovery stands (push_recovery.from_state over kevin-push's log, config ``push_log``,
     push-sender.json, sender-confirm.json and outage-recap.json): live with no outage, or once the recap was sent
     or settled; missing while pushes fail and no sender reply came, or with no push log (``unknown: ...``); stale
     while the reply's confirmation is not delivered yet (held while Sleep mode was on, failed to send, not sent
-    yet) or pushes are back and the recap waits (or is off, or in dry run mode). Words only: never a digit, a
-    path or the profile name; while pushes fail and the owner's last reply named a profile that cannot reach
-    Telegram (sender_reply.refused_at), missing with push_recovery.REFUSED. Read-only: writes nothing, sends
-    nothing. Kind ``source``: --strict does not count it."""
+    yet) or pushes are back and the recap waits (or is off, or in dry run mode). Words only: never a digit or a
+    path; while pushes fail and the owner's last reply named a profile that cannot reach Telegram
+    (sender_reply.refused_at), missing with push_recovery.REFUSED. Those two reply stages end with the profiles
+    the owner can name (push_sender.candidates over ``env``, default os.environ, or ``hermes_home``), the only
+    names this row holds. Read-only: writes nothing, sends nothing. Kind ``source``: --strict does not count
+    it."""
     from . import push_recovery
-    status, words = push_recovery.from_state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now)
+    status, words = push_recovery.from_state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now,
+                                             env=env, hermes_home=hermes_home)
     return _row(PUSH_RECOVERY_ROW, "source", status, words)
 
 
@@ -851,7 +912,8 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), north-star row
-    two (delivery_row), kevin-push's sender profile (push_sender_row), where a push-outage recovery stands
+    two (delivery_row), kevin-push's sender profile (push_sender_row), the profiles that could be the sender
+    (sender_candidates_row), where a push-outage recovery stands
     (push_recovery_row), phone Sleep mode as kevin-push's hold
     reads it (sleep_mode_row), the local labeler (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
@@ -872,6 +934,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
+             sender_candidates_row(cfg),
              push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]

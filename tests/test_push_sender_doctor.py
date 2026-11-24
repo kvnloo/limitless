@@ -91,10 +91,11 @@ class InTheReport(NoProcess):
         with mock.patch.dict(os.environ, clean, clear=True):
             return doctor.report(cfg, NOW)
 
-    def test_right_after_the_delivery_row_and_before_the_push_recovery_row(self):
+    def test_right_after_the_delivery_row_and_before_the_sender_candidates_row(self):
         names = [r["name"] for r in self.rows({})]
         self.assertEqual(names[names.index("delivery") + 1], "push sender")
-        self.assertEqual(names[names.index("push sender") + 1], "push recovery")
+        self.assertEqual(names[names.index("push sender") + 1], "sender candidates")
+        self.assertEqual(names[names.index("sender candidates") + 1], "push recovery")
         self.assertEqual(names.count("push sender"), 1)
 
     def test_the_report_reads_the_same_config_and_env_kevin_push_does(self):
@@ -115,8 +116,11 @@ class InTheReport(NoProcess):
             for to in ("telegram", "telegram:example-zz"):
                 rows = self.rows({"push_profile": "sender-zz", "push_to": to}, TELEGRAM_BOT_TOKEN=TOKEN + "-env")
                 out = doctor.text(rows) + doctor.as_json(rows)
-                for leak in (TOKEN, "SYNTHETICTOKEN", "sender-zz", "example-zz", str(self.hermes)):
+                for leak in (TOKEN, "SYNTHETICTOKEN", "example-zz", str(self.hermes)):
                     self.assertNotIn(leak, out)
+                # the profile name only in the "sender candidates" row (the owner's own labels), never elsewhere
+                named = [r for r in rows if r["name"] != doctor.SENDER_CANDIDATES_ROW]
+                self.assertNotIn("sender-zz", doctor.text(named) + doctor.as_json(named))
 
 
 class Docs(unittest.TestCase):
