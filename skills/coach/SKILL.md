@@ -42,6 +42,7 @@ Every coaching turn runs these four steps in order, and stops wherever the perso
 | Does a short memory palace walk fit now? (trough only) | limitless_palace |
 | What ideas did I record this week? | limitless_ideas |
 | Did my pushes stay within the limit this week? | limitless_delivery |
+| Did my inputs stay fresh most days this month? | limitless_uptime |
 | How did I sleep this week? | limitless_sleep |
 | Am I short on sleep? | limitless_sleep_debt |
 | Did I nap yesterday? | limitless_naps |

@@ -4,7 +4,9 @@
 
 status is one of STATUSES: live, stale, missing or off. The rows are the state dir (exists, readable), each
 input named in inputs.json against the stale threshold limitless_status already uses (envelope.STALE_H), the
-last sync run's age in words from runs.jsonl, one row per tool in plugin.yaml, from that tool's own
+last sync run's age in words from runs.jsonl, then the uptime row (uptime_audit over runs.jsonl: live when the
+uptime goal was met, stale when not, missing when unknown; kind source, words only), one row per tool in
+plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
 open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
 its mark noop-export.json) and, before both, the context packet's row (config context_packet_path: off, live
@@ -118,6 +120,28 @@ def run_row(reader: StateReader, now: float) -> dict:
     tail = " and failed" if ok is False else " and finished ok" if ok is True else ""
     status = LIVE if age_h <= STALE_H and ok is not False else STALE
     return _row("last sync run", "run", status, f"the last sync run was {age_words(age_h)}{tail}")
+
+
+UPTIME_ROW = "uptime"
+_UPTIME_STATUS = {"met": LIVE, "not met": STALE, "unknown": MISSING}   # uptime_audit's goal -> row status
+
+
+def uptime_row(reader: StateReader, now: float) -> dict:
+    """The uptime audit (tools.uptime_audit over runs.jsonl, config uptime_days, uptime_target and
+    outage_ignore): live when the uptime goal was met over the window, stale when it was not, missing when it is
+    unknown (no run log, no run in the window, too few runs that name their stale inputs, or too many unknown
+    days). The reason is the audit's T1 words or why it is unknown, never a count. Kind ``source``: --strict does
+    not count it. Read-only."""
+    from . import uptime_audit as ua
+    a = tools.uptime_audit(reader, now)
+    if a is None:
+        return _row(UPTIME_ROW, "source", MISSING, ua.NO_LOG_REASON)
+    if not any(d["runs"] for d in a["days"]):
+        return _row(UPTIME_ROW, "source", MISSING, ua.NO_ROWS_REASON)
+    words = a["label"]["label"]
+    if words == ua.UNKNOWN:
+        return _row(UPTIME_ROW, "source", MISSING, ua.FEW_KNOWN_REASON)
+    return _row(UPTIME_ROW, "source", _UPTIME_STATUS.get(a["goal"], MISSING), words)
 
 
 NOOP_ROW = "job NOOP export"
@@ -466,7 +490,8 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 
 def report(cfg: Mapping, now: float) -> list:
-    """Every row, in order: state dir, inputs, the last sync run, each tool in plugin.yaml, the context packet
+    """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), each tool in
+    plugin.yaml, the context packet
     (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
@@ -478,6 +503,7 @@ def report(cfg: Mapping, now: float) -> list:
     path = state_path(cfg)
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
+    rows += [uptime_row(reader, now)]
     rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),

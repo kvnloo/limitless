@@ -23,7 +23,7 @@ NOW = 1894708800.0  # fixture clock
 TOOLS = ["limitless_anki", "limitless_app_candidates", "limitless_blocks", "limitless_body", "limitless_breathing", "limitless_capture", "limitless_card_view", "limitless_catchup", "limitless_delivery", "limitless_experiment", "limitless_explain_back", "limitless_feed_reflex", "limitless_flow_ledger", "limitless_flow_metrics", "limitless_focus_safe",
          "limitless_habit", "limitless_habit_next", "limitless_ideas", "limitless_loop", "limitless_naps", "limitless_outages", "limitless_overnight",
          "limitless_palace", "limitless_phase",          "limitless_presleep_hr", "limitless_propose", "limitless_quiet", "limitless_result_tier", "limitless_rides", "limitless_schedule", "limitless_scorecard", "limitless_skill_tree", "limitless_sleep", "limitless_sleep_debt", "limitless_state",
-         "limitless_status", "limitless_window"]
+         "limitless_status", "limitless_uptime", "limitless_window"]
 FIELDS = {"value", "modality", "age_h", "evidence_tier"}
 
 
@@ -302,6 +302,12 @@ class Wiring(unittest.TestCase):
                 cfg = st / "delivery-config.json"
                 cfg.write_text(json.dumps({"push_log": "push-log.jsonl"}))
                 env = {"LIMITLESS_STATE": str(st), "LIMITLESS_CONFIG": str(cfg)}
+            if name == "limitless_uptime":   # a synthetic week of sync runs that name their stale inputs
+                (st / "uptime").mkdir()
+                (st / "uptime" / "runs.jsonl").write_text("".join(json.dumps(
+                    {"at": NOW - 3600 - n * 86400, "job": "sync", "ok": True, "inputs": "stale"}) + "\n"
+                    for n in range(7)))
+                env = {"LIMITLESS_STATE": str(st / "uptime")}
             if name == "limitless_loop":   # one synthetic decided week
                 from limitless import stop_rule
                 (st / "loop").mkdir()

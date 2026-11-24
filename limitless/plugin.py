@@ -159,6 +159,10 @@ def _delivery(args, now):
     return tools.delivery(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
+def _uptime(args, now):
+    return tools.uptime(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _phase(args, now):
     return tools.phase(_reader(), now)
 
@@ -510,6 +514,14 @@ cap), whether the wake brief reached the person on the wake days, and whether ev
 line, in plain words. Only real Telegram deliveries count; held, folded, dropped and log-only rows never do, and \
 a day with no log row is unknown, not zero. The words only; the counts need the person's raw opt-in. No push \
 log set is no value with the reason. Read-only; nothing is written or sent."), _delivery, "📬"),
+    "limitless_uptime": (_schema(
+        "limitless_uptime",
+        "Whether the inputs stayed fresh day by day over the last four weeks (config uptime_days), read from the \
+sync's own run log: each input fresh every day, most days or stale all month, and whether the uptime goal \
+(every input fresh on the share of days in config uptime_target, else nineteen days in twenty) was met, in \
+plain words. A run that does not name its stale inputs is unknown, never fresh, and a day with no such run is \
+unknown, not fresh and not stale; inputs in config outage_ignore are left out. The words only; the counts need the person's raw opt-in. No run log is no value with \
+the reason. Read-only; nothing is written, restarted or sent."), _uptime, "🩺"),
     "limitless_phase": (_schema(
         "limitless_phase",
         "The part of the day the person is in, in plain words, from the wake event (phone Sleep mode going \

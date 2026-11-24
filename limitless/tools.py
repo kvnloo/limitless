@@ -18,7 +18,7 @@ from . import (anki as _anki, app_candidates as _app_candidates, asks as _asks, 
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
                scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, sleep_debt as _sleep_debt,
                stop_rule as _stop_rule,
-               strength as _strength, tier_audit as _tier_audit,
+               strength as _strength, tier_audit as _tier_audit, uptime_audit as _uptime,
                weekly_target as _weekly_target, wind_down)
 from . import mock_guard as _mock_guard
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
@@ -1348,5 +1348,67 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
                   "action_unknown", "skipped"):
             value[k] = a[k]
     out = envelope(value, _delivery.MODALITY, (now - max(ats)) / 3600 if ats else None)
+    out["label"] = a["label"]
+    return out
+
+
+UPTIME_RAW_KEYS = ("days", "inputs", "window_days", "known_days", "all_fresh_days", "all_fresh_share", "target",
+                   "goal", "skipped")
+
+
+def _uptime_read(reader: StateReader, now: float, env, home, tz) -> tuple:
+    """(audit, rows) of the state dir's runs.jsonl; (None, []) when there is no readable log."""
+    from . import outage   # lazily: outage reads this module
+    cfg = config(env, home)
+    got = _uptime.read_log(reader.path / _uptime.LOG_NAME)
+    if got is None:
+        return None, []
+    rows, skipped = got
+    snap = reader.inputs() or {}
+    names = list(snap["ageHours"]) if isinstance(snap.get("ageHours"), dict) else []
+    today = datetime.fromtimestamp(now, tz).date()
+    a = _uptime.audit(rows, inputs=names, days=_uptime.window_days(cfg), today=today, tz=tz,
+                      ignore=outage.ignored(cfg), target=_uptime.target(cfg), skipped=skipped)
+    return a, rows
+
+
+def uptime_audit(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                 home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[dict]:
+    """uptime_audit.audit of the state dir's runs.jsonl over the config window (``uptime_days``) ending today
+    (local, ``tz``), judging inputs.json's input names plus every name a run lists, config ``outage_ignore`` left
+    out, against ``uptime_target``; None when there is no readable log. Read-only: limitless_uptime, the
+    doctor's uptime row and bin/limitless-uptime-audit all read through it."""
+    return _uptime_read(reader, now, env, home, tz)[0]
+
+
+def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+           home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
+    """limitless_uptime: the uptime audit (uptime_audit.audit) of the sync's own runs.jsonl over the last
+    ``uptime_days`` local days up to ``now`` (default four weeks), read-only.
+
+    An envelope whose value is ``{label}`` (the T1 words: each input fresh every day ... stale all month, and
+    whether the uptime goal, config ``uptime_target``, was met) with the T1 label beside it; modality measured
+    (the log is the sync's own record), aged by the newest run in the window. The counts (fresh, stale and
+    unknown days per input, every-input-fresh days, the target, skipped lines) are T0 and appear only with
+    ``raw`` (LIMITLESS_RAW_IN_PROMPT). No runs.jsonl, no run in the window, or fewer than a week of runs that
+    name their stale inputs is value None with a reason and the label "unknown" (unknown, not zero). Inputs in
+    config ``outage_ignore`` are left out. Reasons never echo a path. Nothing is written or sent.
+    """
+    unknown = {"label": _uptime.UNKNOWN, "tier": "T1", "modality": _uptime.MODALITY}
+    a, rows = _uptime_read(reader, now, env, home, tz)
+    reason = (_uptime.NO_LOG_REASON if a is None
+              else _uptime.NO_ROWS_REASON if not any(d["runs"] for d in a["days"])
+              else _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None)
+    if reason:
+        out = envelope(None, _uptime.MODALITY, None, reason=reason)
+        out["label"] = unknown
+        return out
+    days = {d["day"] for d in a["days"]}
+    ats = [t for t in (_uptime._at(r) for r in rows)
+           if t <= now and datetime.fromtimestamp(t, tz).date().isoformat() in days]
+    value = {"label": a["label"]["label"]}
+    if raw:
+        value.update({k: a[k] for k in UPTIME_RAW_KEYS})
+    out = envelope(value, _uptime.MODALITY, (now - max(ats)) / 3600 if ats else None)
     out["label"] = a["label"]
     return out
