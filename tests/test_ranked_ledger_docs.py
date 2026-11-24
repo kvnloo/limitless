@@ -23,7 +23,8 @@ class Docs(unittest.TestCase):
 
     def test_the_example_ids_are_synthetic(self):
         blocks = "\n".join(re.findall(r"^```text\n(.*?)^```", DOC.read_text(), re.S | re.M))
-        ids = re.findall(r'"id": "([^"]+)"', blocks) + re.findall(r"drop: ([^\n`]+)", blocks)
+        # "<job>: drop: <reason>" is a limitless-jobs verdict line (the action drop), not an owner message
+        ids = re.findall(r'"id": "([^"]+)"', blocks) + re.findall(r"(?<!: )drop: ([^\n`]+)", blocks)
         ids += re.findall(r"limitless-ranked add (\S+)", blocks)
         self.assertTrue(ids)
         for chunk in ids:

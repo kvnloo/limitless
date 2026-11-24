@@ -67,11 +67,113 @@ row ten (`scorecard._top_measured`): verified counts only with evidence, dropped
 Output never names an id, evidence text or a path, and every line but `--raw` is digit-free, so it passes the
 tier audit. Nothing here sends, starts a job or edits the config file; it never sends a message.
 
+## As an event job
+
+Nobody has to run `ingest` by hand: `limitless-jobs --send` runs the same owner drop-reply ingest once after each
+sync run, the apps ingest job's pattern ([apps-ingest.md](apps-ingest.md#as-an-event-job)).
+
+- **When.** Job `ranked_ingest` (`jobs.RANKED_INGEST`) wakes on the `sync` event: a new newest row in `runs.jsonl`
+  that has a time in `at` and is not `"ok": false`. It runs at most once per such row; the same row polled again is
+  a drop, "already ran after this sync". A failed sync, a row timestamped in the future or no `runs.jsonl` at all is
+  `not_triggered`. No clock time, no cron string, no interval.
+- **Config `ranked_ingest`.** `off` (the default, and any other value): never due, nothing is read, and
+  `limitless-jobs` prints no line for it. `dry_run`: `ranked_ledger.ingest(write=False)`: it reads the owner's
+  messages and says what it would append; the ledger and `ranked-drops.json` keep their bytes. `write`:
+  `ranked_ledger.ingest(write=True)`, the same append-only owner drop rows and mark move as `ingest --write`.
+  `limitless-jobs` without `--send` is a dry run of the runner: the verdict only, nothing read.
+- **Inputs.** The ledger is row ten's (`$LIMITLESS_RANKED_LEDGER`, else config `ranked_ledger`) and the DB the
+  command's (`LIMITLESS_HERMES_DB`, else config `hermes_db`), read-only. With either unset the job is skipped with
+  a plain reason ("skipped: no ranked ledger set ..." or "skipped: no Hermes DB set (config hermes_db)") and
+  nothing is read or written.
+- **Only the owner drops.** The job is `ranked_ledger.ingest`, nothing more: only whole `drop: <id>[, <id>...]`
+  messages from the person (role `user`) count, every appended row is `"by": "owner"`, and an agent row is never
+  made dropped through this path (an assistant line that says "drop: ..." changes nothing).
+- **The status file `ranked-ingest.json`** (in the state dir, atomic, 0600) records the last pass: `row_at` (epoch
+  seconds of the `runs.jsonl` row it acted on), `ran_at` (epoch seconds of the pass), `mode` and `action`, one of
+  `nothing` (no new owner message), `ignore` (no owner drop to append), `would write` or `write`. Never an id,
+  evidence or message text, and no digit outside the two epoch values. It is separate from `ranked-drops.json`,
+  which only `write` moves.
+- **Sends nothing.** No push, no decision window, quiet or send gate, nothing appended to `jobs-sent.jsonl`, so it
+  also runs while you sleep. It never sends a message, and it never restarts, kills or starts a process.
+- **Schedule card.** With `ranked_ingest` on, `limitless_schedule` and the host registration add one card
+  (`schedule_cards.ranked_ingest_card`, id `ranked_ingest`, sender `local`, budget zero, once-key
+  `ranked_ingest:<sync run time>`) on the trigger "after each sync run", never a clock.
+- **Doctor.** One `job ranked ingest` row, right after the `ranked ledger` row: `off` by config; `missing` with
+  "broken: " when it is on but no ranked ledger or no Hermes DB is set, or the ledger is missing or cannot be read;
+  `stale` before any sync run or while the newest sync is one it has not run after; else `live`, with the mode,
+  the pass's age and its result in words ("appended owner drop rows", "would append owner drop rows", "no owner
+  drop to append", "no new owner message"). Never an id, never a digit. `--strict` never counts this row.
+
+### Synthetic example
+
+`python3 -I scripts/ranked_ingest_job_example.py` (a made-up ledger, a made-up session DB and made-up `runs.jsonl`
+rows in a temp dir, invented ids only; real output):
+
+```text
+# config {"ranked_ledger": "ranked-ledger.jsonl", "hermes_db": "hermes.db"}
+runs.jsonl += {"at": "2030-01-06T06:00:00Z", "job": "sync", "ok": true}
+$ limitless-jobs --send   (the ranked ingest's line)
+(no ranked ingest line)
+
+# config {"ranked_ledger": "ranked-ledger.jsonl", "ranked_ingest": "write"}
+$ limitless-jobs --send   (the ranked ingest's line)
+Ranked ingest: not_triggered: skipped: no Hermes DB set (config hermes_db)
+
+$ limitless-doctor   (the job row)
+job ranked ingest: missing: broken: on (write mode), but no Hermes DB set (config hermes_db)
+
+# config {"ranked_ledger": "ranked-ledger.jsonl", "hermes_db": "hermes.db", "ranked_ingest": "dry_run"}
+$ limitless-jobs --send   (the ranked ingest's line)
+Ranked ingest: run: a sync ran; would append one owner drop row (config ranked_ingest "write" appends it)
+
+ledger unchanged after the dry run: True; ranked-drops.json exists: False
+
+$ limitless-ranked list
+ranked ledger: none of the ranked items verified or dropped by the owner
+verified with evidence: none
+dropped by the owner: none
+open or built: all
+not counted (verified without evidence, or dropped by someone else): none
+
+# config {"ranked_ledger": "ranked-ledger.jsonl", "hermes_db": "hermes.db", "ranked_ingest": "write"}
+runs.jsonl += {"at": "2030-01-06T07:00:00Z", "job": "sync", "ok": true}
+$ limitless-jobs --send   (the ranked ingest's line)
+Ranked ingest: run: a sync ran; appended one owner drop row
+
+$ limitless-ranked list
+ranked ledger: some of the ranked items verified or dropped by the owner
+verified with evidence: none
+dropped by the owner: some
+open or built: some
+not counted (verified without evidence, or dropped by someone else): none
+
+# the same sync row, polled again
+$ limitless-jobs --send   (the ranked ingest's line)
+Ranked ingest: drop: already ran after this sync
+
+# the next sync, with no new owner message
+runs.jsonl += {"at": "2030-01-06T08:00:00Z", "job": "sync", "ok": true}
+$ limitless-jobs --send   (the ranked ingest's line)
+Ranked ingest: run: a sync ran; no new owner message: the ranked ledger stays as it is
+
+ranked-ingest.json (mode 0o600):
+{"action": "nothing", "mode": "write", "ran_at": 1893916860.0, "row_at": 1893916800.0}
+newest rows by: dropped by owner, open by agent
+
+$ limitless-doctor   (the job row)
+job ranked ingest: live: write mode: ran under an hour ago after a sync: no new owner message
+
+schedule card:
+Schedule "Ranked ingest" (after each sync run, at most once; asleep or awake: it sends nothing, so no window holds it): ends at the next sync run; nothing is sent; it reads your drop replies and, in write mode, marks those ranked items dropped by you in the ranked ledger
+files in the state dir: hermes.db, ranked-drops.json, ranked-ingest.json, ranked-ledger.jsonl, runs.jsonl
+```
+
 ## Doctor
 
 The `ranked ledger` row ([doctor.md](doctor.md)), right after the apps ingest job's row: `off` with no ledger set;
 `live` with "rows read: " and row ten's words; `missing` with "broken: " when the ledger is missing, cannot be read
 or has no valid row.
+The `job ranked ingest` row follows it ([above](#as-an-event-job)).
 
 ## Example (synthetic)
 
