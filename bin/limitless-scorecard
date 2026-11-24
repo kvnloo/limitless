@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """limitless-scorecard [path]: print the weekly review's north-star block from the hand-kept scorecard table.
 
-The path is the argument, else $LIMITLESS_SCORECARD, else "scorecard" in config.json. When the state dir
-exists, the block ends with what code measured for rows one, two, three, four and seven ("Measured: loop uptime:
-...", "Measured: delivery: ...", "Measured: habit loop: ...", "Measured: evidence loop: ...", "Measured: privacy:
-...") and a note when a green row's measurement says not met, inside the five lines (scorecard.measured_lines).
+The path is the argument, else $LIMITLESS_SCORECARD, else "scorecard" in config.json. The block's first line is
+the self-reported counts line. When the state dir exists, it goes on with what code measured for rows one to
+eight and ten ("Measured: loop uptime: ...", "Measured: delivery: ...", "Measured: habit loop: ...", "Measured:
+evidence loop: ...", "Measured: foundation: ...", "Measured: flow: ...", "Measured: privacy: ...", "Measured:
+integrated: ...", "Measured: top items: ...") and a note when a green row's measurement says not met, inside the
+five lines; the rest fold into one line (scorecard.measured_lines).
 Read-only: it never writes a file (no bytecode either) and never sends. No table or no configured path: exit 0, no output.
 An unreadable file: exit 1 with a reason on stderr that does not echo the path.
 """

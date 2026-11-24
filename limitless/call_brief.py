@@ -44,6 +44,7 @@ from .state_reader import StateReader, config, state_dir
 HOOK = "call_brief"
 MIQ_LINE = "Ask once: " + _jobs_runner.MIQ_QUESTION
 CONFIG_KEY = "call_brief_file"
+STALE_S = 3 * 3600   # z0live reads the brief only while its mtime is under three hours old; older is stale
 MAX_BODY = 3
 LINE_MAX = 100
 HEADER = "<!-- limitless call brief; generated: {} -->"

@@ -92,12 +92,12 @@ class LimitlessScorecardCli(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         lines = r.stdout.splitlines()
         self.assertEqual(len(lines), 6)
-        # five measured rows fill the five lines: the summary lines give way first
-        self.assertEqual(lines[1], "- Measured: loop uptime: unknown: no sync run log in the state dir (runs.jsonl)")
-        self.assertEqual(lines[2], "- Measured: delivery: unknown: no push log set")
-        self.assertEqual(lines[3], "- Measured: habit loop: unknown: no habit week started")
-        self.assertEqual(lines[4], "- Measured: evidence loop: unknown: no experiment locked")
-        self.assertEqual(lines[5], "- Measured: privacy: unknown: no audit log set")
+        # the counts line first, then the measured rows in order; the rest fold into one line
+        self.assertEqual(lines[1], "- 6 green, 2 amber, 2 red of 10")
+        self.assertEqual(lines[2], "- Measured: loop uptime: unknown: no sync run log in the state dir (runs.jsonl)")
+        self.assertEqual(lines[3], "- Measured: delivery: unknown: no push log set")
+        self.assertEqual(lines[4], "- Measured: habit loop: unknown: no habit week started")
+        self.assertEqual(lines[5], "- More measured rows in limitless_scorecard.")
         self.assertEqual(tree(st), [])
 
     def test_no_state_dir_keeps_the_plain_block(self):

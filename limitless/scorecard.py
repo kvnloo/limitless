@@ -131,13 +131,20 @@ def _bullets(lines: List[str], strike: bool) -> List[str]:
 
 
 def weekly_block(lines: List[str], measured_lines: Optional[List[str]] = None) -> str:
-    """The weekly review's titled block: the title, then up to five lines as ``- `` bullets (six lines in
+    """The weekly review's titled block: the title, then at most five lines as ``- `` bullets (six lines in
     all). Self-reported counts are not proof, so the words "met" and "achieved" are struck from every
-    summary line. ``measured_lines`` (measured_lines(): what the audits measured, and any disagreement note)
-    follow the summary and keep their words; they stay inside the five lines by replacing the lowest-priority
-    summary lines (the last ones). Blank lines are skipped; no lines left gives ""."""
-    extra = _bullets(measured_lines or [], strike=False)[:MAX_LINES]
-    bullets = _bullets(lines, strike=True)[:MAX_LINES - len(extra)] + extra
+    summary line. The first bullet is always the summary's self-reported counts line. ``measured_lines``
+    (measured_lines(): what the audits measured, and any disagreement note) keep their words and follow the
+    summary; they stay inside the five lines by replacing the lower-priority summary lines (the last ones), never
+    the counts line. Measured lines past the room left fold into "More measured rows in limitless_scorecard."
+    Blank lines are skipped; no lines left gives ""."""
+    summary = _bullets(lines, strike=True)[:MAX_LINES]
+    head = summary[:1]
+    room = MAX_LINES - len(head)
+    extra = _bullets(measured_lines or [], strike=False)
+    if len(extra) > room:
+        extra = extra[:room - 1] + [f"- {MORE_LINE}"]
+    bullets = head + summary[1:][:room - len(extra)] + extra
     return "\n".join([WEEKLY_TITLE] + bullets) if bullets else ""
 
 
@@ -150,7 +157,7 @@ def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -
     return Path(p) if isinstance(p, str) and p else None
 
 
-# --- measured rows: north-star rows one, two, three, four and seven as code measured them ---------------------
+# --- measured rows: north-star rows one to eight and ten as code measured them (docs/scorecard-measured.md) -----
 
 UPTIME_ROW, DELIVERY_ROW = 1, 2
 UPTIME_WORDS, DELIVERY_WORDS = "loop uptime", "delivery"
@@ -303,18 +310,271 @@ def _privacy_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tup
     return label, goal, dict(counts, window_days=PRIVACY_WINDOW_DAYS, label={"label": label})
 
 
+FOUNDATION_ROW = 5
+FOUNDATION_WORDS = "foundation"
+
+
+def _foundation_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row five: tools.sleep_coverage_audit, the same read as limitless_sleep_coverage and
+    the doctor's sleep coverage row, with sleep_coverage's own goal and unknown rules (the host config's
+    ``sleep_file``, ``sleep_coverage_days`` and ``sleep_coverage_target``)."""
+    from . import tools   # lazily: tools reads this module
+    from .state_reader import StateReader
+    a, reason = tools.sleep_coverage_audit(StateReader(Path(state_dir)), now, env, home, tz)
+    if reason or a is None:
+        return UNKNOWN_PREFIX + (reason or "no wearable sleep file"), "unknown", None
+    return a["label"]["label"], a["goal"], a
+
+
+FLOW_ROW = 6
+FLOW_WORDS = "flow"
+FLOW_MET = "deep work and feed leak measured for the last finished week"
+FLOW_PART = "{}{} unknown for the last finished week: {}"
+NO_WORK_APPS = "no work apps set"
+NO_FLOW_DATA = "no activity data in the last finished week"
+FLOW_RAW_KEYS = ("deep_min", "block_hours", "feed_leak_min", "leak_per_block_hour", "days_with_data")
+
+
+def _flow_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row six: flow_week.week over the last finished week (the seven local days before
+    today), from the inputs flow_week.for_week reads: the ActivityWatch DB ($LIMITLESS_AW_DB, else config
+    ``aw_db``), the desktop's ActivityWatch (config desktop_aw_url or desktop_aw_export), the work and feed apps
+    (env, else config, else apps.json in the state dir, as apps_reply.list_for reads them) and Glide's block.
+    Met when the deep-work amount and the feed leak are both known; the trend is never judged."""
+    from . import apps_reply, aw_desktop, flow_week, glide_provider
+    env = os.environ if env is None else env
+    st = Path(state_dir)
+    work = apps_reply.list_for(apps_reply.WORK, cfg, st, env)[0]
+    if not work:
+        return UNKNOWN_PREFIX + NO_WORK_APPS, "unknown", None
+    db = env.get("LIMITLESS_AW_DB") or cfg.get("aw_db")
+    db = Path(db).expanduser() if isinstance(db, str) and db else None
+    db = st / db if db is not None and not db.is_absolute() else db         # as StateReader.aw_db_path
+    glide = env.get(glide_provider.ENV_KEY) or cfg.get(glide_provider.CONFIG_KEY)
+    today = datetime.fromtimestamp(now, tz).date()
+    r = flow_week.week(db, today - timedelta(days=flow_week.DAYS), tz, blocks=flow_week.blocks_at(glide),
+                       work_apps=work, feed_apps=apps_reply.list_for(apps_reply.FEED, cfg, st, env)[0],
+                       desktop=lambda lo, hi: aw_desktop.from_settings(cfg, st, lo, hi))
+    if not r.get("days_with_data"):
+        return UNKNOWN_PREFIX + NO_FLOW_DATA, "unknown", None
+    deep, leak = r.get("deep_min") is not None, r.get("leak_per_block_hour") is not None
+    if deep and leak:
+        label, goal = FLOW_MET, "met"
+    else:
+        unknown = " and ".join(p for p, ok in (("deep work", deep), ("feed leak", leak)) if not ok)
+        have = "deep work measured but " if deep else "feed leak measured but " if leak else ""
+        why = flow_week._why(r, "leak" if deep else "deep")
+        label, goal = FLOW_PART.format(have, unknown, why), "not met"
+    audit = {k: r.get(k) for k in FLOW_RAW_KEYS}
+    audit["label"] = {"label": label}
+    return label, goal, audit
+
+
+INTEGRATED_ROW = 8
+INTEGRATED_WORDS = "integrated"
+LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
+INTEGRATIONS = (("glide", "Glide"), ("call_brief", "call brief"), ("asks", "asks queue"), ("voice_miq", "voice MIQ"))
+_STATE_WORDS = {STALE: "stale", MISSING: "missing", OFF: "not set up"}
+INTEGRATED_MET = "Glide, call brief, asks queue and voice MIQ all live"
+NOT_LIVE = "not live: "
+NO_INTEGRATION = "no local integration set up"
+Z0_REGISTRY = "z0 registry: not measured here"
+INTEGRATED_RAW_KEYS = ("glide", "call_brief", "asks", "voice_miq", "z0_registry", "live", "set_up", "checks")
+
+
+def _readable(path) -> bool:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            f.read()
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _glide_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """Glide's attention.json ($LIMITLESS_GLIDE_ATTENTION, else config glide_attention): live when it reads as a
+    JSON object (as glide_provider.attention reads it)."""
+    from . import glide_provider
+    path = env.get(glide_provider.ENV_KEY) or cfg.get(glide_provider.CONFIG_KEY)
+    if not isinstance(path, str) or not path:
+        return OFF
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return MISSING
+    return LIVE if isinstance(data, dict) else MISSING
+
+
+def _call_brief_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """The call brief (config call_brief_file; a relative path is in the state dir, as call_brief.out_path): live
+    when its mtime is at most call_brief.STALE_S old, z0live's own freshness rule."""
+    from . import call_brief
+    v = cfg.get(call_brief.CONFIG_KEY)
+    if not isinstance(v, str) or not v.strip():
+        return OFF
+    p = Path(v).expanduser()
+    p = p if p.is_absolute() else Path(state_dir) / p
+    try:
+        age = now - p.stat().st_mtime
+    except OSError:
+        return MISSING
+    if not p.is_file():
+        return MISSING
+    return LIVE if 0 <= age <= call_brief.STALE_S else STALE
+
+
+def _asks_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """The asks queue ($LIMITLESS_ASKS, else config asks_path, as asks.queue_path): live when it can be read."""
+    from . import asks
+    path = env.get(asks.ENV_KEY) or cfg.get(asks.CONFIG_KEY)
+    if not isinstance(path, str) or not path:
+        return OFF
+    return LIVE if _readable(path) else MISSING
+
+
+def _voice_state(state_dir, cfg: Mapping, now: float, env: Mapping) -> str:
+    """The voice MIQ (config voice_miq, as the doctor's voice MIQ row): off by config, missing without an existing
+    call sessions dir (config voice_miq_sessions), else live. No call is read."""
+    from . import voice_miq   # voice_miq -> jobs_runner -> card
+    if voice_miq.mode(cfg) == voice_miq.OFF:
+        return OFF
+    sessions = voice_miq.sessions_dir(cfg)
+    return LIVE if sessions is not None and sessions.is_dir() else MISSING
+
+
+_INTEGRATION_CHECKS = {"glide": _glide_state, "call_brief": _call_brief_state, "asks": _asks_state,
+                       "voice_miq": _voice_state}
+
+
+def _integrated_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row eight: one sub-check per local integration the plugin can see (Glide's attention
+    file, the call brief, the asks queue, the voice MIQ), each live, stale, missing or off. The z0 registry cannot
+    be checked here and is never counted live. Met only when all four are live; unknown when none is set up."""
+    env = os.environ if env is None else env
+    states = {}
+    for key, _words in INTEGRATIONS:
+        try:
+            states[key] = _INTEGRATION_CHECKS[key](state_dir, cfg, now, env)
+        except Exception:  # noqa: BLE001 - one broken input is that check missing, never a traceback
+            states[key] = MISSING
+    set_up = sum(1 for v in states.values() if v != OFF)
+    live = sum(1 for v in states.values() if v == LIVE)
+    if not set_up:
+        return UNKNOWN_PREFIX + NO_INTEGRATION, "unknown", None
+    if live == len(INTEGRATIONS):
+        label, goal = INTEGRATED_MET, "met"
+    else:
+        label = NOT_LIVE + ", ".join(f"{words} {_STATE_WORDS[states[key]]}" for key, words in INTEGRATIONS
+                                     if states[key] != LIVE)
+        goal = "not met"
+    audit = dict(states, z0_registry=Z0_REGISTRY, live=live, set_up=set_up, checks=len(INTEGRATIONS),
+                 label={"label": label})
+    return label, goal, audit
+
+
+TOP_ROW = 10
+TOP_WORDS = "top items"
+LEDGER_ENV, LEDGER_CONFIG = "LIMITLESS_RANKED_LEDGER", "ranked_ledger"
+LEDGER_STATUSES = ("open", "built", "verified", "dropped")
+OWNER = "owner"
+TOP_LABEL = "{} of the ranked items verified or dropped by the owner"
+NO_LEDGER = "no ranked ledger set"
+LEDGER_UNREADABLE = "the ranked ledger is missing or cannot be read"
+LEDGER_EMPTY = "the ranked ledger has no rows"
+TOP_RAW_KEYS = ("items", "verified", "owner_dropped", "not_counted", "open")
+
+
+def ledger_path(state_dir, cfg: Mapping, env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """The private ranked ledger: $LIMITLESS_RANKED_LEDGER, else config ``ranked_ledger`` (a relative path is in
+    the state dir); None when neither names a path. The repo ships none."""
+    env = os.environ if env is None else env
+    v = env.get(LEDGER_ENV) or cfg.get(LEDGER_CONFIG)
+    if not isinstance(v, str) or not v.strip():
+        return None
+    p = Path(v).expanduser()
+    return p if p.is_absolute() else Path(state_dir) / p
+
+
+def _ledger_rows(text: str) -> dict:
+    """The newest valid row per id (file order: a later row wins). A row is a JSON object with a non-empty string
+    ``id`` and a ``status`` in LEDGER_STATUSES; anything else (a torn line, another shape) is skipped."""
+    newest = {}
+    for line in text.splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(r, dict) and isinstance(r.get("id"), str) and r["id"].strip() \
+                and r.get("status") in LEDGER_STATUSES:
+            newest[r["id"].strip()] = r
+    return newest
+
+
+def _counts(r: Mapping) -> str:
+    """How one newest row counts: verified (with a non-empty evidence string), owner_dropped (``by`` is the
+    owner), not_counted (verified without evidence, dropped by anyone else) or open (open, built)."""
+    status = r.get("status")
+    if status == "verified":
+        ev = r.get("evidence")
+        return "verified" if isinstance(ev, str) and ev.strip() else "not_counted"
+    if status == "dropped":
+        return "owner_dropped" if r.get("by") == OWNER else "not_counted"
+    return "open"
+
+
+def share_word(k: int, n: int) -> str:
+    """``k`` of ``n`` in words: all, most (over half), some (at least a fifth), few, none."""
+    if k >= n:
+        return "all"
+    if k <= 0:
+        return "none"
+    if 2 * k > n:
+        return "most"
+    return "some" if 5 * k >= n else "few"
+
+
+def _top_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row ten from the optional ranked ledger (ledger_path; JSONL rows ``{id, status,
+    by, evidence}``). Met when every id's newest row is verified with evidence or dropped by the owner. Ids and
+    evidence text are never read into the label or the audit: only counts and words."""
+    path = ledger_path(state_dir, cfg, env)
+    if path is None:
+        return UNKNOWN_PREFIX + NO_LEDGER, "unknown", None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        return UNKNOWN_PREFIX + LEDGER_UNREADABLE, "unknown", None
+    newest = _ledger_rows(text)
+    if not newest:
+        return UNKNOWN_PREFIX + LEDGER_EMPTY, "unknown", None
+    audit = {"items": len(newest), "verified": 0, "owner_dropped": 0, "not_counted": 0, "open": 0}
+    for r in newest.values():
+        audit[_counts(r)] += 1
+    done = audit["verified"] + audit["owner_dropped"]
+    label = TOP_LABEL.format(share_word(done, len(newest)))
+    audit["label"] = {"label": label}
+    return label, "met" if done == len(newest) else "not met", audit
+
+
+_READS = ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
+          (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
+          (HABIT_ROW, HABIT_WORDS, _habit_measured),
+          (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
+          (FOUNDATION_ROW, FOUNDATION_WORDS, _foundation_measured),
+          (FLOW_ROW, FLOW_WORDS, _flow_measured),
+          (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured),
+          (INTEGRATED_ROW, INTEGRATED_WORDS, _integrated_measured),
+          (TOP_ROW, TOP_WORDS, _top_measured))
+
+
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
-    """``[(row, audit)]`` for rows one, two, three, four and seven, in that order: ``row`` as measured() gives
-    it, ``audit`` the audit's own dict (its T0 counts, and its ``label``) or None when there was nothing to
-    audit."""
+    """``[(row, audit)]`` for every measured row, in row order (MEASURED_ROWS): ``row`` as measured() gives it,
+    ``audit`` the audit's own dict (its T0 counts, and its ``label``) or None when there was nothing to audit."""
     cfg = cfg if isinstance(cfg, Mapping) else {}
     out = []
-    for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
-                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
-                           (HABIT_ROW, HABIT_WORDS, _habit_measured),
-                           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
-                           (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured)):
+    for n, words, read in _READS:
         try:
             label, goal, audit = read(state_dir, cfg, now, tz, env, home)
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
@@ -325,16 +585,17 @@ def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[
 
 def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[dict]:
-    """North-star rows one, two, three, four and seven as code measured them: ``[{n, criterion_words, label,
-    goal}]``.
+    """North-star rows one to eight and ten as code measured them: ``[{n, criterion_words, label, goal}]``.
 
     Row one is the uptime audit of the state dir's runs.jsonl, row two the delivery audit of kevin-push's log
     (config ``push_log``), row three the habit loop (the stop rule's loop rows in predictions.jsonl and the habit
-    files), row four the evidence loop (the locks and receipts in predictions.jsonl) and row seven privacy
-    (tier_audit.check over the audit log for the last seven days). ``label`` is the audit's own T1 words (no
-    digit) or ``unknown: <why>``; ``goal`` is
-    met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
-    nothing is written or sent, and no hand status is changed.
+    files), row four the evidence loop (the locks and receipts in predictions.jsonl), row five the foundation (the
+    sleep coverage audit, its own goal), row six flow (flow_week over the last finished week), row seven privacy
+    (tier_audit.check over the audit log for the last seven days), row eight the local integrations (Glide, the
+    call brief, the asks queue, the voice MIQ) and row ten the top items (the optional ranked ledger). ``label`` is
+    the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is met, not met or unknown. A missing or
+    unreadable log is unknown, never an error and never met. Read-only: nothing is written or sent, and no hand
+    status is changed.
     """
     return [row for row, _audit in measured_audits(state_dir, cfg, now, tz, env=env, home=home)]
 
@@ -342,7 +603,7 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
 MEASURED_LINE = "Measured: {}: {}"
 DISAGREE_LINE = "Row {} says green but the measurement says not met."
 MORE_LINE = "More measured rows in limitless_scorecard."
-MEASURED_ROWS = (UPTIME_ROW, DELIVERY_ROW, HABIT_ROW, EVIDENCE_ROW, PRIVACY_ROW)
+MEASURED_ROWS = tuple(n for n, _words, _read in _READS)
 
 
 def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
@@ -354,13 +615,14 @@ def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
     return DISAGREE_LINE.format(_name(row["criterion"]))
 
 
-def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
-    """The weekly block's measured lines, digit-free and at most MAX_LINES: "Measured: <row words>: <label>" for
-    rows one, two, three, four and seven (at most one each, in that order whatever the input order), each
-    followed by "Row <name> says green but the measurement says not met." when the hand-kept row with that
-    number is green and the goal is not met. When they would pass five lines, whole rows (a row with its note)
-    are kept in that order and the rest fold into one line, "More measured rows in limitless_scorecard." Only
-    words: no status is changed here, and code never marks a row green."""
+def measured_lines(rows: List[dict], measured_rows: List[dict], limit: int = MAX_LINES - 1) -> List[str]:
+    """The weekly block's measured lines, digit-free and at most ``limit`` (default four: the block's first line
+    is the self-reported counts line): "Measured: <row words>: <label>" for every measured row (at most one each,
+    in row order, MEASURED_ROWS, whatever the input order), each followed by "Row <name> says green but the
+    measurement says not met." when the hand-kept row with that number is green and the goal is not met. When
+    they would pass ``limit``, whole rows (a row with its note) are kept in that order and the rest fold into one
+    line, "More measured rows in limitless_scorecard." Only words: no status is changed here, and code never
+    marks a row green."""
     first = {}
     for m in measured_rows or ():
         n = m.get("n") if isinstance(m, dict) else None
@@ -374,11 +636,11 @@ def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
             groups.append([_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label")))]
                           + ([note] if note else []))
     out = [ln for g in groups for ln in g]
-    if len(out) <= MAX_LINES:
+    if len(out) <= limit:
         return out
     out = []
     for g in groups:
-        if len(out) + len(g) > MAX_LINES - 1:
+        if len(out) + len(g) > limit - 1:
             break
         out += g
     return out + [MORE_LINE]

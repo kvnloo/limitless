@@ -306,23 +306,26 @@ class Lines(Fixture):
         rows = sc.parse(md)
         return sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.measured()))
 
-    def test_five_measured_rows_in_order_fill_the_block(self):
+    def test_measured_rows_in_order_follow_the_counts_line(self):
         lines = sc.measured_lines(sc.parse(table()), self.measured())
-        self.assertEqual([ln.split(":")[1].strip() for ln in lines],
-                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+        self.assertEqual(lines[-1], MORE)
+        self.assertEqual([ln.split(":")[1].strip() for ln in lines[:-1]], ["loop uptime", "delivery", "habit loop"])
         block = self.block(table()).splitlines()
         self.assertEqual(block[0], sc.WEEKLY_TITLE)
-        self.assertEqual(block[1:], ["- " + ln for ln in lines])   # the summary lines gave way first
+        self.assertEqual(block[1], "- " + sc.summary(sc.parse(table()))[0])   # the counts line never gives way
+        self.assertEqual(block[2:], ["- " + ln for ln in lines])   # the other summary lines gave way first
 
     def test_rows_keep_the_order_one_two_three_four_seven_whatever_the_input(self):
         m = list(reversed(self.measured()))
-        lines = sc.measured_lines([], m)
+        lines = sc.measured_lines([], m, limit=len(m))
         self.assertEqual([ln.split(":")[1].strip() for ln in lines],
-                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "flow", "privacy",
+                          "integrated", "top items"])
 
     def test_measured_lines_over_five_fold_the_rest_into_one_line(self):
         self.not_met_everywhere()
-        lines = sc.measured_lines(sc.parse(table()), self.measured())
+        self.assertEqual(sc.measured_lines(sc.parse(table()), self.measured())[-1], MORE)
+        lines = sc.measured_lines(sc.parse(table()), self.measured(), limit=sc.MAX_LINES)
         self.assertLessEqual(len(lines), sc.MAX_LINES)
         self.assertEqual(lines[-1], MORE)
         self.assertEqual(lines[0], "Measured: loop uptime: " + self.measured()[0]["label"])
@@ -403,9 +406,10 @@ class Tool(Fixture):
 
     def test_measured_lists_all_five_rows(self):
         out = self.tool()
-        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 7])
+        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 5, 6, 7, 8, 10])
         self.assertEqual([m["criterion_words"] for m in out["measured"]],
-                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "flow", "privacy",
+                          "integrated", "top items"])
         for m in out["measured"]:
             self.assertEqual(set(m["label"]), {"label", "tier", "modality"})
             self.assertEqual(m["label"]["tier"], "T1")
