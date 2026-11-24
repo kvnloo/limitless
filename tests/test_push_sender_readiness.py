@@ -6,7 +6,7 @@ environment, or its ``config.yaml``) and a chat (a bare ``telegram`` target need
 needs a channel directory entry; a chat id is its own chat). Only presence is read: a token VALUE never leaves
 the module. Synthetic Hermes homes and names only; no process is ever started.
 """
-from hermetic_env import TEST_HOME  # first import: isolates HOME, see tests/hermetic_env.py
+from hermetic_env import TEST_HOME, child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -218,6 +218,41 @@ class Words(Home):
                          str(TEST_HOME)):
                 self.assertNotIn(leak, words)
             self.assertFalse(any(c.isdigit() for c in words), words)
+
+
+class ReportOnly(unittest.TestCase):
+    """kevin-push never asks readiness: a profile with no token or no chat still gets its send tried (a fake
+    `hermes` on PATH records the call; nothing is sent), so a wrong readiness guess cannot block a real push."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        fakebin = self.home / "fakebin"
+        fakebin.mkdir()
+        hermes = fakebin / "hermes"
+        hermes.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/hermes-calls\"\nexit 0\n")
+        hermes.chmod(0o755)
+        self.hermes_home = self.home / "hermes-home"
+        (self.hermes_home / "profiles" / "sender-a").mkdir(parents=True)   # exists, but no .env at all
+        state = self.home / "state"
+        state.mkdir()
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("KEVIN_PUSH_", "TELEGRAM_"))}
+        self.env.update(HOME=str(self.home), PATH=f"{fakebin}:{os.environ['PATH']}",
+                        HERMES_HOME=str(self.hermes_home), LIMITLESS_STATE=str(state),
+                        LIMITLESS_CONFIG=str(self.home / "none.json"), KEVIN_PUSH_PROFILE="sender-a",
+                        KEVIN_PUSH_TO="telegram", LIMITLESS_SLEEPMODE=str(state / "sleepmode.jsonl"),
+                        CIRCADIAN_CLASS="decision")
+
+    def test_no_token_still_tries_the_send(self):
+        self.assertEqual(ps.readiness({}, self.env), NO_TOKEN)
+        cli = Path(__file__).resolve().parents[1] / "bin" / "kevin-push"
+        r = subprocess.run([sys.executable, "-I", str(cli), "x", "Pick one", "Keep the loop?"],
+                           env=child_env(self.env), capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.stdout.strip(), "kevin-push: telegram")
+        calls = (self.home / "hermes-calls").read_text().splitlines()
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0].startswith("-p sender-a send --to telegram"), calls[0])
 
 
 if __name__ == "__main__":

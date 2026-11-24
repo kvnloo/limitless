@@ -8,8 +8,9 @@ last sync run's age in words from runs.jsonl, then the uptime row (uptime_audit 
 uptime goal was met, stale when not, missing when unknown; kind source, words only), the delivery row
 (north-star row two as the scorecard measures it, complaints included: off with no push log, live when met,
 stale when not, missing when unknown; kind source, words only), the push sender row (whether kevin-push's
-Hermes profile directory exists, push_sender.check: live when it does, missing when it does not or cannot be
-told; hermes is never run; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
+Hermes profile can reach Telegram, push_sender.readiness: live when ready, missing when the profile does not
+exist, has no Telegram bot token or no chat, or it cannot be told; hermes is never run and no secret value is
+read; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
 kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
 or unknown; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
@@ -186,15 +187,17 @@ PUSH_SENDER_ROW = "push sender"
 
 def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
                     hermes_home: "Path | str | None" = None) -> dict:
-    """Whether bin/kevin-push's sender profile can exist (push_sender.check: $KEVIN_PUSH_PROFILE, else config
-    ``push_profile``, else the default; ``default`` or ``<Hermes home>/profiles/<name>`` is a directory): live
-    when it does, missing when it does not (``broken: ...``) or cannot be told (``unknown: ...``). Only checks
-    that a directory exists: hermes is never run, no process is started and nothing is sent. Words only: never
-    the profile name, the target or a path. Kind ``source``: --strict does not count it."""
+    """Whether bin/kevin-push's sender profile can reach Telegram (push_sender.readiness over the profile
+    $KEVIN_PUSH_PROFILE, else config ``push_profile``, else the default, and its target): live when ``ready``;
+    missing when the profile does not exist (``missing: ...``), has no Telegram bot token or no chat to send to,
+    or it cannot be told (``unknown: ...``). Files only, and only whether a key is present: hermes is never run,
+    no process is started, nothing is sent and no secret value is read. Report-only: kevin-push's own preflight
+    is push_sender.check. Words only: never a value, the profile name, the target or a path. Kind ``source``:
+    --strict does not count it."""
     from . import push_sender
-    words = push_sender.check(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
-                              hermes_home)
-    return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.SET else MISSING, words)
+    words = push_sender.readiness(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
+                                  hermes_home)
+    return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.READY else MISSING, words)
 
 
 SLEEP_MODE_ROW = "Sleep mode"

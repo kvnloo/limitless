@@ -4,7 +4,8 @@ Every tests/test_*.py imports this module as its first import (test_hermetic_gua
 isolation is in place for a full `discover` run and for a single-file run alike:
 
 - every LIMITLESS_* variable (but the test-only LIMITLESS_GLIDE_SRC), HERMES_HOME, HERMES_DATA_DIR_SUFFIX and
-  KEVIN_PUSH_PROFILE / KEVIN_PUSH_TO are dropped and HOME points at an empty temp dir;
+  KEVIN_PUSH_PROFILE / KEVIN_PUSH_TO, TELEGRAM_BOT_TOKEN / TELEGRAM_HOME_CHANNEL are dropped and HOME points at
+  an empty temp dir;
 - Path.home(), Path.expanduser() and os.path.expanduser() resolve "~" to that dir even while a test has
   cleared os.environ (without HOME they would fall back to the passwd entry, which is the real home);
 - child_env() builds the env= of every subprocess a test starts, so a child interpreter, where none of the
@@ -25,7 +26,8 @@ KEEP = {"LIMITLESS_GLIDE_SRC"}
 for _k in [k for k in os.environ if k.startswith("LIMITLESS_") and k not in KEEP]:
     del os.environ[_k]
 # kevin-push's sender and the Hermes home its doctor row checks: never the host's (tests pass their own)
-for _k in ("HERMES_HOME", "HERMES_DATA_DIR_SUFFIX", "KEVIN_PUSH_PROFILE", "KEVIN_PUSH_TO"):
+for _k in ("HERMES_HOME", "HERMES_DATA_DIR_SUFFIX", "KEVIN_PUSH_PROFILE", "KEVIN_PUSH_TO",
+           "TELEGRAM_BOT_TOKEN", "TELEGRAM_HOME_CHANNEL"):
     os.environ.pop(_k, None)
 TEST_HOME = Path(tempfile.mkdtemp(prefix="limitless-test-home-"))
 os.environ["HOME"] = str(TEST_HOME)
