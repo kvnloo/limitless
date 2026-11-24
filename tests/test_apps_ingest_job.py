@@ -243,7 +243,7 @@ class ScheduleCard(Base):
         self.assertEqual(c["once_key"], "apps_ingest:<sync run time>")
         self.assertIn("after each sync run", c["description"])
         self.assertIn("nothing is sent", c["description"])
-        self.assertEqual(c["words"]["runs"], "limitless-jobs --send")
+        self.assertEqual(c["words"]["runs"], "limitless-jobs --ingest or --send")
 
     def test_the_card_is_digit_free_with_no_clock_no_id_and_no_name(self):
         c = self.card()
@@ -312,7 +312,7 @@ class Doctor(Base):
     def test_a_sync_it_has_not_run_after_is_stale(self):
         self.config(apps_ingest="write")
         self.runs(sync(NOW - H))
-        self.check(self.doc_row(), "stale", "has not run after it", "limitless-jobs --send")
+        self.check(self.doc_row(), "stale", "has not run after it", "limitless-jobs --ingest or --send runs it")
 
     def test_live_after_a_write(self):
         self.config(apps_ingest="write")

@@ -111,6 +111,7 @@ def ledger_card() -> dict:
 
 
 NOOP_RUNS = "limitless-jobs --send"
+INGEST_RUNS = jobs.INGEST_RUNS   # the reply ingests also run on the timer's --ingest pass
 NOOP_DOES = ("nothing is sent; it reads the NOOP copy and, in write mode, merges the sleep file and the pre-sleep "
              "heart-rate file")
 NOOP_WINDOW = "asleep or awake: it sends nothing, so no window holds it"
@@ -140,7 +141,7 @@ def apps_ingest_card() -> dict:
     no clock time. Never an app name."""
     spec = jobs.APPS_INGEST
     w = jobs.to_schedule_card(spec)
-    w.update(window=NOOP_WINDOW, delivery=APPS_DOES, runs=NOOP_RUNS)
+    w.update(window=NOOP_WINDOW, delivery=APPS_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {APPS_DOES}'
     return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
@@ -158,7 +159,7 @@ def ranked_ingest_card() -> dict:
     zero), no decision window holds it and it has no clock time. Never an item id."""
     spec = jobs.RANKED_INGEST
     w = jobs.to_schedule_card(spec)
-    w.update(window=NOOP_WINDOW, delivery=RANKED_DOES, runs=NOOP_RUNS)
+    w.update(window=NOOP_WINDOW, delivery=RANKED_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {RANKED_DOES}'
     return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
@@ -177,7 +178,7 @@ def sender_ingest_card() -> dict:
     profile name."""
     spec = jobs.SENDER_INGEST
     w = jobs.to_schedule_card(spec)
-    w.update(window=NOOP_WINDOW, delivery=SENDER_DOES, runs=NOOP_RUNS)
+    w.update(window=NOOP_WINDOW, delivery=SENDER_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {SENDER_DOES}'
     return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,

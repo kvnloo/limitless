@@ -99,7 +99,7 @@ def state(state_dir, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] 
     if v.reason == jobs.APPS_NO_DB:
         return "no db", f"{on}, but {v.reason}"
     if v.action == jobs.RUN:
-        return "waiting", "a sync ran and the sender ingest has not run after it yet (limitless-jobs --send runs it)"
+        return "waiting", f"a sync ran and the sender ingest has not run after it yet ({jobs.INGEST_RUNS} runs it)"
     if mark.get("ran_at") is None:
         return "not run", f"{on}, but it has not run yet: {v.reason}"
     return "ran", (_MODE_WORDS.get(mark.get("mode") or "", "unknown mode"), mark["ran_at"], said(mark.get("action")))
