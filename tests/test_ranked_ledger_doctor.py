@@ -2,6 +2,7 @@
 
 Synthetic ids only; never an id, evidence text or a digit in the row.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

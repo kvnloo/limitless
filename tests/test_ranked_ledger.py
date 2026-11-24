@@ -4,6 +4,7 @@ An agent row is {"id", "status": open | built | verified, "by": "agent", "eviden
 dropped is refused (only the owner drops, by reply). Dry run unless --write; append-only, 0600, flock. Row ten of
 the scorecard moves from unknown to words once rows are written. Synthetic ids only; nothing sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import fcntl
 import json
 import os
@@ -44,7 +45,7 @@ class Base(unittest.TestCase):
                     "LIMITLESS_RANKED_LEDGER": str(self.ledger)}
 
     def cli(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                               capture_output=True, text=True, timeout=60)
 
     def rows(self):
@@ -152,7 +153,7 @@ class Add(Base):
     def test_no_ledger_set_writes_nothing_and_says_so(self):
         env = dict(self.env)
         del env["LIMITLESS_RANKED_LEDGER"]
-        r = subprocess.run([sys.executable, "-I", str(CLI), "add", A, "open", "--write"], env=env,
+        r = subprocess.run([sys.executable, "-I", str(CLI), "add", A, "open", "--write"], env=child_env(env),
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 1)
         self.assertIn("no ranked ledger set", r.stdout + r.stderr)
@@ -241,7 +242,7 @@ class List(Base):
                          "ranked ledger: unknown: the ranked ledger has no rows")
         env = dict(self.env)
         del env["LIMITLESS_RANKED_LEDGER"]
-        r = subprocess.run([sys.executable, "-I", str(CLI), "list"], env=env, capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-I", str(CLI), "list"], env=child_env(env), capture_output=True, text=True,
                            timeout=60)
         self.assertEqual(r.returncode, 0)
         self.assertIn("unknown: no ranked ledger set", r.stdout)

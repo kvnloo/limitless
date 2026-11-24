@@ -3,6 +3,7 @@ owner drop row for each id the ranked ledger already has. Dry run unless --write
 
 Synthetic ledgers and a synthetic session DB (tests/hermes_db_fixture.py) only; nothing sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -170,7 +171,7 @@ class Cli(unittest.TestCase):
                     "LIMITLESS_CONFIG": str(self.home / "config.json"), "LIMITLESS_RANKED_LEDGER": str(self.ledger)}
 
     def cli(self, *args, **env):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **env),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **env)),
                               capture_output=True, text=True, timeout=60)
 
     def test_no_db_set_reads_nothing_and_says_so(self):
@@ -183,7 +184,7 @@ class Cli(unittest.TestCase):
     def test_no_ledger_set_reads_nothing_and_says_so(self):
         env = dict(self.env)
         del env["LIMITLESS_RANKED_LEDGER"]
-        r = subprocess.run([sys.executable, "-I", str(CLI), "ingest", "--db", str(self.db), "--write"], env=env,
+        r = subprocess.run([sys.executable, "-I", str(CLI), "ingest", "--db", str(self.db), "--write"], env=child_env(env),
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("no ranked ledger set", r.stdout)

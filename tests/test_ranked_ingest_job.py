@@ -5,6 +5,7 @@ write), through ranked_ledger.ingest.
 Synthetic ledgers, synthetic runs.jsonl rows and the synthetic session DB of tests/hermes_db_fixture.py only.
 Invented ids only. Nothing here sends, pushes or starts a process.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -467,7 +468,7 @@ class Docs(unittest.TestCase):
     def test_the_job_example_is_the_scripts_real_output(self):
         import subprocess
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "ranked_ingest_job_example.py")],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         blocks = re.findall(r"```text\n(.*?)```", self.DOC.read_text(), re.S)
         self.assertIn(r.stdout, blocks)
