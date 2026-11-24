@@ -16,12 +16,14 @@ from . import (anki as _anki, app_candidates as _app_candidates, asks as _asks, 
                phase as _phase,
                prediction as _prediction, propose as _propose,
                quiet as _quiet, regularity as _regularity, rides as _rides, schedule_cards as _schedule_cards,
-               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, sleep_debt as _sleep_debt,
+               scorecard as _scorecard, skill_tree as _skill_tree, sleep as _sleep, sleep_coverage as _sleep_coverage,
+               sleep_debt as _sleep_debt,
                stop_rule as _stop_rule,
                strength as _strength, tier_audit as _tier_audit, uptime_audit as _uptime,
                weekly_target as _weekly_target, wind_down)
 from . import mock_guard as _mock_guard
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
+from .state_reader import valid_sleep_rows as _valid_sleep_rows
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            PRESLEEP_HR_CONFIG, RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
 from .state_reader import state_dir as _state_dir
@@ -1462,5 +1464,70 @@ def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Map
     if raw:
         value.update({k: a[k] for k in UPTIME_RAW_KEYS})
     out = envelope(value, _uptime.MODALITY, (now - max(ats)) / 3600 if ats else None)
+    out["label"] = a["label"]
+    return out
+
+
+SLEEP_COVERAGE_RAW_KEYS = ("window_nights", "wearable_nights", "proxy_only_nights", "unknown_nights", "known_nights",
+                           "wearable_share", "target", "goal", "demo_rows")
+
+
+def _sleep_coverage_read(reader: StateReader, now: float, env, home, tz) -> tuple:
+    """(audit, reason, newest_s) for the sleep file and the phone proxy over the config window before today.
+    audit is None, with a path-free reason, when no sleep file is set or it cannot be read."""
+    cfg = config(env, home)
+    if reader.sleep_file(env, home) is None:
+        return None, _sleep_coverage.NO_FILE_REASON, None
+    rows = reader.sleep_file_rows(env, home)
+    if rows is None:
+        return None, _sleep_coverage.UNREADABLE_REASON, None
+    today, days = datetime.fromtimestamp(now, tz).date(), _sleep_coverage.window_days(cfg)
+    names = {n["night"] for n in _sleep.nights([], [], today, days, tz)}
+    real, demo = _sleep_coverage.split_demo([r for r in rows if r.get("night") in names], cfg)   # the window's
+    wear = _valid_sleep_rows(real, today)
+    gaps = _sleep.screen_gaps(jobs_runner.person_rows(reader, env, home))
+    ns = _sleep.nights(wear, gaps, today, days, tz)
+    a = _sleep_coverage.audit(ns, target=_sleep_coverage.target(cfg), demo=demo)
+    reason = (_sleep_coverage.NO_NIGHTS_REASON if not a["known_nights"]
+              else _sleep_coverage.FEW_KNOWN_REASON if a["label"]["label"] == _sleep_coverage.UNKNOWN else None)
+    newest = _sleep.newest_at([r for r in wear if r["night"] in names], [g for g in gaps if g[1] <= now], tz)
+    return a, reason, newest
+
+
+def sleep_coverage_audit(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                         home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> tuple:
+    """(audit, reason): sleep_coverage.audit over the config window (``sleep_coverage_days``) of local nights
+    before today (``tz``), demo rows dropped, against ``sleep_coverage_target``. audit is None when no sleep file
+    is set or it cannot be read; reason is set whenever the answer is unknown. Read-only: limitless_sleep_coverage,
+    the doctor's sleep coverage row and bin/limitless-sleep-coverage all read through it."""
+    a, reason, _ = _sleep_coverage_read(reader, now, env, home, tz)
+    return a, reason
+
+
+def sleep_coverage(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                   home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
+    """limitless_sleep_coverage: on how many of the last ``sleep_coverage_days`` local nights (default four weeks)
+    the wearable recorded sleep, beside the nights only the phone estimate covers and the nights nothing covers,
+    and whether the wearable goal (config ``sleep_coverage_target``, default the scorecard's bar) was met;
+    read-only (sleep_coverage.audit).
+
+    An envelope whose value is ``{label}`` (the T1 words) with the T1 label beside it; modality measured when
+    any wearable night counts, else proxy; age_h as limitless_sleep's (the newest gap's end, or the local midnight
+    after the newest wearable night). Demo and sample sleep rows never count (mock_guard). The counts (wearable,
+    phone-estimate-only, unknown and known nights, the window, the share, the target, the goal and the demo
+    rows in the window left out) are T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). No sleep file set, a missing
+    or unreadable one, no night with any data, or fewer than a week of known nights is value None with a reason
+    and the label "unknown" (unknown, not zero). Reasons never echo a path. Nothing is written or sent.
+    """
+    a, reason, newest = _sleep_coverage_read(reader, now, env, home, tz)
+    if reason:
+        modality = a["label"]["modality"] if a is not None else "measured"
+        out = envelope(None, modality, None, reason=reason)
+        out["label"] = {"label": _sleep_coverage.UNKNOWN, "tier": "T1", "modality": modality}
+        return out
+    value = {"label": a["label"]["label"]}
+    if raw:
+        value.update({k: a[k] for k in SLEEP_COVERAGE_RAW_KEYS})
+    out = envelope(value, a["label"]["modality"], None if newest is None else max(0.0, now - newest) / 3600)
     out["label"] = a["label"]
     return out

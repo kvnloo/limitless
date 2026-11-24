@@ -9,7 +9,9 @@ uptime goal was met, stale when not, missing when unknown; kind source, words on
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
 open-wearables.json; the server is never called), the NOOP export job's row (config noop_export,
-its mark noop-export.json) and, before both, the context packet's row (config context_packet_path: off, live
+its mark noop-export.json), just before both the sleep coverage row (sleep_coverage over config sleep_file and
+the phone proxy: live when the wearable goal was met, stale when not, missing when unknown, off with no sleep
+file; words only) and, before that, the context packet's row (config context_packet_path: off, live
 when written within STALE_H, else stale; read from the packet's own generated_at), with the voice MIQ's row
 (config voice_miq, its mark voice-miq.json) just before it. Right after the tool rows comes the NOOP MCP row
 (config noop_mcp and t0_tools; the server is never started), then the desktop ActivityWatch's row (config
@@ -303,6 +305,26 @@ def open_wearables_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     return _row(OW_ROW, "export", LIVE if age_h <= STALE_H else STALE, f"{ran}: {said}")
 
 
+SLEEP_COVERAGE_ROW = "sleep coverage"
+_SLEEP_COVERAGE_STATUS = {"met": LIVE, "not met": STALE}   # sleep_coverage's goal -> row status; unknown is missing
+
+
+def sleep_coverage_row(reader: StateReader, now: float) -> dict:
+    """The sleep coverage audit (tools.sleep_coverage_audit over config sleep_file and the phone proxy, config
+    sleep_coverage_days and sleep_coverage_target, demo rows dropped): live when the wearable goal was met over the
+    window, stale when it was not, missing when it is unknown (a missing or unreadable sleep file, no night with
+    any data, fewer than a week of known nights, or too many nights with no data to tell), off when no sleep file
+    is set. The reason is the audit's T1 words or why it is unknown, never a count. Kind ``source``: --strict does
+    not count it. Read-only."""
+    from . import sleep_coverage as sc
+    a, reason = tools.sleep_coverage_audit(reader, now)
+    if a is None:
+        return _row(SLEEP_COVERAGE_ROW, "source", OFF if reason == sc.NO_FILE_REASON else MISSING, reason)
+    if reason:
+        return _row(SLEEP_COVERAGE_ROW, "source", MISSING, reason)
+    return _row(SLEEP_COVERAGE_ROW, "source", _SLEEP_COVERAGE_STATUS.get(a["goal"], MISSING), a["label"]["label"])
+
+
 MANIFEST = Path(__file__).resolve().parents[1] / "plugin.yaml"
 
 
@@ -496,7 +518,9 @@ def report(cfg: Mapping, now: float) -> list:
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
-    then the voice MIQ's row (voice_miq_row) just before the context packet's.
+    then the voice MIQ's row (voice_miq_row) just before the context packet's, and the sleep coverage audit
+    (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
+    the sleep file.
 
     cfg is the host config (state_reader.config()); the tools read the same config through the environment,
     as they do inside Hermes."""
@@ -508,7 +532,8 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), voice_miq_row(reader, cfg, now)]
-    rows += [context_packet_row(cfg, now), open_wearables_row(reader, cfg, now), noop_export_row(reader, cfg, now)]
+    rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
+             noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
 
 

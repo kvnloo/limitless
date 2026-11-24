@@ -94,7 +94,8 @@ class Row(unittest.TestCase):
                 else:
                     os.environ[k] = v
         self.assertEqual(names.count(doctor.PACKET_ROW), 1)
-        self.assertEqual(names[names.index(doctor.PACKET_ROW) + 1], doctor.OW_ROW)
+        at = names.index(doctor.PACKET_ROW)
+        self.assertEqual(names[at + 1:at + 3], [doctor.SLEEP_COVERAGE_ROW, doctor.OW_ROW])
         after = sorted((str(p), p.stat().st_mtime_ns, p.read_bytes()) for p in self.home.rglob("*") if p.is_file())
         self.assertEqual(after, before)
 

@@ -106,6 +106,10 @@ def _sleep(args, now):
     return tools.sleep(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
 
+def _sleep_coverage(args, now):
+    return tools.sleep_coverage(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
 def _sleep_debt(args, now):
     return tools.sleep_debt(_reader(), now, date.fromtimestamp(now), raw=card.raw_in_prompt(os.environ))
 
@@ -400,6 +404,16 @@ measured only when the wearable covers the newest night, else proxy; a night wit
 zero. regularity says how regular sleep times have been over two weeks, the source named: sleep times steady, \
 vary a lot, drifting later or drifting earlier, or unknown with too few nights; never a clock time. A quiet \
 phone is not a sleep measure. No target, no advice. Read-only; nothing is sent."), _sleep, "😴"),
+    "limitless_sleep_coverage": (_schema(
+        "limitless_sleep_coverage",
+        "On how many of the last four weeks of nights (config sleep_coverage_days) the wearable recorded sleep \
+(config sleep_file), beside the nights only the phone estimate covers (a quiet phone, never counted as wearable) \
+and the nights with no sleep data at all, and whether the wearable goal (wearable sleep on the share of nights in \
+config sleep_coverage_target, else four nights in five) was met, in plain words such as wearable sleep on few \
+nights, phone estimate on most nights; wearable goal not met. Demo and sample rows never count. A night with no \
+data is unknown, never zero, and never counts for the goal. The words only; the counts need the person's raw \
+opt-in. No sleep file set or a missing one is no value with the reason. No target advice, no clock time. \
+Read-only; nothing is written or sent."), _sleep_coverage, "🛏️"),
     "limitless_sleep_debt": (_schema(
         "limitless_sleep_debt",
         "Sleep debt in one word: the last three nights against the person's own usual night (the median of the \
