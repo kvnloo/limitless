@@ -32,8 +32,9 @@ deleted; restoring it should bring pushes back`, the state card's reason is `the
 its hint `Reply restore <name> to bring it back.` (`Restore the deleted sender profile to bring it back.` for a
 name with a digit; a ready profile is still offered after it, `... or reply push via <a>.`), and the `push
 recovery` words read `pushes are failing; waiting for a sender reply; the sender profile was deleted and can be
-restored` before the names. The restore itself happens in Hermes: the sender ingest only parses `push via`, and
-limitless never restores, moves or deletes a profile. Without a tombstone every word above stays as it was.
+restored` before the names. The restore itself happens in Hermes: the sender ingest only records a `restore
+<name>` reply ([below](#a-restore-reply)), and limitless never restores, moves or deletes a profile. Without a
+tombstone every word above stays as it was.
 
 The sender ingest job applies that reply by itself, the way the apps ingest
 ([apps-ingest.md](apps-ingest.md#as-an-event-job)) and the ranked drop ingest
@@ -52,6 +53,29 @@ Anything else changes nothing: the phrase inside a longer message (`can you push
 (`Reply 'push via default' to choose`), a trailing period, a second line, an assistant message, or a cron
 session's prompt (only Telegram sessions are read). Of the messages after the mark, the newest `push via` message
 wins; an older one is never used as a fallback.
+
+
+## A restore reply
+
+The card's `Reply restore <name> to bring it back.` is answered the same way: one whole owner message, stripped
+of surrounding space, exactly `restore <name>` (any case, spaces or tabs between the words, a name Hermes resolves,
+lowercased; `restore_reply.parse`). Read from the same owner messages after the same mark as `push via`, the
+newest `restore` message wins, never an older one. It counts only when `<name>` is the current sender and Hermes
+has it deleted (`push_sender.tombstoned`); a message naming another profile, a live sender, or one with any other
+words in it is ignored and nothing is written.
+
+Restoring a profile recreates a Hermes profile and its gateway: an operator action, so the plugin never does it.
+In write mode the sender ingest job only records the request in `restore-request.json` (atomic, 0600:
+`{"profile": <name>, "at": <the message's epoch>, "seen_at": <the pass's epoch>}`) and its row adds `recorded
+your restore request; the operator restores the profile`; a dry run writes nothing (`would record your restore
+request for the operator`); off does nothing. It never touches the Hermes home, never runs hermes and never sends.
+
+While that request is at or after the open push outage's first failed row and the sender is still tombstoned,
+the state card's hint is `Restore asked; it will be done by the operator.` ([push-reach.md](push-reach.md#the-reply-hint-card-only))
+and the `push recovery` words read `pushes are failing; waiting for a sender reply; a restore was asked`
+([doctor.md](doctor.md#push-recovery-row)). A request older than the outage counts for nothing. When the profile
+is live again the request is stale (the file stays) and every word is today's, byte for byte; the outage recap
+flow is unchanged.
 
 ## When it applies
 
