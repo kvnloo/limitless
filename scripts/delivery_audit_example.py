@@ -4,8 +4,9 @@ A week of synthetic push-log rows in the shape bin/kevin-push writes ({at, tag, 
 synthetic wake events, in a temporary state dir, at a fixed clock in UTC. Reads no real state, writes nothing
 outside that dir, sends nothing. It runs the limitless_delivery tool (without and with the raw opt-in) and the
 week review line, then the complaints: unknown with no Hermes DB set, then from a synthetic session DB and a
-synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row). Last, why the wake briefs of a
-second synthetic week were missed (delivery_audit.brief_misses), one reason a missed wake day.
+synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row). Then why the wake briefs of a
+second synthetic week were missed (delivery_audit.brief_misses), one reason a missed wake day. Last, the first
+week followed by two failed sends ("log (telegram rc=1)"): "the last pushes failed to send".
 """
 import json
 import sqlite3
@@ -130,3 +131,24 @@ print(m["label"])
 print(json.dumps(m["days"]))
 print(json.dumps({k: m[k] for k in ("missed", "unknown_wake_days", "top")}))
 print(json.dumps({r: c for r, c in m["reasons"].items() if c}))
+
+# A third synthetic log: the first week, then the last two pushes failed to send (the transport returned non-zero,
+# as every send does once kevin-push's Hermes profile is gone).
+FAILS = ROWS + [push(0, 9, "Pick one", "Keep the loop?\nReply: Yes / No", how="log (telegram rc=1)"),
+                push(0, 10, "Sync report", "all synced", how="log", cls="report"),   # never reached the transport
+                push(0, 12, "Heads up", "The build finished.", how="log (telegram rc=1)")]
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    st = root / "state"
+    st.mkdir()
+    (st / "push-log.jsonl").write_text("".join(json.dumps(r) + "\n" for r in FAILS))
+    (st / "events.jsonl").write_text("".join(json.dumps({"event": "wake", "at": w}) + "\n" for w in WAKES))
+    cfg = root / "config.json"
+    cfg.write_text(json.dumps({"push_log": "push-log.jsonl"}))
+    env = {"LIMITLESS_CONFIG": str(cfg)}
+    reader = StateReader(st)
+    print("\n# the last pushes failed to send: words only, the counts with the raw opt-in")
+    print(json.dumps(tools.delivery(reader, NOW, env=env, home=root, tz=UTC)["label"]["label"]))
+    print(json.dumps(tools.delivery(reader, NOW, raw=True, env=env, home=root, tz=UTC)["value"]["send_failures"]))
+    r = doctor.delivery_row(reader, json.loads(cfg.read_text()), NOW, env, root, UTC)
+    print(f"{r['name']}: {r['status']}: {r['reason']}")

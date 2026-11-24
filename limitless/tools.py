@@ -1356,7 +1356,7 @@ def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = No
 
 
 DELIVERY_RAW_KEYS = ("days", "delivered", "known_days", "cap", "over_cap_days", "wake", "no_action",
-                     "action_unknown", "skipped", "complaints", "misses")
+                     "action_unknown", "skipped", "complaints", "misses", "send_failures")
 
 
 def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,

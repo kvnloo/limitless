@@ -41,6 +41,12 @@ A brief is matched to a wake day by its local date.
   the first line) is message_shape's reply line: a `Reply: A / B` choices line or a line with the word reply.
   A body that may have been cut by the log (2000 characters or more) is unknown, not "no reply line".
 - Bad lines (not JSON, not an object, no numeric `"at"`, no string `"how"`) are skipped and counted.
+- Send failures: a row whose `"how"` starts `"log (telegram rc="` reached hermes and failed (every send fails
+  this way once kevin-push's Hermes profile is gone; `limitless-doctor`'s `push sender` row says so before a
+  send). Taken in time order over the window, only the rows that reached the transport (delivered or failed),
+  `SEND_FAIL_RUN` (two) or more failures in a row as the last of them mean the last pushes failed to send. One
+  failure followed by a delivery, or a single trailing failure, does not. The counts (`send_failures`:
+  `failed`, `trailing`, `failing`) are T0.
 - Complaints: only explicit signals the person sent, on a local day of the window. Nothing else is read into
   a message: no model, no sentiment, no guess. Two kinds count:
   - a quiet, quiet tonight or snooze command (`quiet.command`: the whole message, as the quiet ingest reads
@@ -60,6 +66,7 @@ The numbers are T0 and stay in the audit dict. The T1 label is words with no dig
 
 - push: "within the push limit every day this week", "within the push limit on every logged day",
   "over the push limit on some days", "unknown: no push rows this week";
+- send: "the last pushes failed to send" (nothing otherwise; never a count);
 - brief: "brief reached you on every wake day", "... on most wake days" (more than half), "... on some wake
   days", "brief did not reach you on any wake day", "brief: unknown, no wake days known";
 - action: "every push had a reply line", "some pushes had no reply line", "every push with a known body had a
@@ -106,7 +113,7 @@ is guessed from another day.
 
 - Tool `limitless_delivery`, read-only: `{value: {label}, modality: "measured", age_h, evidence_tier}` with the
   T1 label beside it, aged by the newest row in the window. The counts (per day, the cap, the wake days, the
-  pushes with no reply line, skipped lines) appear only with the raw opt-in (`LIMITLESS_RAW_IN_PROMPT=1`, as
+  pushes with no reply line, skipped lines, the send failures) appear only with the raw opt-in (`LIMITLESS_RAW_IN_PROMPT=1`, as
   `limitless_body`). Config `push_log` unset is value `null` with the reason "no push log set (config
   push_log)" and the label "unknown: no push log set": unknown, not zero. A missing or unreadable log and a
   week with no row are `null` with a reason too. Reasons never echo the path. When the goal is not met and a
@@ -122,7 +129,7 @@ is guessed from another day.
   in the week.
 - The north-star scorecard cites it as row two. `delivery_audit.goal(audit)` judges the audit's own counts:
   "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, a delivered
-  push had no reply line, or a quiet or stop request is known; "met" only when every day of the week has rows,
+  push had no reply line, a quiet or stop request is known, or the last pushes failed to send; "met" only when every day of the week has rows,
   wake days are known (none unknown), every delivered body is known to carry a reply line and complaints are
   known to be none; anything else is "unknown" (unknown complaints included), and unknown is never met.
   `scorecard.measured` gives `{n, criterion_words, label, goal}` from it (the label above, or the unknown
@@ -143,7 +150,7 @@ A relative `push_log` or `hermes_db` is in the limitless state dir. There is no 
 
 `python3 -I scripts/delivery_audit_example.py` (synthetic rows in kevin-push's shape, three synthetic wake
 events, then a synthetic session DB and a synthetic `quiet.json`, a fixed clock, UTC, a temporary state dir;
-last a second synthetic week for `brief_misses`; nothing sent):
+then a second synthetic week for `brief_misses`; last the first week plus two failed sends; nothing sent):
 
 ```text
 # no push log set
@@ -185,6 +192,11 @@ missed wake briefs: held while Sleep mode was on (most), held by the quiet setti
 {"2033-05-12": "held while Sleep mode was on", "2033-05-13": "held while Sleep mode was on", "2033-05-14": "held by the quiet setting", "2033-05-16": "no brief attempt on that day", "2033-05-17": "held while Sleep mode was on"}
 {"missed": 5, "unknown_wake_days": 1, "top": "held while Sleep mode was on"}
 {"held while Sleep mode was on": 3, "held by the quiet setting": 1, "no brief attempt on that day": 1}
+
+# the last pushes failed to send: words only, the counts with the raw opt-in
+"within the push limit on every logged day; the last pushes failed to send; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on"
+{"failed": 2, "trailing": 2, "failing": true}
+delivery: stale: within the push limit on every logged day; the last pushes failed to send; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on
 ```
 
 On the fifteenth the brief was held by Sleep mode, so that wake day counts as not reached: two of three wake
@@ -201,3 +213,8 @@ The goal is not met (a wake day had no delivered brief), so the tool's label and
 In the second week, the twelfth had a Sleep hold and then a repeat: Sleep mode comes first. The fifteenth had a
 Sleep hold and then a delivered brief, so it is no miss. The sixteenth had only a held "Pick one" push, no
 brief row: "no brief attempt on that day". The eighteenth, a wake day with no row, is unknown and not counted.
+
+In the third log, the first week's rows are followed on the eighteenth by two pushes whose transport failed
+(`log (telegram rc=1)`), with a report-only `log` row between them that never reached the transport. The last
+two transport attempts failed, so the label says "the last pushes failed to send" (no count; the counts are
+under `send_failures` with the raw opt-in) and the doctor's row is stale.

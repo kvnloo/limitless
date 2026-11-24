@@ -43,7 +43,10 @@ request" / "complaints: unknown, <why>".
 Missed briefs (``brief_misses``, the audit's ``misses``): for each known wake day with rows and no delivered
 brief, one reason from MISS_REASONS, decided only from that day's brief rows (precedence MISS_ORDER; no brief
 row is MISS_NONE). Counts per reason are T0; the label is words only; ``miss_clause`` words the most common
-reason for the tool and the doctor when the goal is not met. See docs/delivery-audit.md.
+reason for the tool and the doctor when the goal is not met.
+Send failures (the audit's ``send_failures``, T0): SEND_FAIL_RUN or more transport failures (``how`` starting
+``log (telegram rc=``) in a row as the window's last transport attempts are worded SEND_FAILING ("the last
+pushes failed to send", no count) and make the goal not met. See docs/delivery-audit.md.
 Pure: no clock, no file except read_log and signals, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -346,6 +349,33 @@ def miss_clause(a: Optional[dict]) -> str:
 
 MUTING = (quiet.OFF, quiet.TONIGHT, quiet.SNOOZED)
 
+# A transport failure is kevin-push's ``log (telegram rc=N)``: hermes ran and returned non-zero (a removed sender
+# profile fails every send this way). SEND_FAIL_RUN or more of them in a row as the last transport attempts of
+# the window (rows that never reached the transport are skipped) is worded SEND_FAILING and is never met.
+SEND_FAIL_PREFIX = "log (telegram rc="
+SEND_FAIL_RUN = 2
+SEND_FAILING = "the last pushes failed to send"
+
+
+def send_failed(r: dict) -> bool:
+    """True for a row whose send reached hermes and failed (``how`` starts ``log (telegram rc=``)."""
+    how = r.get("how")
+    return isinstance(how, str) and how.startswith(SEND_FAIL_PREFIX)
+
+
+def _send_failures(rows: list) -> dict:
+    """T0 over the window's ``rows``: ``failed`` (transport failures), ``trailing`` (the failures after the last
+    delivery, in time order; rows that never reached the transport are skipped) and ``failing`` (trailing is
+    at least SEND_FAIL_RUN)."""
+    tries = [r for r in sorted(rows, key=lambda r: float(r["at"])) if delivered(r) or send_failed(r)]
+    trailing = 0
+    for r in reversed(tries):
+        if not send_failed(r):
+            break
+        trailing += 1
+    return {"failed": sum(1 for r in tries if send_failed(r)), "trailing": trailing,
+            "failing": trailing >= SEND_FAIL_RUN}
+
 
 def _complaints(signals: Optional[Mapping], good: list, days: set, tz: Optional[tzinfo]) -> dict:
     """The T0 complaint counts over the window ``days`` (see the module doc); never the text."""
@@ -433,7 +463,9 @@ def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None
     out["wake"] = wake
     out["misses"] = brief_misses(good, wake_days, tz, days=window)
     out["complaints"] = _complaints(signals, good, set(window) if out["known_days"] else set(), tz)
-    out["labels"] = {"push": _push_words(out, len(window)), "brief": _brief_words(wake),
+    out["send_failures"] = _send_failures([r for d in window for r in by_day[d]])
+    out["labels"] = {"push": _push_words(out, len(window)),
+                     "send": SEND_FAILING if out["send_failures"]["failing"] else "", "brief": _brief_words(wake),
                      "action": _action_words(out), "complaints": _complaint_words(out["complaints"])}
     words = "; ".join(w for w in out["labels"].values() if w)
     out["label"] = {"label": words, "tier": "T1", "modality": MODALITY}
@@ -480,7 +512,8 @@ def goal(a: Optional[dict]) -> str:
     """Whether an audit (``audit``'s dict, None for no log) meets north-star row two, judged from its own counts.
 
     "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, a delivered
-    push had no reply line, or a complaint is known (a quiet or stop request). "met" only when every day of
+    push had no reply line, a complaint is known (a quiet or stop request), or the last pushes of the window
+    failed to send (SEND_FAIL_RUN transport failures in a row, ``send_failures``). "met" only when every day of
     the window has rows, at least one wake day is known, no wake day is unknown, every delivered body is known
     to carry a reply line, and complaints are known to be none. Anything else ("unknown") includes no log, a
     quiet week, unknown wake days and unknown complaints: unknown is never met.
@@ -490,7 +523,7 @@ def goal(a: Optional[dict]) -> str:
     wake = a["wake"]
     c = a.get("complaints") or {}
     if a["over_cap_days"] or a["no_action"] or wake["brief_delivered"] < wake["wake_days"] or \
-            (c.get("known") and c.get("total")):
+            (c.get("known") and c.get("total")) or (a.get("send_failures") or {}).get("failing"):
         return GOAL_NOT_MET
     complete = a["known_days"] == len(a["days"]) and not a["action_unknown"] and c.get("known") is True
     return GOAL_MET if complete and wake["wake_days"] and not wake["unknown_wake_days"] else GOAL_UNKNOWN
