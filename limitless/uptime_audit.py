@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date, datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
@@ -38,6 +38,8 @@ from .state_reader import parse_ts
 DAYS = 28
 TARGET = 0.95
 DAYS_CONFIG, TARGET_CONFIG = "uptime_days", "uptime_target"
+GAP_LIMIT_CONFIG = "loop_gap_limit_s"
+GAP_SPACINGS = 3                 # default loop-gap limit: this many times the usual spacing of the runs
 LOG_NAME = "runs.jsonl"
 STALE_WORD = "stale"
 MODALITY = "measured"            # runs.jsonl is the sync's own record of each run
@@ -128,12 +130,52 @@ def target(cfg: Optional[Mapping] = None) -> float:
     return float(v) if ok else TARGET
 
 
+def gap_limit(cfg: Optional[Mapping] = None) -> Optional[float]:
+    """Config ``loop_gap_limit_s`` (seconds, a finite number above zero); None (the default: GAP_SPACINGS times
+    the usual spacing of the window's runs) for anything else."""
+    v = cfg.get(GAP_LIMIT_CONFIG) if isinstance(cfg, Mapping) else None
+    ok = isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v > 0
+    return float(v) if ok else None
+
+
+def usual_spacing(times: Iterable) -> Optional[float]:
+    """The median of the positive spacings between consecutive run times (seconds); None with no such spacing."""
+    ts = sorted(times)
+    steps = sorted(b - a for a, b in zip(ts, ts[1:]) if b > a)
+    if not steps:
+        return None
+    k = len(steps) // 2
+    return steps[k] if len(steps) % 2 else (steps[k - 1] + steps[k]) / 2
+
+
+def _iso(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def loop_gaps(times: Iterable, limit: Optional[float] = None, now: Optional[float] = None) -> dict:
+    """The stretches when the loop did not run, from the run times alone (T0). A gap is two consecutive runs
+    further apart than the limit (``limit``, else GAP_SPACINGS times usual_spacing); open_s is how long the
+    newest run is older than ``now`` when that is over the limit (None without ``now``). Runs after ``now`` are
+    left out. No clock time: only the spacing of the runs themselves."""
+    ts = sorted(t for t in times if now is None or t <= now)
+    spacing = usual_spacing(ts)
+    lim = limit if limit is not None else (GAP_SPACINGS * spacing if spacing else None)
+    out = {"spacing_s": spacing, "limit_s": lim, "gaps": [], "open_s": None}
+    if not lim or not ts:
+        return out
+    out["gaps"] = [{"from": _iso(a), "to": _iso(b), "s": b - a} for a, b in zip(ts, ts[1:]) if b - a > lim]
+    if now is not None and now - ts[-1] > lim:
+        out["open_s"] = now - ts[-1]
+    return out
+
+
 def _day(r: dict, tz: Optional[tzinfo]) -> date:
     return datetime.fromtimestamp(_at(r), tz).date()
 
 
 def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Optional[date] = None,
-          tz: Optional[tzinfo] = None, ignore: Iterable = (), target: float = TARGET, skipped: int = 0) -> dict:
+          tz: Optional[tzinfo] = None, ignore: Iterable = (), target: float = TARGET, skipped: int = 0,
+          now: Optional[float] = None, gap_limit: Optional[float] = None) -> dict:
     """The uptime audit of ``rows`` over the ``days`` local days ending ``today`` (default: the newest row's
     day). T0 counts per input (fresh, stale, unknown days) and per day. See the module doc."""
     good, bad = [], int(skipped or 0)
@@ -173,6 +215,7 @@ def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Opt
             out["known_days"] += 1
             out["all_fresh_days"] += int(not stale)
     out["inputs"] = per
+    out["loop"] = loop_gaps([_at(r) for d in window for r in by_day[d]], gap_limit, now)
     out["target"] = target
     out["all_fresh_share"] = out["all_fresh_days"] / len(window) if window else None
     out["goal"] = _goal(out)
