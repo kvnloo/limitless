@@ -1,7 +1,8 @@
 """The synthetic "push recovery" rows in docs/doctor.md: python3 -I scripts/push_recovery_example.py
 
 A made-up state dir in a temp dir, walked through one push outage's recovery stage by stage: synthetic
-kevin-push log rows (made-up titles), a refused reply in the sender ingest's mark, a made-up sender reply in
+kevin-push log rows (made-up titles), a refused reply in the sender ingest's mark (then one applied on an unknown
+readiness answer), a made-up sender reply in
 push-sender.json, a made-up sender confirmation
 mark and outage recap mark, at a fixed made-up clock. Each stage prints the doctor's real row
 (doctor.push_recovery_row). Reads no real state, writes nothing outside the temp dir, sends nothing, runs no
@@ -56,6 +57,10 @@ with tempfile.TemporaryDirectory() as tmp:
     show("the reply set the sender; the next pass sends the confirmation", outage)
     show("Sleep mode held the confirmation", outage + [confirmation("held (sleep mode)")])
     show("the confirmation failed to send", outage + [confirmation("log (telegram rc=1)")])
+    sender_reply.write_mark(st, {"action": sender_reply.WRITE, "applied_unknown": True})
+    show("the same, but the reply was applied on an unknown readiness answer (a secret source)",
+         outage + [confirmation("log (telegram rc=1)")])
+    sender_reply.write_mark(st, {"action": sender_reply.WRITE})
     back = outage + [confirmation("telegram")]
     show("the confirmation was delivered; the recap waits a pass", back)
     show("the same, config outage_recap off", back, dict(cfg, outage_recap="off"))

@@ -9,7 +9,10 @@ confirmation (sender_confirm_job) and the once-per-outage recap (outage_recap_jo
 
 Plus: a reply naming a profile that does not exist changes nothing and sends nothing; a reply naming a profile
 that exists but has no Telegram bot is refused the same way, and a good reply after it still completes the
-recovery; and Sleep mode on holds the confirmation while the recap still waits.
+recovery; a reply naming a profile whose readiness is unknown (a secret source) is applied, its confirmation
+fails, the doctor row and the card say the profile may have no Telegram bot, and a good reply still completes the
+recovery (held by Sleep mode instead, the row keeps its held words); and Sleep mode on holds the confirmation while
+the recap still waits.
 
 Synthetic state dir, config, Hermes session DB (tests/hermes_db_fixture.py) and Hermes profile tree (made-up
 profile names, a token placeholder) in a temp dir. kevin-push is a fake on PATH: it appends its argv to a file
@@ -45,6 +48,9 @@ GOOD = "sender-synth"          # the profile the owner's reply names; it exists 
 GONE = "sender-gone"           # config push_profile: removed, so every push fails before it reaches hermes
 NOWHERE = "sender-nowhere"     # a reply naming a profile that does not exist
 BOTLESS = "sender-botless"     # a reply naming a profile that exists but has no Telegram bot token
+VAULT = "sender-vault"         # a profile whose token may sit in a secret source (readiness unknown); it has none
+NO_BOT_LINE = (push_reach.PREFIX + "the profile you named was set but could not send, so it may have no Telegram bot; "
+               "reply push via another profile")
 PUSH_LOG = "push-log.jsonl"
 OUTAGE_LINE = push_reach.PREFIX + push_reach.SENDER_MISSING
 RECAP_WAITS = f"Outage recap: hold: {recap_job.EVENT}; waits for the next pass: {confirm_job.RECAP_WAITS}"
@@ -53,9 +59,11 @@ RECAP_OPEN = f"Outage recap: {jobs.NOT_TRIGGERED}: {recap_job.OPEN_REASON}"
 # outage recap's once key, which is "outage_recap:<epoch>" by design.
 MARKS = {sender_reply.MARK: {"row_at", "ran_at", "after", "refused_at"}, push_sender.REPLY_FILE: {"at"},
          confirm_job.MARK: {"reply_at", "ran_at"}, recap_job.MARK: {"at"}}
+FLAGS = {sender_reply.MARK: {"applied_unknown"}}   # the only booleans a mark may hold, and only as true
 
 # kevin-push stand-in: records argv (and KEVIN_PUSH_STRICT), then decides in kevin-push's own order: Sleep mode
-# holds; else push_sender.check BROKEN logs "log (no sender profile)" and starts nothing; else a delivery
+# holds; else push_sender.check BROKEN logs "log (no sender profile)" and starts nothing; else a profile whose
+# files readiness does not call ready fails the way hermes would ("log (telegram rc=1)"); else a delivery
 # ("telegram"). It logs one kevin-push-style row and exits 3 under STRICT for anything but a delivery. It never
 # sends and keeps no once keys, so a repeated call is never hidden. $FAKE_PUSH_AT dates a seeded row.
 FAKE_KEVIN_PUSH = """#!{py}
@@ -84,6 +92,8 @@ if asleep:
     how, shown = "held (sleep mode)", body
 elif push_sender.check(config()) == push_sender.BROKEN:
     how = push_sender.NO_SENDER_HOW
+elif push_sender.readiness(config()) != push_sender.READY:
+    how = "log (telegram rc=1)"
 else:
     how = "telegram"
 at = int(float(os.environ.get("FAKE_PUSH_AT") or time.time()))
@@ -113,6 +123,8 @@ class Recovery(unittest.TestCase):
         (prof / ".env").write_text("TELEGRAM_BOT_TOKEN=placeholder-token-not-real\n"
                                    "TELEGRAM_HOME_CHANNEL=placeholder-chat\n")
         (self.hermes / "profiles" / BOTLESS).mkdir()
+        (self.hermes / "profiles" / VAULT).mkdir()
+        (self.hermes / "profiles" / VAULT / "config.yaml").write_text("secrets:\n  vault:\n    kind: placeholder\n")
         self.db = self.st / "hermes.db"
         make_db(self.db, [], started=self.t0 - 6 * H)
         self.bin = self.dir / "bin"
@@ -195,7 +207,10 @@ class Recovery(unittest.TestCase):
         self.assertIn(name, MARKS, f"an unexpected file was written: {name}")
         data = self.mark(name)
         for k, v in data.items():
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
+            if isinstance(v, bool):
+                self.assertIn(k, FLAGS.get(name, ()), (name, k))
+                self.assertIs(v, True, (name, k))
+            elif isinstance(v, (int, float)):
                 self.assertIn(k, MARKS[name], (name, k))
             elif isinstance(v, str):
                 if name == recap_job.MARK and k == "key":
@@ -347,6 +362,64 @@ class Recovery(unittest.TestCase):
         self.assertEqual([c["argv"][1] for c in calls], [outage_recap.TITLE])
         self.assertEqual(self.recovery(), (doctor.LIVE, "pushes are back; recap sent"))
         self.assertEqual([c["argv"][1] for c in self.calls_made()], [confirm_job.TITLE_SENT, outage_recap.TITLE])
+
+    def test_an_unknown_profile_that_cannot_send_says_it_may_have_no_bot_then_a_good_reply_recovers(self):
+        no_bot = ("pushes are failing; the profile you named was set but could not send, so it may have no "
+                  "Telegram bot; reply push via another profile")
+        self.run_pass()
+        self.owner_says(f"push via {VAULT}", self.t0 - 300)
+        self.sync(self.t0 - 280)
+
+        # applied (readiness was unknown, not a no); the one confirmation goes out through it and fails
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertCall(calls[0], confirm_job.TITLE_SENT, f"sender_confirm:{int(self.t0 - 300)}")
+        self.assertEqual(changed, sorted([sender_reply.MARK, push_sender.REPLY_FILE, confirm_job.MARK]))
+        self.assertEqual(self.mark(push_sender.REPLY_FILE), {"profile": VAULT, "at": self.t0 - 300})
+        self.assertIs(self.mark(sender_reply.MARK)["applied_unknown"], True)
+        self.assertEqual(self.mark(confirm_job.MARK)["outcome"], confirm_job.FAILED)
+        self.assertEqual([(r["title"], r["how"]) for r in rows], [(confirm_job.TITLE_SENT, "log (telegram rc=1)")])
+        self.assertEqual(lines["Sender ingest"],
+                         "Sender ingest: run: a sync ran; set the sender profile from your reply")
+        self.assertIn(confirm_job.NOT_REACHED, lines["Sender confirm"])
+        self.assertEqual(lines["Outage recap"], RECAP_OPEN)
+        # the doctor row and the card both say the named profile may have no bot, never its name
+        self.assertEqual(self.recovery(), (doctor.MISSING, no_bot))
+        text = self.card_text()
+        self.assertIn(NO_BOT_LINE, text)
+        self.assertNotIn(VAULT, text)
+        self.assertEqual(self.delivery()["value"], NO_BOT_LINE)
+
+        # the next pass tries the confirmation again and it fails again: the words stay
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual([c["argv"][1] for c in calls], [confirm_job.TITLE_SENT])
+        self.assertEqual(self.recovery(), (doctor.MISSING, no_bot))
+
+        # a good reply: the flag is dropped, the confirmation is delivered, then the recap, and the outage is over
+        self.owner_says(f"push via {GOOD}", self.t0 - 150)
+        self.sync(self.t0 - 120)
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual([c["argv"][1] for c in calls], [confirm_job.TITLE_SENT])
+        self.assertEqual(self.mark(push_sender.REPLY_FILE), {"profile": GOOD, "at": self.t0 - 150})
+        self.assertNotIn("applied_unknown", self.mark(sender_reply.MARK))
+        self.assertEqual([r["how"] for r in rows], ["telegram"])
+        self.assertEqual(self.recovery(), (doctor.STALE, "pushes are back; the recap waits for the next pass"))
+        self.assertOutageShown(False)
+        self.assertNotIn(NO_BOT_LINE, self.card_text())
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual([c["argv"][1] for c in calls], [outage_recap.TITLE])
+        self.assertEqual(self.recovery(), (doctor.LIVE, "pushes are back; recap sent"))
+
+    def test_an_unknown_profile_held_by_sleep_mode_keeps_the_held_words(self):
+        self.sleep_mode(True, self.t0 - 4 * H)
+        self.owner_says(f"push via {VAULT}", self.t0 - 150)
+        self.sync(self.t0 - 120)
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual([r["how"] for r in rows], ["held (sleep mode)"])
+        self.assertIs(self.mark(sender_reply.MARK)["applied_unknown"], True)
+        self.assertEqual(self.recovery(), (doctor.STALE, "sender set from your reply; the confirmation has not been "
+                                                         "delivered yet (held while Sleep mode was on)"))
+        self.assertNotIn(NO_BOT_LINE, self.card_text())
 
     def test_sleep_mode_holds_the_confirmation_and_the_recap_still_waits(self):
         confirm_key = f"sender_confirm:{int(self.t0 - 150)}"

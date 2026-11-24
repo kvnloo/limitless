@@ -13,7 +13,9 @@ push_sender.check says that profile exists and push_sender.readiness does not sa
 no chat for kevin-push's target (files only; an unknown still applies). Write mode writes ``push-sender.json``; dry
 run writes only the mark. Then it writes the mark ``push-sender-ingest.json`` (sender_reply.MARK: epochs and words
 only, atomic, 0600), whose ``refused_at`` keeps the newest refused reply until a later one is applied: while the
-push outage is open, ``refusal_words`` says so for the doctor's row (push_recovery.REFUSED).
+push outage is open, ``refusal_words`` says so for the doctor's row (push_recovery.REFUSED), and whose
+``applied_unknown`` (a boolean, kept only while true) records that the applied reply's readiness was an unknown:
+if its confirmation then fails to send, push_recovery.UNKNOWN_FAILED says the profile may have no Telegram bot.
 
 Reasons are words only: never the profile name, a message or a digit. When ``$KEVIN_PUSH_PROFILE`` is set in the
 env the job sees, the row says that it still wins (push_sender.profile's order). Nothing is pushed or logged as
@@ -51,8 +53,9 @@ def run_ingest(state_dir, db, row_at: Optional[float], now: float, mode: str,
     """Read the owner's messages after the mark from ``db`` (read-only), run sender_reply.ingest (writing
     push-sender.json only in write mode; ``cfg`` gives kevin-push's target for the readiness gate) and record the
     pass in the mark: the runs.jsonl row it acted on (``row_at``), this pass (``ran_at``), the mode, the action
-    word, ``after`` (moved only by a write pass that read messages; else kept) and ``refused_at`` (set by a
-    refusal, cleared by an applied reply, else kept). Returns (mark, ingest result). Sends nothing."""
+    word, ``after`` (moved only by a write pass that read messages; else kept), ``refused_at`` (set by a
+    refusal, cleared by an applied reply, else kept) and ``applied_unknown`` (set by a write of a reply whose
+    readiness was unknown, cleared by any other write, else kept). Returns (mark, ingest result). Sends nothing."""
     replies = _habit_replies.replies_from_hermes_db(db, _sr.read_after(state_dir, now))
     got = _sr.ingest(state_dir, replies, now, write=mode == jobs.SENDER_WRITE, env=env, cfg=cfg)
     after = got["after"] if got["after"] is not None else _sr.load_mark(state_dir).get("after")
@@ -62,8 +65,10 @@ def run_ingest(state_dir, db, row_at: Optional[float], now: float, mode: str,
         refused = None
     else:
         refused = _sr.refused_at(state_dir)
+    # only a write changes push-sender.json, so only a write moves applied_unknown; a dry run or a refusal keeps it
+    unknown = bool(got.get("applied_unknown")) if got["action"] == _sr.WRITE else _sr.applied_unknown(state_dir)
     mark = {"row_at": row_at, "ran_at": now, "mode": mode, "action": got["action"], "after": after,
-            "refused_at": refused}
+            "refused_at": refused, "applied_unknown": unknown}
     _sr.write_mark(state_dir, mark)
     return mark, got
 

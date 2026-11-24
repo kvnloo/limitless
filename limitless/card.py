@@ -34,8 +34,9 @@ Sleep debt (tools.sleep_debt over the wearable sleep file and the phone proxy; s
 words on a line of their own right under the sleep and readiness line: "some sleep debt", "a lot of sleep debt
 (phone estimate)", ...; nothing when it is unknown (too few nights). Only a sleep_debt.KNOWN_LABELS word is used;
 the card never shows the minutes, not even under the raw opt-in (limitless_sleep_debt has them).
-When phone pushes cannot reach the person (push_reach: kevin-push's sender profile is missing, or the last
-pushes failed to send per the delivery audit of config ``push_log``) the card says so in words on a line of its
+When phone pushes cannot reach the person (push_reach: kevin-push's sender profile is missing, the profile the
+owner's reply named was set but could not send (push_recovery.UNKNOWN_FAILED), or the last pushes failed to send
+per the delivery audit of config ``push_log``) the card says so in words on a line of its
 own, "Phone pushes are not reaching you: <reason>", after the MAX_LINES cap (so a full card never cuts it) and
 before the palace and explain-back offers; nothing when the sender is set and the last push was delivered, or
 when neither can be told. The hook caches it with the card: per turn only stats (the config file, the profile
