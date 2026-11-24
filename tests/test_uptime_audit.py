@@ -152,5 +152,81 @@ class Audit(unittest.TestCase):
         self.assertEqual(a["all_fresh_share"], 0.5)
 
 
+def month(stale_by_day, known=range(28)):
+    """28 days, one run each on the ``known`` days (days ago), listing stale_by_day(n) as stale."""
+    return [run(n, inputs="stale " + ",".join(stale_by_day(n))) for n in known]
+
+
+class Label(unittest.TestCase):
+    def label(self, rows, inputs=("phoneApps", "whoop", "oura"), days=28, **kw):
+        a = ua.audit(rows, inputs=inputs, days=days, today=TODAY, tz=UTC, **kw)
+        lab = a["label"]
+        self.assertEqual((lab["tier"], lab["modality"]), ("T1", "measured"))
+        self.assertFalse(any(c.isdigit() for c in lab["label"]), lab["label"])
+        return a, lab["label"]
+
+    def test_the_brief_example(self):
+        a, words = self.label(month(lambda n: ["whoop", "oura"]))
+        self.assertEqual(words, "phone apps fresh every day; whoop and oura stale all month; uptime goal not met")
+        self.assertEqual(a["goal"], "not met")
+
+    def test_fewer_than_a_week_of_known_days_is_unknown(self):
+        rows = month(lambda n: [], known=range(6)) + [run(n) for n in range(6, 28)]
+        a, words = self.label(rows)
+        self.assertEqual(words, "unknown")
+        self.assertEqual(a["goal"], "unknown")
+        _, words = self.label(month(lambda n: [], known=range(7)))
+        self.assertNotEqual(words, "unknown")
+
+    def test_goal_met_needs_the_target_share_of_the_whole_window(self):
+        a, words = self.label(month(lambda n: ["whoop"] if n == 0 else []))      # one stale day of the month
+        self.assertEqual(a["goal"], "met")
+        self.assertTrue(words.endswith("; uptime goal met"), words)
+        self.assertIn("whoop fresh most days", words)
+        a, _ = self.label(month(lambda n: ["whoop"] if n < 2 else []))           # two: under the share
+        self.assertEqual(a["goal"], "not met")
+        a, _ = self.label(month(lambda n: ["whoop"] if n < 2 else []), target=0.9)
+        self.assertEqual(a["goal"], "met")
+
+    def test_unknown_days_never_count_for_the_goal(self):
+        rows = month(lambda n: [], known=range(26)) + [run(26), run(27)]         # two old days: unknown
+        a, words = self.label(rows)
+        self.assertEqual(a["goal"], "unknown")
+        self.assertEqual(words, "phone apps, whoop and oura fresh every known day; "
+                                "uptime goal unknown: too many days without input words")
+        rows = month(lambda n: ["oura"] if n < 2 else [], known=range(26))        # two stale and two unknown
+        a, words = self.label(rows)
+        self.assertEqual(a["goal"], "not met")
+
+    def test_most_half_and_stale_most_days(self):
+        def stale(n):
+            return (["whoop"] if n % 4 == 0 else []) + (["oura"] if n % 4 else []) + (["phoneApps"] if n % 2 else [])
+        _, words = self.label(month(stale))
+        self.assertEqual(words, "whoop fresh most days; phone apps fresh about half the days; oura stale most days; "
+                                "uptime goal not met")
+
+    def test_the_span_word_follows_the_window(self):
+        _, words = self.label(month(lambda n: ["whoop"], known=range(7)), inputs=["whoop"], days=7)
+        self.assertEqual(words, "whoop stale all week; uptime goal not met")
+        _, words = self.label(month(lambda n: ["whoop"], known=range(14)), inputs=["whoop"], days=14)
+        self.assertEqual(words, "whoop stale every day; uptime goal not met")
+        _, words = self.label(month(lambda n: ["whoop"], known=range(20)), inputs=["whoop"])
+        self.assertEqual(words, "whoop stale every known day; uptime goal not met")
+
+    def test_camel_case_and_digits_in_names_become_words(self):
+        _, words = self.label(month(lambda n: ["desktopAW", "sensor2", "ownerMessages"]),
+                              inputs=["phoneUnlocks"])
+        self.assertEqual(words, "phone unlocks fresh every day; desktop AW, owner messages and sensor a number "
+                                "stale all month; uptime goal not met")
+
+    def test_ignored_inputs_are_not_named(self):
+        _, words = self.label(month(lambda n: ["desktopAW"]), inputs=["phoneApps"], ignore=["desktopAW"])
+        self.assertEqual(words, "phone apps fresh every day; uptime goal met")
+
+    def test_no_input_named_at_all(self):
+        _, words = self.label(month(lambda n: []), inputs=())
+        self.assertEqual(words, "no input was reported stale; uptime goal met")
+
+
 if __name__ == "__main__":
     unittest.main()

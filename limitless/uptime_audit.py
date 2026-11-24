@@ -40,6 +40,17 @@ TARGET = 0.95
 DAYS_CONFIG, TARGET_CONFIG = "uptime_days", "uptime_target"
 LOG_NAME = "runs.jsonl"
 STALE_WORD = "stale"
+MODALITY = "measured"            # runs.jsonl is the sync's own record of each run
+MIN_KNOWN_DAYS = 7               # fewer known days than this: the label is UNKNOWN
+UNKNOWN = "unknown"
+FRESH_ALL, FRESH_KNOWN, FRESH_MOST = "fresh every day", "fresh every known day", "fresh most days"
+FRESH_HALF, STALE_MOST, STALE_KNOWN = "fresh about half the days", "stale most days", "stale every known day"
+PHRASES = (FRESH_ALL, FRESH_KNOWN, FRESH_MOST, FRESH_HALF, STALE_MOST, STALE_KNOWN,
+           "stale all week", "stale all month", "stale every day")       # the label's order, best first
+NONE_NAMED = "no input was reported stale"
+GOAL_MET, GOAL_NOT_MET, GOAL_UNKNOWN = "met", "not met", "unknown"
+GOAL_WORDS = {GOAL_MET: "uptime goal met", GOAL_NOT_MET: "uptime goal not met",
+              GOAL_UNKNOWN: "uptime goal unknown: too many days without input words"}
 
 
 def _at(r) -> Optional[float]:
@@ -139,11 +150,12 @@ def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Opt
             by_day[d].append(r)
     skip = {x for x in ignore or () if isinstance(x, str)}
     said = {d: [s for s in (stale_names(r) for r in got) if s is not None] for d, got in by_day.items()}
-    names = {x for x in inputs or () if isinstance(x, str) and x}
+    given = list(dict.fromkeys(x for x in inputs or () if isinstance(x, str) and x))
+    seen = set()
     for runs in said.values():
         for s in runs:
-            names |= s
-    names = sorted(names - skip)
+            seen |= s
+    names = [x for x in given + sorted(seen - set(given)) if x not in skip]   # the caller's order, then the rest
     per = {name: {"fresh": 0, "stale": 0, "unknown": 0} for name in names}
     out = {"days": [], "window_days": len(window), "known_days": 0, "all_fresh_days": 0, "skipped": bad}
     for d in window:
@@ -160,4 +172,61 @@ def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Opt
     out["inputs"] = per
     out["target"] = target
     out["all_fresh_share"] = out["all_fresh_days"] / len(window) if window else None
+    out["goal"] = _goal(out)
+    out["label"] = {"label": _words(out), "tier": "T1", "modality": MODALITY}
     return out
+
+
+# --- words (T1, no digit); the counts behind them stay T0 in the dict ----------------------------------------
+
+def needed_days(n_days: int, share: float) -> int:
+    """Whole days of ``n_days`` that are every-input-fresh at the ``share`` target (rounded up)."""
+    return math.ceil(n_days * share - 1e-9)
+
+
+def _goal(out: dict) -> str:
+    """"met" when enough window days were every-input-fresh; "not met" when even every unknown day being fresh
+    would not reach it; else "unknown". Fewer than MIN_KNOWN_DAYS known days is "unknown"."""
+    n = out["window_days"]
+    if not n or out["known_days"] < MIN_KNOWN_DAYS:
+        return GOAL_UNKNOWN
+    need = needed_days(n, out["target"])
+    if out["all_fresh_days"] >= need:
+        return GOAL_MET
+    if out["all_fresh_days"] + (n - out["known_days"]) < need:
+        return GOAL_NOT_MET
+    return GOAL_UNKNOWN
+
+
+def _span(n_days: int) -> str:
+    return "all week" if n_days == 7 else "all month" if 28 <= n_days <= 31 else "every day"
+
+
+def phrase(c: Mapping, n_days: int) -> str:
+    """One input's days in words: fresh every day ... stale all month (see PHRASES)."""
+    f, s = c["fresh"], c["stale"]
+    k = f + s
+    if f == k:
+        return FRESH_ALL if k == n_days else FRESH_KNOWN
+    if s == k:
+        return "stale " + _span(n_days) if k == n_days else STALE_KNOWN
+    if f * 2 > k:
+        return FRESH_MOST
+    return STALE_MOST if s * 2 > k else FRESH_HALF
+
+
+def _and(parts: list) -> str:
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _words(out: dict) -> str:
+    if out["known_days"] < MIN_KNOWN_DAYS:
+        return UNKNOWN
+    from .outage import name_words   # lazily: outage reads tools, which reads this module
+    n = out["window_days"]
+    groups = {}
+    for name, c in out["inputs"].items():
+        groups.setdefault(phrase(c, n), []).append(name_words(name))
+    order = PHRASES + tuple(p for p in groups if p not in PHRASES)
+    parts = [f"{_and(groups[p])} {p}" for p in order if p in groups] or [NONE_NAMED]
+    return "; ".join(parts + [GOAL_WORDS[out["goal"]]])
