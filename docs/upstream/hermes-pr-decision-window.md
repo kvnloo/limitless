@@ -44,6 +44,12 @@ Hermes ships no provider and reads no clock for this. Which window is open is th
 The core part is two fields, a pure `gate()` and one tick step next to
 `cron/scheduler_gateway_gate.py`.
 
+**A consumer exists.** The public MIT plugin Limitless registers a provider
+when the host has `register_window_provider` (`limitless/window_provider.py`): its `current(now)`
+maps the plugin's event-based window (waking up, the last unlock, a focus block, a wind-down
+event) to `peak`, `trough`, `wind_down` or `anytime`, and returns `None` while the person is
+asleep or in a focus block. On a host without the hook it registers nothing.
+
 **Users who never register a window provider: nothing changes.** No existing job has these
 fields, so the tick returns the due list untouched and never resolves a provider. If a job sets
 `window_class` with no provider, the built-in `ALWAYS_ANYTIME` opens every window and the job
@@ -58,6 +64,9 @@ https://github.com/NousResearch/hermes-agent/issues/158538#issuecomment-70865160
 That comment asked: catalog plugin, or a small core patch with the provider as a plugin hook?
 This PR is the core-patch shape. It also asked whether a hold should queue the message. Here it
 does not: the due instant stays put and a later tick fires it.
+
+Search for duplicates: open and closed PRs and issues for "decision window", "window_class cron",
+"register_window_provider", "cron quiet hours" and "cron defer job" find only #158538.
 
 ## Type of Change
 
@@ -103,7 +112,7 @@ does not: the due instant stays put and a later tick fires it.
 
 - [ ] I've read the Contributing Guide
 - [x] My commit messages follow Conventional Commits
-- [ ] I searched for existing PRs to make sure this isn't a duplicate
+- [x] I searched for existing PRs to make sure this isn't a duplicate
 - [x] My PR contains **only** changes related to this feature
 - [ ] I've run `just test` on the tests for the code I changed, and they pass
 - [ ] `just check` passes
