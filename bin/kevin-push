@@ -28,6 +28,9 @@ A message Sleep mode holds goes to held.jsonl for the 'Back from nap' message on
 line), are one message; the newest copy replaces the older one, rows stay in order of their newest hold, and
 the file is replaced whole (mode 0600). Every hold still writes its own log row ("held (sleep mode)"), so
 the delivery audit sees each attempt. held.rows() is the reader: it lists each held message once.
+A delivery runs `hermes -p <profile> send --to <target>` (limitless/push_sender.py): the profile is
+$KEVIN_PUSH_PROFILE, else config push_profile, else "intake"; the target is $KEVIN_PUSH_TO, else config push_to,
+else "telegram:kevin". limitless-doctor's "push sender" row says whether that profile can exist.
 """
 import json
 import os
@@ -41,6 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from limitless import held  # noqa: E402
 from limitless import message_shape  # noqa: E402
+from limitless import push_sender  # noqa: E402
 from limitless import quiet as q  # noqa: E402
 from limitless import send_gate as g  # noqa: E402
 from limitless import tier_audit  # noqa: E402
@@ -62,8 +66,6 @@ def state_dir():
 
 
 SLEEPMODE = Path(os.environ.get("LIMITLESS_SLEEPMODE", state_dir() / "sleepmode.jsonl"))
-PUSH_PROFILE = os.environ.get("KEVIN_PUSH_PROFILE", "intake")      # Hermes profile that owns the Telegram bot
-PUSH_TO = os.environ.get("KEVIN_PUSH_TO", "telegram:kevin")        # contact alias, not a chat id
 HOW = {"log": "log", "fold": "folded (brief line)", "hold": "held (sleep mode)",
        "duplicate": "log (duplicate)", "cap": "log (daily cap)", "drop": "log (dropped)"}
 USAGE = "usage: kevin-push [--once KEY] [--why REASON] <tag> <title> <body>"
@@ -137,12 +139,15 @@ def main(argv):
     elif verdict == "send":
         reason = why if why is not None else os.environ.get("KEVIN_PUSH_WHY", "")
         text = g.outgoing(body, g.why_line(reason if reason.strip() else g.why_reason(cls, title)))
-        text, folded, cut = message_shape.fit(title, text, message_shape.limits(config()))
+        cfg = config()
+        text, folded, cut = message_shape.fit(title, text, message_shape.limits(cfg))
         if folded or cut:
             tier_audit.record(tier_audit.shape_event(folded, cut, now))   # counts only, never the text
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
             f.write(text)
-        r = subprocess.run(["hermes", "-p", PUSH_PROFILE, "send", "--to", PUSH_TO, "--subject", title,
+        # the Hermes profile that owns the Telegram bot and the contact alias (not a chat id): env > config > default
+        r = subprocess.run(["hermes", "-p", push_sender.profile(cfg), "send", "--to", push_sender.target(cfg),
+                            "--subject", title,
                             "--file", f.name, "-q"], capture_output=True, text=True, timeout=60)
         os.unlink(f.name)
         how = "telegram" if r.returncode == 0 else f"log (telegram rc={r.returncode})"
