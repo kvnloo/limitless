@@ -55,3 +55,4 @@ What limitless does with each field (`limitless/glide_provider.py`, `wind_down_e
 - Malformed key: not an object, `started` not a finite number or after `now`, or `ended` before
   `started`. limitless ignores it and answers exactly as if it were absent.
 - No key (older Glide): the `resume.saved` path with the same cap, unchanged.
+- Whether this file is wired in at all: `limitless-doctor`'s `glide source` row (`glide_provider.source_status`) says `not configured`, `file missing`, `unreadable`, `older Glide (no wind-down event key)`, or `ok:` with the wind-down or focus block state ([doctor.md](doctor.md)).

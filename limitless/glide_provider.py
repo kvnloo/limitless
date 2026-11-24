@@ -21,6 +21,9 @@ This module only reads it. The mapping, from Glide's own events:
   ``wind_down_max_s`` -> ``wind_down``, since ``wind_down``;
 - anything else (no file, bad JSON, wrong shape, block over, old or future nudge) -> unknown.
 
+``source_status(env, home, now)`` says in words whether that file is wired in (the doctor's ``glide source``
+row): one of SOURCE_STATUSES, never raising.
+
 Staleness is the file's own timestamps against the ``now`` the caller passes in. This module
 never reads the clock and has no time of day in it; without ``now`` the window is unknown.
 Stdlib only, Python 3.9+.
@@ -43,6 +46,13 @@ WIND_DOWN_KEY = "wind_down"
 BY = ("nudge", "manual")   # wind_down.by as Glide writes it; anything else reads as BY_UNKNOWN
 BY_UNKNOWN = "unknown"
 SOURCE = "glide"
+
+NOT_CONFIGURED, FILE_MISSING, UNREADABLE = "not configured", "file missing", "unreadable"
+OLDER_GLIDE = "older Glide (no wind-down event key)"
+WD_OPEN, WD_ENDED, NO_WIND_DOWN = "ok: wind-down open", "ok: wind-down ended", "ok: no wind-down yet"
+FOCUS_RUNNING = "ok: focus block running"
+SOURCE_STATUSES = (NOT_CONFIGURED, FILE_MISSING, UNREADABLE, OLDER_GLIDE, WD_OPEN, WD_ENDED, NO_WIND_DOWN,
+                   FOCUS_RUNNING)
 
 Now = Union[float, int, Callable[[], float], None]
 
@@ -76,12 +86,18 @@ def wind_down_event(data, now) -> Optional[dict]:
     return {"started": started, "ended": ended, "by": by if isinstance(by, str) and by in BY else BY_UNKNOWN}
 
 
+def attention_path(env: Mapping[str, str], cfg: Mapping) -> Optional[str]:
+    """$LIMITLESS_GLIDE_ATTENTION, else ``glide_attention`` in ``cfg``; None when neither is a non-empty string."""
+    path = env.get(ENV_KEY) or cfg.get(CONFIG_KEY)
+    return path if isinstance(path, str) and path else None
+
+
 def attention(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[dict]:
     """Glide's attention.json as a dict (path as GlideProvider.from_config), or None when it is not
     configured, unreadable or not an object. Read-only; wind_down.line reads its ``nudged`` night."""
     env = os.environ if env is None else env
-    path = env.get(ENV_KEY) or config(env, home).get(CONFIG_KEY)
-    if not isinstance(path, str) or not path:
+    path = attention_path(env, config(env, home))
+    if path is None:
         return None
     try:
         with open(path, encoding="utf-8") as f:
@@ -89,6 +105,60 @@ def attention(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = No
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def path_status(path, now) -> str:
+    """One of SOURCE_STATUSES for the attention file at ``path`` at ``now``, the way GlideProvider reads it: a
+    running block first, then the ``wind_down`` key (open until ``ended`` or WIND_DOWN_MAX_S after ``started``;
+    a malformed key reads as absent, i.e. older Glide; ``null`` is no wind-down yet). Without a numeric ``now``
+    no block counts and an event is open until it has an ``ended``. Never raises; read-only; no clock."""
+    try:
+        return _path_status(path, now)
+    except Exception:  # noqa: BLE001 - a status in words, never a traceback
+        return UNREADABLE
+
+
+def _path_status(path, now) -> str:
+    if not isinstance(path, str) or not path:
+        return NOT_CONFIGURED
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return FILE_MISSING
+    except (OSError, ValueError):
+        return UNREADABLE
+    if not isinstance(data, dict):
+        return UNREADABLE
+    now = _finite(now)
+    block = data.get("block")
+    if now is not None and isinstance(block, dict):
+        start, end = _num(block.get("start")), _num(block.get("end"))
+        if start is not None and end is not None and start <= now < end:
+            return FOCUS_RUNNING
+    if WIND_DOWN_KEY not in data:
+        return OLDER_GLIDE
+    raw = data[WIND_DOWN_KEY]
+    if raw is None:
+        return NO_WIND_DOWN
+    at = now if now is not None else _finite(raw.get("started")) if isinstance(raw, dict) else None
+    ev = wind_down_event(data, at)
+    if ev is None:
+        return OLDER_GLIDE
+    if now is None:
+        return WD_OPEN if ev["ended"] is None else WD_ENDED
+    is_open = (ev["ended"] is None or now < ev["ended"]) and now - ev["started"] <= WIND_DOWN_MAX_S
+    return WD_OPEN if is_open else WD_ENDED
+
+
+def source_status(env: Optional[Mapping[str, str]], home: Optional[Path], now) -> str:
+    """Whether Glide's attention file is wired in, in words (one of SOURCE_STATUSES): the path as
+    GlideProvider.from_config finds it (env first, then config), then path_status at ``now``. Never raises."""
+    try:
+        env = os.environ if env is None else env
+        return path_status(attention_path(env, config(env, home)), now)
+    except Exception:  # noqa: BLE001 - a status in words, never a traceback
+        return UNREADABLE
 
 
 def _unknown() -> WindowState:
@@ -108,8 +178,8 @@ class GlideProvider:
                     now: Now = None, **kw) -> Optional["GlideProvider"]:
         """Path from $LIMITLESS_GLIDE_ATTENTION, else ``glide_attention`` in config.json; None if neither."""
         env = os.environ if env is None else env
-        path = env.get(ENV_KEY) or config(env, home).get(CONFIG_KEY)
-        return cls(path, now=now, **kw) if isinstance(path, str) and path else None
+        path = attention_path(env, config(env, home))
+        return cls(path, now=now, **kw) if path is not None else None
 
     def _read_now(self) -> Optional[float]:
         now = self._now() if callable(self._now) else self._now
