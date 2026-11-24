@@ -3,6 +3,7 @@
 
     limitless-ranked add <id> <open|built|verified> [--evidence TEXT] [--write]
     limitless-ranked list [--raw]
+    limitless-ranked ingest [--db PATH] [--write]
 
 add appends one row {"id", "status", "by": "agent", "evidence"} to the private ranked ledger
 ($LIMITLESS_RANKED_LEDGER, else "ranked_ledger" in $LIMITLESS_CONFIG; a relative path is in the state dir).
@@ -12,16 +13,24 @@ run. Append-only: mode 0600, under an exclusive flock, one JSON object per line;
 ledger set it writes nothing and says so (exit 1 with --write).
 
 list prints row ten's label and each count as a share in words (all, most, some, few, none); --raw prints the
-counts as JSON instead. Output never names an id or evidence text. Nothing here sends.
+counts as JSON instead.
+
+ingest reads the owner's Telegram messages from the Hermes session DB (read-only; --db, else
+$LIMITLESS_HERMES_DB, else "hermes_db" in $LIMITLESS_CONFIG) after the mark ranked-drops.json in the state dir
+(with no mark, the last day only). Each whole message "drop: <id>[, <id>...]" appends {"id", "status":
+"dropped", "by": "owner", "evidence": "owner reply"} for every id the ledger already has; an unknown id is
+ignored and counted, and any other message does nothing. --write appends the rows and moves the mark (epoch
+seconds only, 0600); without it, a dry run. Output never names an id or evidence text. Nothing here sends.
 """
 import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import ranked_ledger, scorecard  # noqa: E402
+from limitless import habit_replies, ranked_ledger, scorecard  # noqa: E402
 from limitless.state_reader import config, state_dir  # noqa: E402
 
 
@@ -42,6 +51,9 @@ def _parser():
     a.add_argument("--write", action="store_true", help="append the row (default: dry run)")
     li = sub.add_parser("list", help="row ten's counts in words")
     li.add_argument("--raw", action="store_true", help="the counts as JSON")
+    ig = sub.add_parser("ingest", help="the owner's drop replies from the Hermes session DB (dry run unless --write)")
+    ig.add_argument("--db", help="the Hermes session DB (state.db)")
+    ig.add_argument("--write", action="store_true", help="append the drop rows and move the mark (default: dry run)")
     return ap
 
 
@@ -80,10 +92,28 @@ def _list(args, st, cfg) -> int:
     return 0
 
 
+def _ingest(args, st, cfg) -> int:
+    path = scorecard.ledger_path(st, cfg, os.environ)
+    if path is None:
+        print(f"limitless-ranked: {ranked_ledger.NO_LEDGER}: nothing read, nothing written")
+        return 0
+    db = habit_replies.hermes_db_path(st, arg=args.db)
+    if db is None:
+        print(f"limitless-ranked: no Hermes DB set (--db, {habit_replies.ENV_KEY} or config "
+              f"\"{habit_replies.CONFIG_KEY}\"): nothing read, nothing written")
+        return 0
+    now = time.time()
+    replies = habit_replies.replies_from_hermes_db(db, ranked_ledger.read_after(st, now))
+    got = ranked_ledger.ingest(st, path, replies, now, write=args.write)
+    for line in ranked_ledger.ingest_lines(got, args.write):
+        print(line)
+    return 0
+
+
 def main(argv):
     args = _parser().parse_args(argv[1:])
     st, cfg = state_dir(), config()
-    return {"add": _add, "list": _list}[args.cmd](args, st, cfg)
+    return {"add": _add, "list": _list, "ingest": _ingest}[args.cmd](args, st, cfg)
 
 
 if __name__ == "__main__":

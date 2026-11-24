@@ -134,3 +134,135 @@ def list_lines(label: str, counts: Optional[dict]) -> List[str]:
     if counts:
         out += [f"{words}: {scorecard.share_word(counts[k], counts['items'])}" for k, words in COUNT_WORDS]
     return out
+
+
+# --- owner drops by reply ---------------------------------------------------------------------------------
+
+MARK = "ranked-drops.json"
+FIRST_READ_S = 24 * 3600   # with no mark, a first run reads only the last day, so it never acts on an old message
+_DROP = re.compile(r"^drop\s*:(.*)$", re.IGNORECASE)
+WRITE, WOULD_WRITE, IGNORE, NOTHING = "write", "would write", "ignore", "nothing"
+_NUMBER_WORDS = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
+                 "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+                 "twenty")
+
+
+def count_words(n: int) -> str:
+    """A count as a word: no, one ... twenty, else "more than twenty". Never a digit."""
+    return _NUMBER_WORDS[n] if 0 <= n < len(_NUMBER_WORDS) else "more than twenty"
+
+
+def parse_drop(text) -> Optional[tuple]:
+    """The ids a whole message ``drop: <id>[, <id>...]`` names (any case for ``drop``, one line, ids comma
+    separated, trimmed, de-duplicated in order), or None for anything else: another word, a second line, an
+    empty item or an id that is not valid_id. None means the message does nothing."""
+    if not isinstance(text, str):
+        return None
+    s = text.strip()
+    if "\n" in s or "\r" in s:
+        return None
+    m = _DROP.match(s)
+    if m is None:
+        return None
+    ids = [p.strip() for p in m.group(1).split(",")]
+    if not ids or any(not valid_id(i) for i in ids):
+        return None
+    out = []
+    for i in ids:
+        if i not in out:
+            out.append(i)
+    return tuple(out)
+
+
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def load_mark(state_dir) -> Optional[float]:
+    """The mark's ``after`` (epoch seconds of the last owner message read), or None when missing or malformed."""
+    try:
+        data = json.loads((Path(state_dir) / MARK).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    v = data.get("after") if isinstance(data, dict) else None
+    return float(v) if _number(v) else None
+
+
+def write_mark(state_dir, after: float) -> None:
+    """``{"after": epoch}`` in the state dir, atomic (a temp file there, then a rename), mode 0600."""
+    d = Path(state_dir)
+    fd, tmp = tempfile.mkstemp(prefix="." + MARK + ".", suffix=".tmp", dir=str(d))
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"after": float(after)}) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, d / MARK)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_after(state_dir, now: float) -> float:
+    """Epoch seconds after which owner messages are read: the mark, else FIRST_READ_S before ``now``."""
+    after = load_mark(state_dir)
+    return after if after is not None else float(now) - FIRST_READ_S
+
+
+def _row(action: str, reason: str, drops: int = 0, unknown: int = 0, already: int = 0) -> dict:
+    return {"action": action, "reason": reason, "drops": drops, "unknown": unknown, "already": already}
+
+
+def ingest(state_dir, path, replies: Iterable[Tuple[float, str]], now: float, write: bool = False) -> dict:
+    """``{"rows", "appended", "mark"}``: one row per owner message after the mark (or one ``nothing`` row), in
+    words and counts, never an id. A drop message appends one owner drop row per id the ledger already has
+    (an unknown id is ignored and counted; an id the owner already dropped is counted and not appended again).
+    With ``write`` the rows are appended, then the mark moves to the newest message read; a dry run writes
+    nothing. ``mark`` is the epoch the mark is (or would be) set to, None when it stays."""
+    after = read_after(state_dir, now)
+    msgs = sorted(((float(t), x) for t, x in (replies or ()) if _number(t) and after < float(t) <= now),
+                  key=lambda r: r[0])
+    if not msgs:
+        return {"rows": [_row(NOTHING, "no new owner message: the ranked ledger stays as it is")], "appended": 0,
+                "mark": None}
+    known = newest(path)
+    rows, new, queued = [], [], set()
+    for _t, text in msgs:
+        ids = parse_drop(text)
+        if ids is None:
+            rows.append(_row(IGNORE, "not a drop reply: changes nothing"))
+            continue
+        drops = [i for i in ids if i in known and not owner_dropped(known[i]) and i not in queued]
+        unknown = sum(1 for i in ids if i not in known)
+        already = len(ids) - unknown - len(drops)
+        queued.update(drops)
+        new += [{"id": i, "status": DROPPED, "by": scorecard.OWNER, "evidence": DROP_EVIDENCE} for i in drops]
+        action = (WRITE if write else WOULD_WRITE) if drops else IGNORE
+        rows.append(_row(action, "a drop reply from the owner", len(drops), unknown, already))
+    mark = msgs[-1][0]
+    if write:
+        append(path, new)
+        write_mark(state_dir, mark)
+    return {"rows": rows, "appended": len(new) if write else 0, "mark": mark, "would_append": len(new)}
+
+
+def ingest_lines(got: dict, written: bool) -> List[str]:
+    """The CLI's lines for an ingest() result: one per message, then the total, then the dry-run note."""
+    out = []
+    for r in got["rows"]:
+        line = f"{r['action']}: {r['reason']}"
+        if r["reason"] == "a drop reply from the owner":
+            line += (f": {count_words(r['drops'])} to drop, {count_words(r['unknown'])} unknown ignored, "
+                     f"{count_words(r['already'])} already dropped")
+        out.append(line)
+    n = got.get("would_append", 0)
+    if got["mark"] is not None:
+        out.append(f"{'appended' if written else 'would append'} {count_words(n)} owner drop "
+                   f"row{'' if n == 1 else 's'}")
+    if not written:
+        out.append(f"dry run: nothing written (--write appends to the ranked ledger and moves {MARK})")
+    return out
