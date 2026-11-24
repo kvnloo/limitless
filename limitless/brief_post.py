@@ -5,7 +5,9 @@ yesterday's work (jobs_runner.brief_flow_ledger: "Yesterday's work: no long bloc
 yesterday's naps (jobs_runner.brief_naps: "Naps yesterday: one short nap (phone Sleep mode)") when known, and
 the input-outage line (jobs_runner.brief_outage: "Not recording: wearable (since about two days ago).") when an
 input stopped recording and was not yet told, then the apps-set line (jobs_runner.brief_apps_set: "Work and feed
-app lists set from your reply.") once after the apps ingest wrote the lists from a reply, and the app-lists ask
+app lists set from your reply.") once after the apps ingest wrote the lists from a reply, then the FIT import line
+(fit_ingest_job.brief_fit_rides: "Imported two bike rides from your CAROL exports.") once after its write passes
+added rides, and the app-lists ask
 (jobs_runner.brief_apps_ask: a prompt and the pre-filled "work apps: / feed apps:" reply) last, while both lists are
 unset and it was not told this week."""
 from __future__ import annotations
@@ -48,8 +50,9 @@ def saved_line(n) -> str | None:
 
 
 def finalize(text: str, asks: dict | None, now: float, saved: int = 0, overnight: str = "", naps: str = "",
-             work: str = "", outage: str = "", apps_ask: str = "", apps_set: str = "") -> str:
+             work: str = "", outage: str = "", apps_ask: str = "", apps_set: str = "", fit_rides: str = "") -> str:
     lines = [scrub(text)] + [ln for ln in (asks_line(asks, now), saved_line(saved), scrub(overnight or ""),
                                            scrub(work or ""), scrub(naps or ""), scrub(outage or ""),
-                                           scrub(apps_set or ""), scrub(apps_ask or "")) if ln]
+                                           scrub(apps_set or ""), scrub(fit_rides or ""),
+                                           scrub(apps_ask or "")) if ln]
     return "\n".join(lines)

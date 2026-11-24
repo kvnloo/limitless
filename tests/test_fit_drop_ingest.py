@@ -31,7 +31,7 @@ H = 3600
 NOW = datetime(2030, 1, 20, 9, 0, tzinfo=UTC).timestamp()
 JOB = "FIT import"
 CLI = ROOT / "bin" / "limitless-jobs"
-EPOCH_KEYS = {"row_at", "ran_at", "read_to"}
+EPOCH_KEYS = {"row_at", "ran_at", "read_to", "added_at"}
 
 FAKE_PUSH = """#!{py}
 import os, sys

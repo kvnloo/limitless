@@ -12,7 +12,10 @@ outage; send records the outage's start and marks it told only after a real deli
 config input_outage, outage_ignore, outage_hints), and one "Work and feed app lists set from your reply." line
 once after the apps ingest wrote the lists from a reply (jobs_runner.brief_apps_set: words only, never a name; send
 marks that write told in apps-set.json only after a real delivery, so a later reply is told again; build only
-previews; config apps_ingest "write"; the ask is left out of a brief that carries it), and, last, the app-lists ask
+previews; config apps_ingest "write"; the ask is left out of a brief that carries it), and one "Imported two bike
+rides from your CAROL exports." line once after the FIT import's write passes added rides
+(fit_ingest_job.brief_fit_rides: words only; send marks them told in fit-rides-told.json only after a real
+delivery; build only previews; config fit_ingest "write"), and, last, the app-lists ask
 while both lists are unset
 (jobs_runner.brief_apps_ask: a prompt and the pre-filled "work apps: / feed apps:" reply; send marks it told in
 apps-ask.json only after a real delivery, so it is asked at most once in seven days; build only previews; config
@@ -30,7 +33,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import bedtime, brief_post, jobs_runner, overnight  # noqa: E402
+from limitless import bedtime, brief_post, fit_ingest_job, jobs_runner, overnight  # noqa: E402
 from limitless.state_reader import state_dir  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("limitless_loop", os.path.expanduser("~/.local/lib/limitless_loop.py"))
@@ -129,6 +132,22 @@ def apps_set_told(now):
         pass
 
 
+def fit_rides_text(now):
+    """The FIT import line (fit_ingest_job.brief_fit_rides); "" when nothing untold, not write mode or unreadable."""
+    try:
+        return fit_ingest_job.brief_fit_rides(state_dir(), now)
+    except Exception:  # noqa: BLE001 - a broken state dir must not stop the brief
+        return ""
+
+
+def fit_rides_told(now):
+    """After a delivered brief that carried the FIT import line: mark those rides told (said once)."""
+    try:
+        fit_ingest_job.brief_fit_rides_told(state_dir(), now)
+    except Exception:  # noqa: BLE001 - a failed mark must not fail the send
+        pass
+
+
 def notify(cfg, text, once=None):
     env = dict(os.environ, CIRCADIAN_CLASS=os.environ.get("CIRCADIAN_CLASS", "digest"))
     env.pop("KEVIN_PUSH_ONCE", None)          # the key is this wake's, never one left in the env
@@ -148,15 +167,19 @@ def main(argv):
     down = outage_line(now, write=sending)
     done = apps_set_text(now)
     ask = "" if done else apps_ask_text(now)      # the reply just landed: never ask for it in the same brief
+    rides = fit_rides_text(now)
     text = brief_post.finalize(out["notif"], brief_post.load_asks(ASKS), now, saved=saved_last_night(now),
                                overnight=landed_overnight(now), naps=naps_yesterday(now),
-                               work=work_yesterday(now), outage=down, apps_set=done, apps_ask=ask)
+                               work=work_yesterday(now), outage=down, apps_set=done, fit_rides=rides,
+                               apps_ask=ask)
     if sending:
         rc, msg = notify(cfg, text, once=wake_key(time.time()))
         if rc == 0 and down:
             outage_told(now)
         if rc == 0 and done:
             apps_set_told(now)
+        if rc == 0 and rides:
+            fit_rides_told(now)
         if rc == 0 and ask:
             apps_ask_told(now)
         print(json.dumps({"path": out["path"], "notify_rc": rc, "notify": msg, "notif_text": text}, indent=1, default=str))
