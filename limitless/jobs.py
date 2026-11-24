@@ -729,8 +729,10 @@ def _number_words(n: int) -> str:
     raise AssertionError(n)  # unreachable: n >= 100 here
 
 
-def _span_words(seconds: int) -> str:
-    """Whole seconds as the largest unit that says them exactly: "an hour", "three hours", "ninety minutes"."""
+def span_words(seconds: int) -> str:
+    """Whole seconds as the largest unit that says them exactly: "an hour", "three hours", "ninety minutes",
+    "a day", "thirty-six hours"; never a digit, never "about". The one way this plugin says how long until a held
+    occurrence is stale: the schedule card's ``stale`` line and cron_spec.stale_words both use it."""
     size, unit = next((s, u) for s, u in _UNITS if seconds % s == 0)
     n = seconds // size
     return ("an " if unit == "hour" else "a ") + unit if n == 1 else f"{_number_words(n)} {unit}s"
@@ -748,7 +750,7 @@ def to_schedule_card(spec: JobSpec) -> dict:
             "window": _IN_WINDOW[cron["window_class"]], "ends": _ENDS[spec.expires],
             "delivery": "you, through the send gate; this job never sends by itself"}
     if "stale_after_s" in cron:
-        card["stale"] = f"dropped if more than {_span_words(cron['stale_after_s'])} late"
+        card["stale"] = f"dropped if more than {span_words(cron['stale_after_s'])} late"
     if spec.answers:
         card["answers"] = f"{', '.join(spec.answers[:-1])} or {spec.answers[-1]} in one tap; no answer stays unlogged"
     return card

@@ -18,6 +18,7 @@ neither ``hermes cron create`` nor the cronjob tool takes them; the Python job A
 A job that sends nothing (the NOOP export and the ingests, SENDS_NOTHING) gets ``{}``: it has no message to hold
 for a window, so it needs no gated host job; ``limitless-jobs --ingest`` runs it as before.
 """
+import math
 from typing import Any
 
 from limitless import jobs
@@ -51,22 +52,15 @@ def job_spec(spec: Any) -> dict:
     return out
 
 
-_NUMBERS = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
-            "sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three").split()
-
-
 def stale_words(seconds: Any) -> str:
-    """How long until a held occurrence is stale, in words, never a digit."""
+    """How long until a held occurrence is stale, in words, never a digit: "stale after an hour".
+
+    The span is jobs.span_words, the same words the schedule card's ``stale`` line uses, so the card and this
+    plan cannot say one expiry two ways. Seconds round up to whole ones, as jobs.to_cron_fields stores them.
+    """
     if seconds is None:
         return "never stale"
-    hours = seconds / 3600
-    if hours < 1:
-        return "stale after under an hour"
-    if hours >= 24:
-        return "stale after over a day"
-    whole = int(hours)
-    word = f"{_NUMBERS[whole]} {'hour' if whole == 1 else 'hours'}"
-    return f"stale after {word}" if whole == hours else f"stale after about {word}"
+    return f"stale after {jobs.span_words(int(math.ceil(seconds)))}"
 
 
 def plan_line(spec: Any) -> str:
