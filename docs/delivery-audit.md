@@ -63,6 +63,16 @@ The numbers are T0 and stay in the audit dict. The T1 label is words with no dig
 - The week review (`jobs_runner.week_review_body`) carries one line, `Pushes: <words>.`, through
   `tier_audit.gate` (hook `week_review:delivery`); an unknown brief clause is left out, and the line is empty
   when the log is unset, unreadable or has no row in the week.
+- The north-star scorecard cites it as row two. `delivery_audit.goal(audit)` judges the audit's own counts:
+  "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, or a delivered
+  push had no reply line; "met" only when every day of the week has rows, wake days are known (none unknown)
+  and every delivered body is known to carry a reply line; anything else is "unknown", and
+  unknown is never met. `scorecard.measured` gives `{n, criterion_words, label, goal}` from it (the label above, or the unknown
+  words: "unknown: no push log set", "unknown: the push log could not be read", "unknown: no push rows this
+  week"). The weekly block (`bin/limitless-scorecard`, when the state dir exists) ends with
+  `Measured: delivery: <label>`, plus `Row <name> says green but the measurement says not met.` when the hand
+  status of row two is green and the goal is not met; `limitless_scorecard` carries the same in `measured` (counts only
+  with the raw opt-in). No status is ever changed by code.
 
 Config (both optional):
 

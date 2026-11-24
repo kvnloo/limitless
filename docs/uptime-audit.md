@@ -63,9 +63,16 @@ grouped by phrase, best first, then the goal:
   it): live when the goal was met, stale when it was not, missing when unknown; the reason is the label's words
   or why it is unknown, never a count. The doctor also lists `tool limitless_uptime` like every tool.
 - The north-star scorecard (`limitless/scorecard.py`) never reads the evidence column of the hand-kept table
-  (it may hold private detail), so it cannot cite this label by itself. Row one's evidence can quote the
-  output of `limitless-uptime-audit` by hand. The audit never marks the row green: green still needs the goal
-  met over the whole window, judged by the person.
+  (it may hold private detail); it cites this audit itself instead. `scorecard.measured(state_dir, cfg, now,
+  tz)` reads row one through `tools.uptime_audit` (the same read as `limitless_uptime` and the doctor) and
+  gives `{n, criterion_words, label, goal}`: the label above, or `unknown: <why>` (no `runs.jsonl`, no run in
+  the window, too few known days), never an error and never met. The weekly block
+  (`bin/limitless-scorecard`, when the state dir exists) ends with `Measured: loop uptime: <label>`, and when
+  the hand status of row one is green but the goal is not met, one more line:
+  `Row <name> says green but the measurement says not met.` These lines take the place of the lowest-priority summary lines, so the block
+  keeps its five lines. `limitless_scorecard` carries the same in its `measured` field (the label as T1, the
+  goal, the note; the counts only with the raw opt-in). The audit never marks the row green and never changes
+  a status: green still needs the goal met over the whole window, judged by the person.
 
 ## Known gap
 
