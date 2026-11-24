@@ -24,7 +24,8 @@ Telegram (one already failed to send)`; a ready profile is still named. Nothing 
 profile is the one `push-sender.json` already holds and the flag is the mark's; the next applied reply clears it.
 
 When the sender profile was deleted by Hermes (`hermes profile delete` writes the marker file
-`<Hermes home>/profiles/.deleted/<name>`, a tombstone) and no live dir of that name is back, the simplest fix is
+`<Hermes home>/profiles/.deleted/<name>`, a tombstone; `clear_named_profile_deleted` removes it on restore), even
+if the dir is still there beside it (Hermes' `named_profile_is_live` refuses a tombstoned dir), the simplest fix is
 to restore it, so every surface says so (`push_sender.tombstoned`: the tombstone exists, as Hermes' own
 `named_profile_is_deleted` checks; it is never opened, no secret is read, hermes is never run): the `push sender` row says `missing: the sender profile was
 deleted; restoring it should bring pushes back`, the state card's reason is `the sender profile was deleted` and
@@ -55,7 +56,12 @@ wins; an older one is never used as a fallback.
 ## When it applies
 
 Only when `push_sender.check` says the named profile exists (`default`, or a dir under the Hermes home's
-`profiles/`, the home `hermes -p` resolves; files only, hermes is never run). A profile that does not exist
+`profiles/`, the home `hermes -p` resolves, that is live by Hermes' own rule; files only, hermes is never run).
+Live is `push_sender.is_live`, mirroring hermes_constants.py `named_profile_is_live` (what hermes_cli/profiles.py
+`resolve_profile_env` asks for `-p`): the dir holds an identity marker (`named_profile_has_identity`: one of
+`_PROFILE_IDENTITY_MARKERS`, `config.yaml`, `.env`, `SOUL.md`, `profile.yaml`, `auth.json`, `state.db`, is a file
+or a symlink) and has no tombstone (`named_profile_is_deleted`); it reads stats only, never a file. A dir with no
+marker, left by cron or log side effects, does not exist for Hermes either. A profile that does not exist
 changes nothing: the job says "that sender profile does not exist: nothing changed", and the owner is asked
 again by whatever asked the first time. When the Hermes home is not known or cannot be read, nothing changes and
 the job asks again after the next sync. The code never picks a sender by itself, and there is never a fallback.

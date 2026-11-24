@@ -14,8 +14,8 @@ and, while the owner's reply is what moves the outage on, the reply that fixes i
 
 | Reason | When |
 |---|---|
-| `the sender profile was deleted` | the sender profile is missing (below) and `hermes profile delete` left its tombstone at `<Hermes home>/profiles/.deleted/<profile>` (`push_sender.tombstoned`: Hermes' marker file exists; it is never opened); restoring it brings pushes back |
-| `the sender profile is missing` | `push_sender.check` is broken: kevin-push's profile (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json`, else config `push_profile`) is not `default` and `<Hermes home>/profiles/<profile>` is not a directory |
+| `the sender profile was deleted` | the sender profile is missing (below) and `hermes profile delete` left its tombstone at `<Hermes home>/profiles/.deleted/<profile>` (`push_sender.tombstoned`: Hermes' marker file exists, `named_profile_is_deleted`; it is never opened), even with the dir still beside it, as `hermes -p` refuses that one too; restoring it brings pushes back |
+| `the sender profile is missing` | `push_sender.check` is broken: kevin-push's profile (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json`, else config `push_profile`) is not `default` and `<Hermes home>/profiles/<profile>` is not live the way `hermes -p` decides it (`push_sender.is_live`, hermes_constants.py `named_profile_is_live`: a dir that holds an identity marker, `named_profile_has_identity` over `_PROFILE_IDENTITY_MARKERS`, with no tombstone, `named_profile_is_deleted`); a dir with no marker reads missing too |
 | `the profile you named was set but could not send, so it may have no Telegram bot; reply push via another profile` | `push_recovery.stage` over the same log is `UNKNOWN_FAILED`: an outage is open, the owner's `push via <name>` reply was applied on an `unknown:` readiness answer (the ingest mark's `applied_unknown`, e.g. a token that may sit in a secret source) and its confirmation failed to send; held by Sleep mode or not sent yet says nothing new |
 | `the last pushes failed to send` | the delivery audit of config `push_log` over the last seven local days has `send_failures` failing: the window's last transport attempts are `delivery_audit.SEND_FAIL_RUN` or more `log (telegram rc=N)` rows in a row (`delivery_audit.SEND_FAILING`) |
 
@@ -45,7 +45,7 @@ after the reason with one sentence from `push_reach.hint`:
 | several | `Reply push via one of: <a>, <b>.` |
 | none (only maybes, readiness `unknown: ...`, or none at all) | `Reply with a profile that has a Telegram bot.` |
 
-When the sender was deleted (`push_sender.tombstoned`: a tombstone at `profiles/.deleted/<name>` and no live dir)
+When the sender was deleted (`push_sender.tombstoned`: a tombstone at `profiles/.deleted/<name>`, so not live, dir or no dir)
 the hint asks to restore it first, and still offers a ready profile after it:
 
 | Deleted sender | Words |
