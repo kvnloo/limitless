@@ -11,10 +11,11 @@ then seen up, close it with an inferred off row ``{"on": false, "inferred": "Sle
 before. A line that is not JSON, not an object, has no time or no boolean ``on`` is skipped.
 
 An activation is a run of on-rows from the first on after an off (or the start of the file) up to the next off
-row, its close. NIGHT_H is how long one night keeps Sleep mode on at most: on longer,
-with no close, is a rule left on that the poller has not closed yet. kevin-push holds every non-critical push
-while the last row says on and the poll is fresh (POLL_FRESH_S, kevin-push's asleep()). Stdlib only; no clock:
-every caller passes ``now``.
+row, its close. ``left_on_close(got, t)``: whether the activation holding epoch ``t`` was closed by a ``left_on``
+row (Sleep mode left on, not a night; delivery_audit's MISS_LEFT_ON). NIGHT_H is how long one night keeps
+Sleep mode on at most: on longer, with no close, is a rule left on that the poller has not closed yet.
+kevin-push holds every non-critical push while the last row says on and the poll is fresh (POLL_FRESH_S,
+kevin-push's asleep()). Stdlib only; no clock: every caller passes ``now``.
 """
 from __future__ import annotations
 
@@ -78,6 +79,21 @@ def since(got: list) -> Optional[float]:
     for at, r in got or ():
         start = (start if start is not None else at) if r["on"] else None
     return start
+
+
+def left_on_close(got: Optional[list], t: float) -> bool:
+    """Whether the activation holding epoch ``t`` (its first on-row at or before ``t``, no off row between) was
+    closed, after ``t``, by an inferred ``left_on`` off row: Sleep mode left on, not a night. False when ``t`` is
+    in no activation, the activation is not closed yet, or a plain off row closed it."""
+    start = None
+    for at, r in got or ():
+        if at <= t:
+            start = (start if start is not None else at) if r["on"] else None
+        elif start is None:
+            return False
+        elif not r["on"]:
+            return is_left_on(r)
+    return False
 
 
 def poll_fresh(p, now: float) -> bool:

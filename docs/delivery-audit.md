@@ -77,6 +77,7 @@ is guessed from another day.
 | reason | the day's brief rows had `"how"` |
 | --- | --- |
 | held while Sleep mode was on | `"held (sleep mode)"` |
+| held while Sleep mode was left on | `"held (sleep mode)"`, and `sleepmode.jsonl` shows the poller later closed that activation with a `left_on` row (below) |
 | held by the quiet setting | `"log (quiet: ...)"` |
 | stopped as a repeat | `"log (duplicate)"`, `"log (already sent for this event)"` |
 | refused by the send gate | `"log (daily cap)"`, `"log (dropped)"` |
@@ -85,10 +86,24 @@ is guessed from another day.
 | unknown | a brief row whose `"how"` is none of the words above |
 
 - A delivered brief (`"telegram"`) on the day means no miss, whatever else was held or dropped that day.
+- Sleep mode left on. kevin-push holds every push while the last row of `sleepmode.jsonl` says on, and its
+  log only says `"held (sleep mode)"`. The poller that writes that file closes a phone Sleep rule left on far
+  longer than a night once the owner is seen up, with an inferred off row `{"on": false, "inferred": "Sleep
+  left on, owner up", "left_on": "<rule id>"}`, and ignores that rule after. `brief_misses(..., sleep=...)`
+  takes the file's rows (`delivery_audit.sleep_rows(state_dir, env)`: `LIMITLESS_SLEEPMODE`, else
+  `sleepmode.jsonl` in the state dir, the file kevin-push reads; read-only). An activation is the run of on
+  rows from the first on after an off up to the next off row, its close. A Sleep hold whose activation was
+  closed by a `left_on` row is "held while Sleep mode was left on"; one closed by a plain off row, not closed
+  yet, or outside any activation keeps "held while Sleep mode was on". An absent or unreadable file changes
+  nothing. Old rows without `rule` or `left_on` read as before; the rule id is never shown. The
+  `limitless_delivery` tool, the doctor's `delivery` row and scorecard row two read the file; the week review
+  line carries no reason, so it does not.
 - Order of precedence (`MISS_ORDER`) when a day has several brief rows and none was delivered: held while
-  Sleep mode was on, held by the quiet setting, stopped as a repeat, refused by the send gate, logged but not
-  sent, unknown. The cause that stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the
-  event to a retry that the gate then stops as a repeat, refuses or only logs. Row order does not matter.
+  Sleep mode was on, held while Sleep mode was left on, held by the quiet setting, stopped as a repeat, refused
+  by the send gate, logged but not sent, unknown. The cause that stopped the first attempt comes first: a Sleep
+  hold or a quiet drop leaves the event to a retry that the gate then stops as a repeat, refuses or only logs.
+  A day with a hold in a real night and another in a Sleep mode left on keeps the first. Row order does not
+  matter.
 - A wake day with no row at all is unknown, not zero, and never counted as missed (`unknown_wake_days`), as
   in the brief verdict above. No known wake day, or an empty log, is "missed wake briefs: unknown".
 - T0, in the audit dict as `"misses"` (raw opt-in only in the tool): `missed`, `reasons` (a count for every
@@ -143,7 +158,8 @@ A relative `push_log` or `hermes_db` is in the limitless state dir. There is no 
 
 `python3 -I scripts/delivery_audit_example.py` (synthetic rows in kevin-push's shape, three synthetic wake
 events, then a synthetic session DB and a synthetic `quiet.json`, a fixed clock, UTC, a temporary state dir;
-last a second synthetic week for `brief_misses`; nothing sent):
+last a second synthetic week for `brief_misses`, and that week again with a synthetic `sleepmode.jsonl` whose
+last activation the poller closed as left on; nothing sent):
 
 ```text
 # no push log set
@@ -163,7 +179,7 @@ last a second synthetic week for `brief_misses`; nothing sent):
 {"day": "2033-05-18", "rows": 0, "delivered": null, "over_cap": null, "wake_day": false, "brief": null, "no_action": 0, "action_unknown": 0}
 {"delivered": 4, "known_days": 3, "cap": 6, "over_cap_days": [], "no_action": 2, "action_unknown": 0, "skipped": 1}
 {"wake_days": 3, "brief_delivered": 2, "unknown_wake_days": 0, "brief_share": 0.6666666666666666}
-{"known": true, "missed": 1, "reasons": {"held while Sleep mode was on": 1, "held by the quiet setting": 0, "stopped as a repeat": 0, "refused by the send gate": 0, "logged but not sent": 0, "no brief attempt on that day": 0, "unknown": 0}, "days": {"2033-05-15": "held while Sleep mode was on"}, "unknown_wake_days": 0, "top": "held while Sleep mode was on", "label": "missed wake briefs: held while Sleep mode was on (all)"}
+{"known": true, "missed": 1, "reasons": {"held while Sleep mode was on": 1, "held while Sleep mode was left on": 0, "held by the quiet setting": 0, "stopped as a repeat": 0, "refused by the send gate": 0, "logged but not sent": 0, "no brief attempt on that day": 0, "unknown": 0}, "days": {"2033-05-15": "held while Sleep mode was on"}, "unknown_wake_days": 0, "top": "held while Sleep mode was on", "label": "missed wake briefs: held while Sleep mode was on (all)"}
 
 # week review line
 Pushes: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line.
@@ -185,6 +201,11 @@ missed wake briefs: held while Sleep mode was on (most), held by the quiet setti
 {"2033-05-12": "held while Sleep mode was on", "2033-05-13": "held while Sleep mode was on", "2033-05-14": "held by the quiet setting", "2033-05-16": "no brief attempt on that day", "2033-05-17": "held while Sleep mode was on"}
 {"missed": 5, "unknown_wake_days": 1, "top": "held while Sleep mode was on"}
 {"held while Sleep mode was on": 3, "held by the quiet setting": 1, "no brief attempt on that day": 1}
+
+# the same week with sleepmode.jsonl: the last hold was in a Sleep mode left on (brief_misses sleep=)
+missed wake briefs: held while Sleep mode was on (some), held while Sleep mode was left on (some), held by the quiet setting (some), no brief attempt on that day (some)
+{"2033-05-12": "held while Sleep mode was on", "2033-05-13": "held while Sleep mode was on", "2033-05-14": "held by the quiet setting", "2033-05-16": "no brief attempt on that day", "2033-05-17": "held while Sleep mode was left on"}
+{"held while Sleep mode was on": 2, "held while Sleep mode was left on": 1, "held by the quiet setting": 1, "no brief attempt on that day": 1}
 ```
 
 On the fifteenth the brief was held by Sleep mode, so that wake day counts as not reached: two of three wake
