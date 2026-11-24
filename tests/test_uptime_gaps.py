@@ -174,5 +174,27 @@ class Words(unittest.TestCase):
         self.assertEqual(audit(times)["goal"], audit(HOURLY)["goal"])
 
 
+class OpenGap(unittest.TestCase):
+    def test_an_open_gap_is_said_first(self):
+        self.assertEqual(words(audit(HOURLY, now=END + 5 * H)),
+                         "the loop has not run for hours; no input was reported stale; uptime goal met")
+
+    def test_the_open_gap_words_follow_how_long(self):
+        self.assertTrue(words(audit(HOURLY, now=END + 2 * D)).startswith("the loop has not run for over a day; "))
+        self.assertTrue(words(audit(TEN_MIN, now=END + 45 * M)).startswith("the loop has not run for under an hour; "))
+
+    def test_an_open_gap_comes_before_a_closed_one(self):
+        times = without(HOURLY, END - 2 * D, END - 2 * D + 8 * H)
+        self.assertEqual(words(audit(times, now=END + 5 * H)),
+                         "the loop has not run for hours; no input was reported stale; "
+                         "the loop stopped once this week for hours; uptime goal met")
+
+    def test_within_the_limit_is_not_open(self):
+        self.assertEqual(words(audit(HOURLY, now=END + 3 * H)), "no input was reported stale; uptime goal met")
+
+    def test_too_few_rows_keep_the_unknown_words_even_when_open(self):
+        self.assertEqual(words(audit(HOURLY[-50:], now=END + 2 * D)), "unknown")
+
+
 if __name__ == "__main__":
     unittest.main()

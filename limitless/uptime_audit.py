@@ -297,5 +297,7 @@ def _words(out: dict) -> str:
         groups.setdefault(phrase(c, n), []).append(name_words(name))
     order = PHRASES + tuple(p for p in groups if p not in PHRASES)
     parts = [f"{_and(groups[p])} {p}" for p in order if p in groups] or [NONE_NAMED]
-    stopped = loop_words(out.get("loop") or {})
-    return "; ".join(parts + ([stopped] if stopped else []) + [GOAL_WORDS[out["goal"]]])
+    loop = out.get("loop") or {}
+    down = [f"{LOOP_NOT_RUN} {for_words(loop['open_s'])}"] if loop.get("open_s") else []
+    stopped = loop_words(loop)
+    return "; ".join(down + parts + ([stopped] if stopped else []) + [GOAL_WORDS[out["goal"]]])
