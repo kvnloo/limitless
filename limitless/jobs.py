@@ -14,6 +14,7 @@ Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Any, Mapping, NamedTuple, Optional, Tuple
@@ -718,6 +719,36 @@ def to_schedule_card(spec: JobSpec) -> dict:
     if spec.answers:
         card["answers"] = f"{', '.join(spec.answers[:-1])} or {spec.answers[-1]} in one tap; no answer stays unlogged"
     return card
+
+
+# A spec's window word -> the window_class Hermes' cron decision-window gate stores (its WindowClass values:
+# peak, trough, anytime, wind_down). Same words as window_provider.TO_CRON's open windows; a test holds them equal.
+CRON_WINDOW = {
+    "peak": "peak",
+    "trough": "trough",
+    "anytime": "anytime",
+    "wind_down": "wind_down",
+}
+
+
+def to_cron_fields(spec: Any) -> dict:
+    """The two cron-gate fields for this job: ``{"window_class": ..., "stale_after_s": <int seconds>}``.
+
+    ``window_class`` comes from the spec's own window through CRON_WINDOW; ``stale_after_s`` is the spec's own
+    expiry in whole seconds, rounded up so it is never shorter, and absent when the spec has none. A spec with
+    no window gives ``{}``; a window word not in the table is a ValueError, so a new one fails loudly. Both
+    fields need a recurring (cron or interval) host schedule. A new dict each call; no clock time.
+    """
+    window = getattr(spec, "window_class", None)
+    if not window:
+        return {}
+    if window not in CRON_WINDOW:
+        raise ValueError(f"no cron window_class for window {window!r}; add it to jobs.CRON_WINDOW")
+    out = {"window_class": CRON_WINDOW[window]}
+    stale = getattr(spec, "stale_after_s", None)
+    if stale is not None:
+        out["stale_after_s"] = int(math.ceil(stale))
+    return out
 
 
 HABIT_TAPS = {"done": "Done", "no": "No", "skip": "Skipped"}   # tap -> the habit.json check-in word
