@@ -170,7 +170,8 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
         if refused is not None and refused >= o["first_at"] and (reply_at is None or refused > reply_at):
             return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
         if reply_at is None:
-            return MISSING, WAITING_REPLY + _deleted(cfg, env, hermes_home) + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
+            return MISSING, (WAITING_REPLY + _deleted(cfg, env, hermes_home)
+                             + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows)))
         why = _confirmation(state_dir, rows, cfg, reply_at)
         if why == FAILED and _sr.applied_unknown(state_dir):
             return MISSING, UNKNOWN_FAILED
