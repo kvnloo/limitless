@@ -12,6 +12,9 @@ reads them, and a cloud model sees the T1 words only (`limitless/rides.py`).
   the same start and source, is skipped (`StateReader.ride_rows()`); the reader never raises and never writes.
 - **CAROL rides**: `bin/limitless-import-fit` appends one `ride` row per CAROL FIT export to this same file
   ([carol-fit-import.md](carol-fit-import.md)).
+- **Doctor**: `bin/limitless-doctor`'s `rides source` row says whether this file is wired in, in words:
+  `not configured` (with the key to set), `file missing`, `unreadable`, `no rides yet`, or the last ride's age
+  and its sources ([doctor.md](doctor.md)).
 - **Week**: today and the six days before against the seven days before that; a ride's day is its start's
   date in its own offset. Words: `rides this week: none | one | two | a few`, then `same as last week`,
   `more than last week` or `fewer than last week`. No target, no score, no streak: a week with no ride is

@@ -20,7 +20,9 @@ no push log; kind source, words only, the two reply stages ending with the candi
 kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
 or unknown; kind source, words only), the glide source row (glide_provider.path_status: live with ok and
 the words, missing when not configured, the file is missing or unreadable, or Glide is older; kind source,
-words only), the local labeler's row (env LIMITLESS_T1_CMD
+words only), the rides source row (config rides_file: live with the last ride's age and the sources in words,
+missing when not configured, the file is missing or unreadable, or it holds no ride yet; kind source, words
+only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
@@ -364,6 +366,59 @@ def glide_source_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] 
     if got == gp.NOT_CONFIGURED:
         return _row(GLIDE_SOURCE_ROW, "source", MISSING, f"{got}: {GLIDE_HINT}")
     return _row(GLIDE_SOURCE_ROW, "source", LIVE if got.startswith("ok: ") else MISSING, got)
+
+
+RIDES_SOURCE_ROW = "rides source"
+RIDES_HINT = "set rides_file to the rides export (a relative path is in the state dir)"
+RIDES_MAX_SOURCES = 3
+A_SOURCE = "a source"   # a source string with a digit or a path separator is never printed as it is
+_NOT_A_NAME = re.compile(r"[\d/\\]")
+
+
+def source_words(sources) -> str:
+    """Ride source strings as words: sorted and said once, at most RIDES_MAX_SOURCES then "and more"; a name
+    with a digit or a slash is A_SOURCE (said once, last); whitespace runs become one space."""
+    names, other = set(), False
+    for s in sources:
+        s = " ".join(str(s).split())
+        if not s or _NOT_A_NAME.search(s):
+            other = True
+        else:
+            names.add(s)
+    said = sorted(names) + ([A_SOURCE] if other else [])
+    return ", ".join(said[:RIDES_MAX_SOURCES]) + (" and more" if len(said) > RIDES_MAX_SOURCES else "")
+
+
+def rides_source_row(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+                     home: Optional[Path] = None) -> dict:
+    """Whether the ONE rides file is wired in (StateReader.rides_file: config ``rides_file``, a relative path is in
+    the state dir; exercise-session exports and bin/limitless-import-fit's ``carol-fit`` rows both land there),
+    read the way limitless_rides reads it (StateReader.ride_rows, today from ``now``): live with ``last ride <age
+    words>; sources: <names>`` (age_words of the newest ride's start; source_words of the rows' ``source``
+    strings); missing with ``not configured: <hint naming the config key>``, ``file missing``, ``unreadable``, or
+    ``no rides yet`` when the file reads but holds no valid ride. Words only: never the path, a time or a digit.
+    Kind ``source``: --strict does not count it. Read-only."""
+    path = reader.rides_file(env, home)
+    if path is None:
+        return _row(RIDES_SOURCE_ROW, "source", MISSING, f"not configured: {RIDES_HINT}")
+    try:
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return _row(RIDES_SOURCE_ROW, "source", MISSING, "file missing")
+    except (OSError, ValueError):
+        return _row(RIDES_SOURCE_ROW, "source", MISSING, "unreadable")
+    try:
+        with open(path, "rb") as f:
+            f.read(1)
+    except (OSError, ValueError):
+        return _row(RIDES_SOURCE_ROW, "source", MISSING, "unreadable")
+    rows = reader.ride_rows(date.fromtimestamp(now), env, home)
+    starts = [t for t in (parse_ts(r["start"]) for r in rows) if t is not None and math.isfinite(t)]
+    if not starts:
+        return _row(RIDES_SOURCE_ROW, "source", MISSING, "no rides yet")
+    age = age_words(max(0.0, now - max(starts)) / 3600)
+    said = source_words(r["source"] for r in rows)
+    return _row(RIDES_SOURCE_ROW, "source", LIVE, f"last ride {age}; sources: {said}")
 
 
 LOCAL_LABELER_ROW = "local labeler"
@@ -953,7 +1008,8 @@ def report(cfg: Mapping, now: float) -> list:
     two (delivery_row), kevin-push's sender profile (push_sender_row), the profiles that could be the sender
     (sender_candidates_row), where a push-outage recovery stands
     (push_recovery_row), phone Sleep mode as kevin-push's hold
-    reads it (sleep_mode_row), whether Glide's attention file is wired in (glide_source_row), the local labeler
+    reads it (sleep_mode_row), whether Glide's attention file is wired in (glide_source_row), whether the rides file is wired in
+    (rides_source_row), the local labeler
     (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
@@ -975,7 +1031,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
              sender_candidates_row(cfg, state_dir=reader.path),
              push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), glide_source_row(cfg, now),
-             local_labeler_row(cfg)]
+             rides_source_row(reader, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]

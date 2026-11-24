@@ -181,7 +181,7 @@ class DoctorRow(Case):
         self.assertEqual(names.count(doctor.GLIDE_SOURCE_ROW), 1)
         at = names.index(doctor.GLIDE_SOURCE_ROW)
         self.assertEqual(names[at - 1], doctor.SLEEP_MODE_ROW)
-        self.assertEqual(names[at + 1], doctor.LOCAL_LABELER_ROW)
+        self.assertEqual(names[at + 1], doctor.RIDES_SOURCE_ROW)
         self.assertEqual(rows[at]["reason"], "not configured: " + HINT)
         self.assertNotIn("source", doctor.STRICT_KINDS)
 
