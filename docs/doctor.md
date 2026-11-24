@@ -22,7 +22,7 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `last sync run` | run | the last valid row of `runs.jsonl` is at most `STALE_H` old and did not fail | older, or it failed | no timestamped row | |
 | `uptime`, right after the last sync run | source | every input was fresh on at least config `uptime_target` of the last `uptime_days` local days of `runs.jsonl` (the uptime goal met); the reason is `limitless_uptime`'s words, never a count | the goal was not met, even counting every unknown day as fresh | no `runs.jsonl`, no run in the window, fewer than a week of runs that name their stale inputs, or too many unknown days to tell ([uptime-audit.md](uptime-audit.md)) | |
 | `delivery`, right after the uptime row | source | north-star row two met as the scorecard measures it (`delivery_audit.goal` over config `push_log`, complaints from config `hermes_db` and `quiet.json`); the reason is `limitless_delivery`'s words, never a count or a reply | the goal was not met (over the push limit, a missed brief, a push with no reply line, a quiet or stop request, or "the last pushes failed to send") | the goal is unknown: an unreadable log, no row this week, unknown wake days, or complaints unknown (no Hermes DB set, or it cannot be read) ([delivery-audit.md](delivery-audit.md)) | no `push_log` set |
-| `push sender`, right after the delivery row | source | `set: the sender profile exists`: the Hermes profile `bin/kevin-push` sends through (`KEVIN_PUSH_PROFILE`, else config `push_profile`, else the default) is `default`, or its dir exists under the Hermes home's `profiles/` (the home as `hermes -p` resolves it: `HERMES_HOME`, or its grandparent when it is a `<root>/profiles/<name>` profile home, else `~/.hermes`); only the dir is checked, hermes is never run and nothing is sent | | `broken: the sender profile does not exist` (every send would fail and only be logged), or `unknown:` no Hermes home is set, it does not exist, or it cannot be read; never the profile name, the target or a path | |
+| `push sender`, right after the delivery row | source | `ready`: the Hermes profile `bin/kevin-push` sends through (`KEVIN_PUSH_PROFILE`, else config `push_profile`, else the default) exists (`default`, or its dir under the Hermes home's `profiles/`, the home as `hermes -p` resolves it: `HERMES_HOME`, or its grandparent when it is a `<root>/profiles/<name>` profile home, else `~/.hermes`), has a non-empty `TELEGRAM_BOT_TOKEN`, and has a chat for the target (`KEVIN_PUSH_TO`, else config `push_to`, else the default) ([below](#push-sender-row)); files only, hermes is never run, nothing is sent and no secret value is read | | `missing: the sender profile does not exist` (every send would fail and only be logged), `no Telegram bot token in the sender profile`, `no Telegram chat set for the sender profile`, or `unknown:` no Hermes home is set, it does not exist or cannot be read, the target is not Telegram, or the token may sit in a secret source; never a value, the profile name, the target or a path | |
 | `Sleep mode`, right after the push sender row | source | the last row of `sleepmode.jsonl` (`LIMITLESS_SLEEPMODE`, else the state dir; the file kevin-push's Sleep hold reads) is `off`, or `on since <age in words>`; an on row adds "the Sleep mode poll is not fresh, so pushes are not held" while `sleepmode-poll.json` is not ok or older than kevin-push's limit (it fails open) | `left on, ignored since the owner was seen up`: the last row is the poller's inferred off row with `left_on`; or `stale: on far longer than a night; pushes are being held`: on longer than `sleepmode.NIGHT_H` with no such row ([below](#sleep-mode-row)) | `unknown:` no file, it cannot be read, no row with a time and an on or off, or the last row is in the future | |
 | `local labeler`, right after the Sleep mode row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
@@ -86,14 +86,60 @@ Sleep mode: stale: left on, ignored since the owner was seen up
 Sleep mode: missing: unknown: no Sleep mode file in the state dir
 ```
 
+## Push sender row
+
+`bin/kevin-push` delivers with `hermes -p <profile> send --to <target>`. The `push sender` row says, from the
+profile's files alone, whether that pick can work before the first real push (`push_sender.readiness`):
+
+- `missing: the sender profile does not exist`: the profile is not `default` and has no dir under `profiles/`.
+- `no Telegram bot token in the sender profile`: no non-empty `TELEGRAM_BOT_TOKEN` in the profile's `.env`, in
+  the environment, as a top-level key of its `config.yaml`, or as `platforms.telegram.token` there. Only
+  whether the key is present and non-empty is read; the value never leaves the check.
+- `no Telegram chat set for the sender profile`: a bare `telegram` target goes to the profile's home channel,
+  and there is no non-empty `TELEGRAM_HOME_CHANNEL` (`.env`, environment or `config.yaml`) and no
+  `platforms.telegram.home_channel.chat_id`; or the target names a chat (`telegram:<name>`) that neither the
+  profile's `channel_directory.json` nor its `channel_aliases.json` has. A chat id or an `@username` target is
+  its own chat. A person who never sent the bot `/start` shows up here.
+- `unknown: ...`: what `push_sender.check` cannot tell (no Hermes home, or it does not exist or cannot be read),
+  a target on another platform, a `config.yaml` with a `secrets:` source that may hold the token, or profile
+  files that cannot be read.
+- `ready`: none of the above.
+
+This mirrors how `hermes send` reads a profile (NousResearch/hermes-agent: `hermes_cli/send_cmd.py`,
+`gateway/outbound/send.py` and `targets.py`, `gateway/channel_directory.py`,
+`plugins/platforms/telegram/gateway_env.py`). It is report-only: kevin-push's own preflight still asks
+`push_sender.check` and skips a send only when the profile does not exist, so a wrong answer here can never
+block a real send. The row is live only when `ready`; every other answer is missing.
+
+The real output of `python3 -I scripts/push_sender_readiness_example.py` (a made-up Hermes home, made-up
+profiles, a made-up token that is never printed):
+
+```text
+# a bot token and a home channel; push_to "telegram"
+push sender: live: ready
+# a profile with no .env at all
+push sender: missing: no Telegram bot token in the sender profile
+# a bot token, no home channel; push_to "telegram"
+push sender: missing: no Telegram chat set for the sender profile
+# a bot token; push_to names a chat its channel directory has
+push sender: live: ready
+# a bot token; push_to names a chat its channel directory lacks
+push sender: missing: no Telegram chat set for the sender profile
+# a profile that does not exist
+push sender: missing: missing: the sender profile does not exist
+# a target on another platform
+push sender: missing: unknown: the send target is not a Telegram chat
+```
+
 ## What it never does
 
 - It never writes: not a state file, not a capture, not a card file (`limitless_card_view` is called with
   `write=False`: rendered only) and not an audit line (the tool calls run inside `tier_audit.held`, which pauses
   the audit log; a digit is still blocked). A test runs the whole report on a synthetic state dir and checks
   every file's mtime and bytes.
-- It never sends, never pushes and never starts a job. The `push sender` row never runs hermes: it only checks
-  that the profile dir exists (a test fails if any process is started).
+- It never sends, never pushes and never starts a job. The `push sender` row never runs hermes: it only reads
+  the profile's files for whether a key is there, never a secret value (a test fails if any process is
+  started, and another if a token value appears in the report).
 - It never runs the local T1 model: the `local labeler` row only checks that files exist and reads the saved
   check words, and the tool rows label with the rules only (`labeler.rules_only`), even when `t1_model_cmd` is
   set. The local model check runs only when `bin/limitless-t1-check` is called.
@@ -107,7 +153,8 @@ Sleep mode: missing: unknown: no Sleep mode file in the state dir
 
 The real output of `python3 -I scripts/doctor_example.py`: the synthetic fixture state
 (`tests/fixtures/state`: six inputs, one down, a sync run log) plus a made-up idea ledger and a made-up Hermes
-home that holds the default sender profile's dir, at the fixture clock.
+home that holds the default sender profile with a made-up bot token and a made-up chat, at the fixture
+clock.
 
 ```text
 $ limitless-doctor
@@ -121,7 +168,7 @@ input wearable: live: recording: updated within the last day
 last sync run: live: the last sync run was about an hour ago and finished ok
 uptime: missing: fewer than a week of sync runs name their stale inputs
 delivery: off: no push log set (config push_log)
-push sender: live: set: the sender profile exists
+push sender: live: ready
 Sleep mode: live: off
 local labeler: off: no local model command set, so the rule labels are used
 tool limitless_status: live: answers from direct evidence
