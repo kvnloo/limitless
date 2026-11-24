@@ -29,8 +29,10 @@ line), are one message; the newest copy replaces the older one, rows stay in ord
 the file is replaced whole (mode 0600). Every hold still writes its own log row ("held (sleep mode)"), so
 the delivery audit sees each attempt. held.rows() is the reader: it lists each held message once.
 A delivery runs `hermes -p <profile> send --to <target>` (limitless/push_sender.py): the profile is
-$KEVIN_PUSH_PROFILE, else config push_profile, else "intake"; the target is $KEVIN_PUSH_TO, else config push_to,
-else "telegram:kevin". limitless-doctor's "push sender" row says whether that profile can exist.
+$KEVIN_PUSH_PROFILE, else the owner's "push via <name>" reply (push-sender.json in the state dir, written by the
+sender ingest job only for a profile that exists), else config push_profile, else "intake"; the target is
+$KEVIN_PUSH_TO, else config push_to, else "telegram:kevin". limitless-doctor's "push sender" row says whether
+that profile can exist.
 Before a delivery kevin-push asks the same check (push_sender.check, files only). When it says the profile
 does not exist, hermes is not started: the row is logged "log (no sender profile)", nothing claims a key or
 counts as a send, and the exit is that of a failed send (3 with KEVIN_PUSH_STRICT=1). An unknown answer (no

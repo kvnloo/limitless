@@ -31,7 +31,9 @@ brief's app-lists ask: off, waiting, told recently or not needed; words only), t
 then the ranked ledger's row (scorecard row ten's private ledger, config ranked_ledger: off, live with row ten's
 words, or broken as status missing; never an id or evidence text), then the ranked ingest job's row (config
 ranked_ingest, its status file ranked-ingest.json: off, live with the mode and the last result in words, stale,
-or broken as status missing). The outage recap job's row (config outage_recap, from kevin-push's log, config
+or broken as status missing), then the sender ingest job's row (config sender_ingest, its mark
+push-sender-ingest.json: off, live with the mode and the last result in words, or stale; never the profile name).
+The outage recap job's row (config outage_recap, from kevin-push's log, config
 push_log, and its mark outage-recap.json: off, waiting, told or nothing to recap; missing with no push log) comes
 right after the voice MIQ's.
 Reasons are words only: a digit is never printed, and neither is a tool's value.
@@ -416,6 +418,28 @@ def ranked_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
                 f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}")
 
 
+SENDER_INGEST_ROW = "job sender ingest"
+
+
+def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """The sender ingest job (jobs.SENDER_INGEST, config ``sender_ingest``) from runs.jsonl and its mark
+    push-sender-ingest.json (sender_ingest_job.state): off by config; stale with no Hermes DB set, before any sync
+    run, or while the newest sync is one it has not run after; else live, with the mode, when it ran and what that
+    pass did in words ("set the sender profile from your reply", "that sender profile does not exist: nothing
+    changed", ...), plus a note when $KEVIN_PUSH_PROFILE is set and still wins. Never the profile name, a message
+    or a path; read-only."""
+    from . import sender_ingest_job as sij
+    word, said = sij.state(reader.path, cfg, now, env)
+    if word == "off":
+        return _row(SENDER_INGEST_ROW, "job", OFF, said)
+    if word != "ran":
+        return _row(SENDER_INGEST_ROW, "job", STALE, said)
+    mode, ran_at, did = said
+    wins = f"; {sij.ENV_WINS}" if sij.env_wins(env) else ""
+    return _row(SENDER_INGEST_ROW, "job", LIVE,
+                f"{mode}: ran {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}{wins}")
+
+
 RANKED_ROW = "ranked ledger"
 RANKED_SKIPPED = "some lines could not be read and were skipped"
 
@@ -770,8 +794,8 @@ def report(cfg: Mapping, now: float) -> list:
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
-    then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the voice
-    MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
+    then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the sender
+    ingest job's (sender_ingest_row), then the voice MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
     packet's, and the sleep coverage audit
     (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
     the sleep file.
@@ -790,7 +814,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
-             voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
+             sender_ingest_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
              noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]

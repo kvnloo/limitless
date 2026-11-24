@@ -54,6 +54,12 @@ drop rows to the ranked ledger and moves ranked-drops.json), then writes ``ranke
 ranked ledger or no Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing
 read.
 
+Sender ingest: with config ``sender_ingest`` dry_run or write, one more row right after the ranked ingest's
+(sender_ingest_job.run), by the apps ingest's rule: once per new sync row, a pass that is not a dry run reads the
+owner's whole "push via <profile>" reply from the Hermes session DB and runs sender_reply.ingest (write mode writes
+push-sender.json, only for a profile push_sender.check says exists), then writes ``push-sender-ingest.json`` in
+words only. No Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing read.
+
 Outage recap: with config ``outage_recap`` dry_run or write, one more row, last (outage_recap_job.run). After a push
 kevin-push delivered closed an outage in its log (config ``push_log``; outage_recap.outage), a pass that is not a
 dry run pushes one plain recap of what the outage swallowed through ``push`` with ``once``
@@ -1253,8 +1259,10 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
     apps = apps_ingest_row(state_dir, now, dry_run, env, home)        # sends nothing; None (no row) when off
     ranked = ranked_ingest_row(state_dir, now, dry_run, env, home)    # sends nothing; None (no row) when off
+    from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
+    sender = _sender.run(state_dir, now, dry_run=dry_run, env=env, home=home)
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
     recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz)   # None when off
-    return rows + [r for r in (noop, apps, ranked, voice, recap) if r is not None]
+    return rows + [r for r in (noop, apps, ranked, sender, voice, recap) if r is not None]

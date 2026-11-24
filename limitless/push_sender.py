@@ -1,14 +1,16 @@
 """Push sender: the Hermes profile and target bin/kevin-push sends through, and whether that profile can exist.
 
-    profile(cfg, env) / target(cfg, env)   # env var > config key > the default, as kevin-push uses them
+    profile(cfg, env) / target(cfg, env)   # env var > (profile only: the owner's reply) > config key > default
     hermes_root(env)                       # the Hermes home the Hermes CLI resolves ``-p`` against
     check(cfg, env, hermes_home=None)      # "set: ..." / "broken: ..." / "unknown: <reason>", words only
     readiness(cfg, env, hermes_home=None)  # "ready" / "no Telegram bot token ..." / "no Telegram chat ..." /
                                            # "missing: ..." / "unknown: <reason>", words only, report-only
 
-kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else config
-``push_profile``, else PROFILE_DEFAULT; the target is ``$KEVIN_PUSH_TO``, else config ``push_to``, else
-TARGET_DEFAULT. A blank or non-string value is skipped. When the profile is removed every send fails with a
+kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else the
+owner's ``push via <name>`` reply (REPLY_FILE ``push-sender.json`` in the state dir, written by
+sender_reply.ingest only for a profile that exists), else config ``push_profile``, else PROFILE_DEFAULT; the
+target is ``$KEVIN_PUSH_TO``, else config ``push_to``, else TARGET_DEFAULT. A blank or non-string value is
+skipped, and so is a reply file that is missing, broken or names no profile Hermes could resolve. When the profile is removed every send fails with a
 non-zero rc that is only logged, so ``check`` says, from files alone, whether ``-p <profile>`` can resolve: the
 profile is ``default``, or ``<Hermes home>/profiles/<profile>`` is a directory. It never runs hermes, never
 starts a process and never sends. Its words never hold the profile name, the target, a path or a digit.
@@ -53,9 +55,51 @@ def _pick(cfg, env: Mapping[str, str], env_key: str, cfg_key: str, default: str)
     return default
 
 
-def profile(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None) -> str:
-    """The sender profile: $KEVIN_PUSH_PROFILE, else config ``push_profile``, else PROFILE_DEFAULT."""
-    return _pick(cfg, os.environ if env is None else env, PROFILE_ENV, PROFILE_CONFIG, PROFILE_DEFAULT)
+# The owner's "push via <name>" reply, as sender_reply.ingest writes it: {"profile": name, "at": epoch}, 0600.
+REPLY_FILE = "push-sender.json"
+
+
+def state_dir_for(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """The limitless state dir as state_reader.state_dir picks it: $LIMITLESS_STATE, else config ``state``, else
+    ``$HOME/.local/state/limitless``; None when none of them is set (then no reply file is read)."""
+    env = os.environ if env is None else env
+    if isinstance(env.get("LIMITLESS_STATE"), str) and env["LIMITLESS_STATE"]:
+        return Path(env["LIMITLESS_STATE"])
+    st = cfg.get("state") if isinstance(cfg, Mapping) else None
+    if isinstance(st, str) and st:
+        return Path(st)
+    home = env.get("HOME")
+    return Path(home) / ".local/state/limitless" if isinstance(home, str) and home.strip() else None
+
+
+def reply_profile(state_dir: "Path | str | None") -> Optional[str]:
+    """The profile REPLY_FILE in ``state_dir`` names (lowercased), or None when there is no state dir, no file,
+    a broken one, or a name Hermes never resolves (PROFILE_ID). Never raises."""
+    if state_dir is None:
+        return None
+    try:
+        data = json.loads((Path(state_dir) / REPLY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    name = data.get("profile") if isinstance(data, dict) else None
+    if not isinstance(name, str) or not PROFILE_ID.match(name.strip().lower()):
+        return None
+    return name.strip().lower()
+
+
+def profile(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
+            state_dir: "Path | str | None" = None) -> str:
+    """The sender profile: $KEVIN_PUSH_PROFILE, else the owner's reply (reply_profile over ``state_dir``, default
+    state_dir_for(cfg, env)), else config ``push_profile``, else PROFILE_DEFAULT. The reply beats an old config
+    value; the env var beats everything."""
+    env = os.environ if env is None else env
+    v = env.get(PROFILE_ENV)
+    if isinstance(v, str) and v.strip():
+        return v.strip()
+    got = reply_profile(state_dir if state_dir is not None else state_dir_for(cfg, env))
+    if got is not None:
+        return got
+    return _pick(cfg, {}, PROFILE_ENV, PROFILE_CONFIG, PROFILE_DEFAULT)
 
 
 def target(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None) -> str:
