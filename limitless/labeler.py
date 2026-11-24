@@ -15,6 +15,8 @@ rule label instead. A value the rules call unknown or missing is never sent to t
 CPU: the child gets CUDA_VISIBLE_DEVICES="" and HIP_VISIBLE_DEVICES="", and the command must not take a
 GPU that another job owns (pick a CPU build or flags; never point it at a shared GPU server).
 bin/limitless-t1-local is such a command for a llama.cpp-style CLI on the CPU (limitless/t1_local.py).
+bin/limitless-t1-check (limitless/t1_agreement.py) checks a model against the rules on fixed synthetic prompts;
+with config t1_check_file set, from_config uses the model only while that saved check meets t1_min_agreement.
 """
 from __future__ import annotations
 
@@ -113,6 +115,12 @@ PROMPT = ("Label one {kind} value with exactly one word from this set: {allowed}
 _NO_GPU = {"CUDA_VISIBLE_DEVICES": "", "HIP_VISIBLE_DEVICES": ""}
 
 
+def answerable(kind: str) -> tuple:
+    """The words the model may answer for a kind: its allowed set without "missing" / "no data" (a present value
+    is never missing)."""
+    return tuple(x for x in ALLOWED.get(kind, ()) if x not in ("missing", "no data"))
+
+
 class LocalModelLabeler:
     """label(kind, value, modality) through a local CLI, with the rule label as the fallback for any failure."""
 
@@ -134,12 +142,16 @@ class LocalModelLabeler:
             return None
         return out if out in allowed else None
 
+    def answer(self, kind: str, value) -> Optional[str]:
+        """The model's word for one value, or None: no command, a value the rules call unknown or missing (never
+        sent), or no in-set answer. The one call path label() and limitless-t1-check (t1_agreement) share."""
+        if not self.cmd or rule_label(kind, value) in (UNKNOWN, "missing", "no data"):
+            return None
+        return self._ask(kind, value, answerable(kind))
+
     def label(self, kind: str, value, modality=None) -> dict:
         rule = label(kind, value, modality)
-        if not self.cmd or rule["label"] in (UNKNOWN, "missing", "no data"):
-            return rule
-        allowed = tuple(x for x in ALLOWED[kind] if x not in ("missing", "no data"))
-        answer = self._ask(kind, value, allowed)
+        answer = self.answer(kind, value)
         return rule if answer is None else t1(answer, modality)
 
     __call__ = label
@@ -166,5 +178,18 @@ def rules_only():
         _RULES_ONLY.pop()
 
 
+def model_allowed(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> bool:
+    """With config t1_check_file set, the model may label only while the check result saved there by
+    bin/limitless-t1-check meets t1_min_agreement (t1_agreement.allowed). Unset (the default): always, as before.
+    Only reads the small saved file: the model is never run here."""
+    from . import t1_agreement
+    env = os.environ if env is None else env
+    cfg = config(env, home)
+    if not t1_agreement.gated(cfg):
+        return True
+    return t1_agreement.allowed(cfg, t1_agreement.saved(cfg, env, home))
+
+
 def from_config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> LocalModelLabeler:
-    return LocalModelLabeler(None if _RULES_ONLY else t1_model_cmd(env, home))
+    cmd = None if _RULES_ONLY else t1_model_cmd(env, home)
+    return LocalModelLabeler(cmd if cmd and model_allowed(env, home) else None)
