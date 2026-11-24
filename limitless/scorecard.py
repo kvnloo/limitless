@@ -350,9 +350,9 @@ def _flow_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
     db = env.get("LIMITLESS_AW_DB") or cfg.get("aw_db")
     db = Path(db).expanduser() if isinstance(db, str) and db else None
     db = st / db if db is not None and not db.is_absolute() else db         # as StateReader.aw_db_path
+    glide = env.get(glide_provider.ENV_KEY) or cfg.get(glide_provider.CONFIG_KEY)
     today = datetime.fromtimestamp(now, tz).date()
-    r = flow_week.week(db, today - timedelta(days=flow_week.DAYS), tz,
-                       blocks=flow_week.blocks_at(env.get(glide_provider.ENV_KEY) or cfg.get(glide_provider.CONFIG_KEY)),
+    r = flow_week.week(db, today - timedelta(days=flow_week.DAYS), tz, blocks=flow_week.blocks_at(glide),
                        work_apps=work, feed_apps=apps_reply.list_for(apps_reply.FEED, cfg, st, env)[0],
                        desktop=lambda lo, hi: aw_desktop.from_settings(cfg, st, lo, hi))
     if not r.get("days_with_data"):
