@@ -46,6 +46,10 @@ case "$FAKE_HERMES_MODE" in
     echo "  telegram:MARK  [placeholder-chat]"
     echo
     exit 0 ;;
+  crash)
+    echo "telegram:"
+    echo "Traceback (most recent call last): MARK" >&2
+    exit 1 ;;
   sleep)
     exec sleep 5 ;;
   other)
@@ -136,6 +140,11 @@ class Verdicts(Home):
         self.mode("other")
         self.assertEqual(self.verdicts(self.probe()), {"default": sp.CHECK_FAILED})
         self.mode("unknown-mode")
+        self.assertEqual(self.verdicts(self.probe()), {"default": sp.CHECK_FAILED})
+
+    def test_a_listing_cut_short_by_a_failure_is_the_check_failed(self):
+        """A ``telegram:`` header printed before a crash (non-zero exit) is no proof of a target."""
+        self.mode("crash")
         self.assertEqual(self.verdicts(self.probe()), {"default": sp.CHECK_FAILED})
 
     def test_a_missing_binary_is_the_check_failed(self):
