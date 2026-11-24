@@ -92,3 +92,75 @@ the model runs past the timeout: local label: short (the rule label)
 local labeler: live: set: not checked yet (no check file is set, so none is required); the command, the model binary and the model file exist (the model is not run here)
 local labeler: missing: broken: the model binary or the model file does not exist; the rule labels are used
 ```
+
+## Local model check
+
+Before the labeler uses a local model, `bin/limitless-t1-check` shows whether that model agrees with the rule
+labels. It is stdlib only and runs only when you call it: the doctor, the tools and the labeler never run it.
+
+It sends a fixed set of synthetic labeler prompts. Each one is built from the labeler's own prompt and one
+kind's allowed words, with a made-up value shipped in the code (`limitless/t1_agreement.py`), and it reads no
+state. Every kind with a rule is covered, and so is every word a present value can get. Each prompt goes once
+through the labeler's own call path (`LocalModelLabeler.answer`: the same timeout, the same parsing, no GPU). The
+answer is compared with the rule label for that value. A digit, a word outside the set, a non-zero exit or a
+timeout (the model is killed) counts as no answer.
+
+It prints words only, never a digit:
+
+- `agrees on all checks`, `agrees on most checks` (more than half) or `agrees on few checks`;
+- `unknown: <reason>`: no local model command set, the command line cannot be read, its program does not
+  exist (in these three cases nothing runs), or every call failed;
+- one line per kind: `agrees` (every check), `disagrees` (any check got another allowed word) or `no answer`.
+
+`--json` gives the counts behind the words, for tests and scripts. The exit status is zero only when the
+result meets the minimum. This is not a capability score. It only says whether the model gives the same
+coarse words as the rules on these inputs.
+
+| Key | What |
+|---|---|
+| `t1_check_file` | a file name inside the state dir. When it is set, the check writes its verdict words there (one line, mode 0600, replacing the last one) and the labeler uses the model only while that saved result meets the minimum. An absolute path or one that leaves the state dir counts as no check on file. Unset (the default): nothing is saved and the labeler works as before |
+| `t1_min_agreement` | `all`, `most` (the default) or `few`. An unknown result never passes |
+
+The doctor's `local labeler` row reads the saved words and never runs the model. It says
+`set: checked, agrees on most checks` or `set: not checked yet`. With `t1_check_file` set and no passing check
+on file, the row is off and the rule labels are used. A new model needs a new check: the saved words do not
+name the model.
+
+The real output of `python3 -I scripts/t1_check_example.py`. A fake model script stands in for the model and
+no model runs. The fake is wrong on one kind in the first run and wrong everywhere in the second. The third run
+has no command set:
+
+```text
+# before any check, with t1_check_file set:
+local labeler: off: set: not checked yet, so the rule labels are used until a passing check is on file; the command exists; it is not the bundled runner, so no model file is checked (the model is not run here)
+the labeler uses the model: no
+$ limitless-t1-check   # a fake model that is wrong on one kind
+local model check: agrees on most checks
+sleep_h: agrees
+readiness: agrees
+age_h: agrees
+owner_message_age_h: disagrees
+saved for the labeler
+meets the minimum agreement (most): yes
+exit status: zero
+local labeler: live: set: checked, agrees on most checks; the command exists; it is not the bundled runner, so no model file is checked (the model is not run here)
+the labeler uses the model: yes
+$ limitless-t1-check   # a fake model that always says a wrong allowed word
+local model check: agrees on few checks
+sleep_h: disagrees
+readiness: disagrees
+age_h: disagrees
+owner_message_age_h: disagrees
+saved for the labeler
+meets the minimum agreement (most): no
+exit status: one
+local labeler: off: set: checked, agrees on few checks, below the minimum, so the rule labels are used; the command exists; it is not the bundled runner, so no model file is checked (the model is not run here)
+the labeler uses the model: no
+$ limitless-t1-check   # no model command set
+local model check: unknown: no local model command set
+saved for the labeler
+meets the minimum agreement (most): no
+exit status: one
+local labeler: off: no local model command set, so the rule labels are used
+the labeler uses the model: no
+```
