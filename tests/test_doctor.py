@@ -176,15 +176,16 @@ class ToolRows(DoctorCase):
     def tool(self, name, cfg=None):
         return self.row(f"tool {name}", cfg)
 
-    def test_one_row_per_manifest_tool_in_order_after_the_run_uptime_delivery_and_local_labeler_rows(self):
+    def test_one_row_per_manifest_tool_in_order_after_the_run_uptime_delivery_sleep_and_local_labeler_rows(self):
         rows = self.rows()
         tools_ = [r for r in rows if r["kind"] == "tool"]
         self.assertEqual([r["name"] for r in tools_], [f"tool {n}" for n in manifest_tools()])
         run_at = [r["kind"] for r in rows].index("run")
         self.assertEqual(rows[run_at + 1]["name"], "uptime")
         self.assertEqual(rows[run_at + 2]["name"], "delivery")
-        self.assertEqual(rows[run_at + 3]["name"], "local labeler")
-        self.assertEqual(rows.index(tools_[0]), run_at + 4)
+        self.assertEqual(rows[run_at + 3]["name"], "Sleep mode")
+        self.assertEqual(rows[run_at + 4]["name"], "local labeler")
+        self.assertEqual(rows.index(tools_[0]), run_at + 5)
 
     def test_a_null_value_is_missing_with_the_envelopes_own_reason(self):
         r = self.tool("limitless_habit")
