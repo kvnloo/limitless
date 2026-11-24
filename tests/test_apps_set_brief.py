@@ -158,5 +158,55 @@ class Line(Base):
         self.assertEqual(self.line(NOW + H), "")
 
 
+class Told(Base):
+    def test_told_marks_the_write_and_the_line_is_gone(self):
+        self.ingest()
+        self.assertEqual(self.line(NOW + H), BOTH)
+        self.assertTrue(self.told(NOW + H))
+        m = self.st / SET_MARK
+        self.assertEqual(json.loads(m.read_text()), {"told": NOW, "told_at": NOW + H})   # the write's ran_at
+        self.assertEqual(stat.S_IMODE(m.stat().st_mode), 0o600)
+        self.assertEqual([p.name for p in self.st.iterdir() if p.name.endswith(".tmp")], [], "no temp file left")
+        self.assertEqual(self.line(NOW + 2 * H), "")
+
+    def test_the_same_write_is_never_told_twice(self):
+        self.ingest()
+        self.assertTrue(self.told(NOW + H))
+        self.assertFalse(self.told(NOW + 2 * H))
+        self.assertEqual(json.loads((self.st / SET_MARK).read_text())["told_at"], NOW + H)
+        self.runs(sync(NOW - 60), sync(NOW + 3 * H))       # a later sync with no new reply
+        self.once(NOW + 4 * H)
+        self.assertEqual(self.line(NOW + 5 * H), "")
+
+    def test_a_second_write_later_is_told_again(self):
+        self.ingest()
+        self.assertTrue(self.told(NOW + H))
+        self.reply("feed apps: otherfeedapp", NOW + 2 * H)
+        self.ingest(NOW + 3 * H)
+        self.assertEqual(self.line(NOW + 4 * H), FEED_ONLY)
+        self.assertNotIn("otherfeedapp", self.line(NOW + 4 * H))
+        self.assertTrue(self.told(NOW + 4 * H))
+        self.assertEqual(json.loads((self.st / SET_MARK).read_text()), {"told": NOW + 3 * H, "told_at": NOW + 4 * H})
+        self.assertEqual(self.line(NOW + 5 * H), "")
+
+    def test_nothing_to_tell_writes_no_mark(self):
+        self.config(apps_ingest="write")
+        self.assertFalse(self.told())
+        self.ingest(mode="dry_run")
+        self.assertFalse(self.told(NOW + H))
+        self.assertFalse((self.st / SET_MARK).exists())
+
+    def test_the_mark_is_epochs_only(self):
+        self.ingest()
+        self.told(NOW + H)
+        text = (self.st / SET_MARK).read_text()
+        self.assertEqual(sorted(json.loads(text)), ["told", "told_at"])
+        for n in NAMES + (PRIVATE, "work", "feed"):
+            self.assertNotIn(n, text)
+
+    def test_unreadable_state_never_raises(self):
+        self.assertFalse(jobs_runner.brief_apps_set_told(self.dir / "nowhere", NOW, self.env, self.dir))
+
+
 if __name__ == "__main__":
     unittest.main()

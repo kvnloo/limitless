@@ -1066,6 +1066,28 @@ def brief_apps_set(state_dir, now: float, env: Optional[Mapping[str, str]] = Non
         return ""
 
 
+def brief_apps_set_told(state_dir, now: float, env: Optional[Mapping[str, str]] = None,
+                        home: Optional[Path] = None) -> bool:
+    """Mark the last apps-ingest write told (apps-set.json: ``{"told": its wrote_at, "told_at": now}``, epochs only,
+    atomic, 0600), after a delivered brief that carried brief_apps_set's line, so one write is said once and a later
+    write (a new reply) is said again. False when there is nothing untold (or not write mode) or state is
+    unreadable; never raises."""
+    try:
+        mark = apps_set_untold(state_dir, now, config(env, home))
+        if mark is None:
+            return False
+        _write_mark(state_dir, APPS_SET_MARK, {"told": mark["wrote_at"], "told_at": float(now)})
+        return True
+    except Exception:  # noqa: BLE001 - a failed mark must not stop the sender
+        return False
+
+
+def apps_set_told(state_dir) -> Optional[bool]:
+    """For the doctor: None before any apps-ingest write, else whether the last write was told in a brief."""
+    at = load_apps_mark(state_dir).get("wrote_at")
+    return None if at is None else load_apps_set_mark(state_dir).get("told") == at
+
+
 def apps_ingest_label(state_dir) -> Optional[dict]:
     """apps_ingest_line as a T1 label (``{"label", "tier": "T1", "modality": "derived"}``) a later wake brief may
     show; None unless the last apps ingest run wrote the app lists. Read-only; sends nothing."""
