@@ -22,6 +22,7 @@ from . import (anki as _anki, app_candidates as _app_candidates, asks as _asks, 
                strength as _strength, tier_audit as _tier_audit, uptime_audit as _uptime,
                weekly_target as _weekly_target, wind_down)
 from . import mock_guard as _mock_guard
+from . import push_reach as _push_reach
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import valid_sleep_rows as _valid_sleep_rows
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
@@ -113,6 +114,18 @@ def status(reader: StateReader, now: float, cfg: Optional[Mapping] = None) -> di
         last_run = envelope({"at": run["at"], "ok": run.get("ok")}, "measured", run_h)
     value = {"inputs": inputs, "not_recording": not_recording, "unknown": unknown, "last_run": last_run}
     return envelope(value, "measured", snap_h)
+
+
+def status_with_delivery(reader: StateReader, now: float, cfg: Optional[Mapping] = None,
+                         env: Optional[Mapping[str, str]] = None, today: Optional[date] = None) -> dict:
+    """limitless_status: ``status`` plus ``delivery``, whether phone pushes can reach the person in the state
+    card's own words (push_reach.item: value "Phone pushes are not reaching you: <reason>", modality measured,
+    age_h None; value None with a reason when no outage is known). ``today`` defaults to ``now``'s local day.
+    Read-only; nothing is run or sent."""
+    out = dict(status(reader, now, cfg))
+    day = date.fromtimestamp(now) if today is None else today
+    out["delivery"] = _push_reach.item(_push_reach.reason(cfg, reader.path, day, env))
+    return out
 
 
 CHECKINS = ("Done", "No", "Skipped")

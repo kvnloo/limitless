@@ -98,11 +98,16 @@ def _valid_day(v) -> bool:
     return True
 
 
-def config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
-    """Host config: $LIMITLESS_CONFIG, else ~/.config/limitless/config.json; {} when absent or not an object."""
+def config_path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Path:
+    """The host config file config() reads: $LIMITLESS_CONFIG, else ~/.config/limitless/config.json."""
     env = os.environ if env is None else env
     home = Path.home() if home is None else home
-    path = Path(env.get("LIMITLESS_CONFIG") or home / ".config/limitless/config.json")
+    return Path(env.get("LIMITLESS_CONFIG") or home / ".config/limitless/config.json")
+
+
+def config(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> dict:
+    """Host config: $LIMITLESS_CONFIG, else ~/.config/limitless/config.json; {} when absent or not an object."""
+    path = config_path(env, home)
     try:
         cfg = json.loads(path.read_text())
     except (OSError, ValueError):

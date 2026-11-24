@@ -34,6 +34,12 @@ Sleep debt (tools.sleep_debt over the wearable sleep file and the phone proxy; s
 words on a line of their own right under the sleep and readiness line: "some sleep debt", "a lot of sleep debt
 (phone estimate)", ...; nothing when it is unknown (too few nights). Only a sleep_debt.KNOWN_LABELS word is used;
 the card never shows the minutes, not even under the raw opt-in (limitless_sleep_debt has them).
+When phone pushes cannot reach the person (push_reach: kevin-push's sender profile is missing, or the last
+pushes failed to send per the delivery audit of config ``push_log``) the card says so in words on a line of its
+own, "Phone pushes are not reaching you: <reason>", after the MAX_LINES cap (so a full card never cuts it) and
+before the palace and explain-back offers; nothing when the sender is set and the last push was delivered, or
+when neither can be told. The hook caches it with the card: per turn only stats (the config file, the profile
+directory, the push log), and the log is read only when the card is rebuilt. items["delivery"] carries it.
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
 MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -50,6 +56,7 @@ from typing import Any, Callable, Mapping, Optional
 from . import anki as _anki, bedtime, explain_back as _explain_back, flow_week, modes, peak as _peak, phase as _phase
 from . import aw_desktop
 from . import palace as _palace
+from . import push_reach as _push_reach
 from . import labeler as _labeler
 from . import sleep_debt as _sleep_debt
 from . import tier_audit, tools
@@ -57,7 +64,7 @@ from . import weekly_target as _weekly_target
 from .decision_window import UNKNOWN
 from .envelope import STALE_H, envelope, missing
 from .glide_provider import GlideProvider
-from .state_reader import StateReader, parse_ts, state_dir
+from .state_reader import StateReader, config as _read_config, config_path, parse_ts, state_dir
 from .window import window
 from .window_chain import first_known
 
@@ -262,17 +269,32 @@ def palace_offer(reader: StateReader, now: float, win: dict, env: Optional[Mappi
                 "words": f"{_palace.NOT_NOW}: {_palace.BROKEN}"}
 
 
+def _config(env: Optional[Mapping[str, str]] = None) -> dict:
+    """The host config (state_reader.config); read only when the card's push reach is worked out."""
+    return _read_config(env)
+
+
+def reach_reason(reader: StateReader, today: date, env: Optional[Mapping[str, str]] = None,
+                 cfg: Optional[Mapping] = None) -> Optional[str]:
+    """push_reach.reason for this card (config read when ``cfg`` is not given; local zone). Never raises."""
+    try:
+        return _push_reach.reason(_config(env) if cfg is None else cfg, reader.path, today, env)
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
           explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET,
-          palace_offer: Optional[str] = None, debt: Any = _UNSET) -> dict:
+          palace_offer: Optional[str] = None, debt: Any = _UNSET, reach: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
     labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
-    tools.owner_message envelope (read from ``env`` when not given)."""
+    tools.owner_message envelope (read from ``env`` when not given). ``reach`` is a push_reach reason (or None),
+    worked out from ``env`` when not given."""
     win = win or window(reader, now, bands)
     items, digest_age = _metric_items(reader, now, raw, labeler or _labeler.label)
     items["window"] = win
@@ -334,6 +356,11 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
         else:
             lines[1] += f"; {lit}"
     lines = lines[:MAX_LINES]
+    why = reach_reason(reader, today, env) if reach is _UNSET else reach
+    items["delivery"] = _push_reach.item(why)
+    outage = _push_reach.line(why)
+    if outage:
+        lines.append(outage)   # its own line, outside MAX_LINES: a full card never cuts it
     if palace_offer:
         lines.append(palace_offer)    # its own line, outside MAX_LINES: the link stays whole
     if explain_offer:
@@ -362,6 +389,18 @@ class CardCache:
         self._key, self._text, self.builds = None, None, 0
         self.wake = None   # the wake event of the last get's explain-back offer, for the hook's mark
         self.palace = None   # (line, wake) of the last get's memory palace offer, for the hook's mark
+        self._cfg_key, self._cfg = _UNSET, None   # the config, re-read only when its file's stat changes
+
+    def _config_for(self, env: Optional[Mapping[str, str]]) -> dict:
+        """The host config, cached under its path and mtime: a turn that changes nothing reads no file."""
+        path = config_path(env)
+        try:
+            key = (str(path), path.stat().st_mtime_ns)
+        except OSError:
+            key = (str(path), None)
+        if key != self._cfg_key:
+            self._cfg, self._cfg_key = _config(env), key
+        return self._cfg
 
     def get(self, reader: StateReader, now: float, today: date, raw: bool = False,
             bands: Optional[Mapping] = None, labeler: Optional[Callable] = None,
@@ -375,13 +414,17 @@ class CardCache:
         pal = palace_offer(reader, now, win, env, offer)   # quiet and its mark change it too: part of the key
         owed = debt_line(reader, now, today, env)   # the sleep file and the phone's nights change it: part of the key
         self.palace = (pal["line"], pal["wake"]) if pal["line"] else None
+        cfg = self._config_for(env)
+        reach = _push_reach.key(cfg, reader.path, env)   # stats only: the profile dir and the push log's mtime
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
-               _desktop_tick(now, env), _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed)
+               _desktop_tick(now, env), _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed,
+               reach)
         if key != self._key:
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
-                               explain_offer=explain, palace_offer=pal["line"], debt=owed)["text"]
+                               explain_offer=explain, palace_offer=pal["line"], debt=owed,
+                               reach=reach_reason(reader, today, env, cfg))["text"]
             self._key = key
             self.builds += 1
         return self._text

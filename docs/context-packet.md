@@ -25,7 +25,7 @@ bin/limitless-context-packet --write    # also write it to config "context_packe
 |---|---|
 | `schema` | always `limitless.context/1`; a later shape gets a new name |
 | `generated_at` | when the packet was built, ISO UTC; with `schema`, the only string that holds a digit |
-| `rows` | one row per state card item, in the card's order: `sleep`, `readiness`, `window`, `owner_message`, `habit_today` |
+| `rows` | one row per state card item, in the card's order: `sleep`, `readiness`, `window`, `owner_message`, `habit_today`, `delivery` (whether phone pushes reach the person: [push-reach.md](push-reach.md)) |
 | `rows[].words` | the item's T1 label (`short`, `low`, `peak`, `wrote recently`, `Done`), else `unknown: <why>` |
 | `rows[].modality` | `measured`, `imported`, `proxy`, `self_report` or `messages` (the envelope's own); null when there is no value |
 | `rows[].evidence_tier` | `direct`, `indirect`, `stale` or `none`: how the value was obtained, never a score |
@@ -88,6 +88,7 @@ readiness: low (imported, direct, about four hours ago)
 window: peak (proxy, indirect, under an hour ago)
 owner_message: unknown: no owner session DBs or beacons: set LIMITLESS_OWNER_DBS or LIMITLESS_OWNER_BEACONS (config "owner_dbs" or "owner_beacons") (no modality, none, age unknown)
 habit_today: Done (self_report, direct, about four hours ago)
+delivery: unknown: no push outage is known (measured, none, age unknown)
 window: peak
 asks: asks waiting on you
 dry run: nothing written (run with --write to write the packet to config "context_packet_path")
@@ -98,6 +99,7 @@ readiness: low (imported, direct, about four hours ago)
 window: peak (proxy, indirect, under an hour ago)
 owner_message: unknown: no owner session DBs or beacons: set LIMITLESS_OWNER_DBS or LIMITLESS_OWNER_BEACONS (config "owner_dbs" or "owner_beacons") (no modality, none, age unknown)
 habit_today: Done (self_report, direct, about four hours ago)
+delivery: unknown: no push outage is known (measured, none, age unknown)
 window: peak
 asks: asks waiting on you
 no context packet path: set "context_packet_path" in config.json to write the packet; nothing written
@@ -108,6 +110,7 @@ readiness: low (imported, direct, about four hours ago)
 window: peak (proxy, indirect, under an hour ago)
 owner_message: unknown: no owner session DBs or beacons: set LIMITLESS_OWNER_DBS or LIMITLESS_OWNER_BEACONS (config "owner_dbs" or "owner_beacons") (no modality, none, age unknown)
 habit_today: Done (self_report, direct, about four hours ago)
+delivery: unknown: no push outage is known (measured, none, age unknown)
 window: peak
 asks: asks waiting on you
 written: the context packet (config "context_packet_path")
@@ -155,6 +158,13 @@ $ limitless-context-packet --json
       "modality": "self_report",
       "evidence_tier": "direct",
       "age_words": "about four hours ago"
+    },
+    {
+      "key": "delivery",
+      "words": "unknown: no push outage is known",
+      "modality": "measured",
+      "evidence_tier": "none",
+      "age_words": "age unknown"
     }
   ],
   "window": "peak",

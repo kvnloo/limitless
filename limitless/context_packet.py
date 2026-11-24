@@ -12,7 +12,8 @@ The shape (schema ``limitless.context/1``)::
      "window": "<words>", "asks": "<words>"}
 
 It wraps card.build, the builder the pre_llm_call hook uses, and keeps only its T1 parts: one row per card item
-(``items``: sleep, readiness, window, owner_message, habit_today, in that order), ``window`` from the window
+(``items``: sleep, readiness, window, owner_message, habit_today, delivery, in that order; delivery is
+push_reach's words for whether phone pushes reach the person), ``window`` from the window
 item and ``asks`` from whether the card holds its "asks waiting on you" line. Nothing here reads a state file
 itself, and a row takes only whitelisted fields of the item's envelope: never ``value`` when it holds a digit
 (the owner item's value is a time; only its T1 label goes in), never ``raw``, never ``age_h`` (the age is in

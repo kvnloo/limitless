@@ -46,7 +46,7 @@ def _reader() -> StateReader:
 
 
 def _status(args, now):
-    return tools.status(_reader(), now, config())
+    return tools.status_with_delivery(_reader(), now, config(), os.environ)
 
 
 def _state(args, now):
@@ -246,7 +246,9 @@ TOOLS = {
     "limitless_status": (_schema(
         "limitless_status",
         "Freshness of each Limitless input (wearable, phone, scale, ...): its age in hours, which inputs "
-        "are not recording (over a day old or down) and when the pipeline last ran."), _status, "📡"),
+        "are not recording (over a day old or down) and when the pipeline last ran. `delivery` says in words "
+        "when phone pushes are not reaching the person (the push sender profile is missing, or the last pushes "
+        "failed to send); its value is null when no push outage is known."), _status, "📡"),
     "limitless_state": (_schema(
         "limitless_state",
         "Today's state card: decision window, sleep and readiness as coarse labels with their modality, "
