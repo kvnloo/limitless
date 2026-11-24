@@ -28,6 +28,9 @@ stage on (a READY one drops the flag; any new reply waits for its own confirmati
 (WAITING_REPLY, REFUSED) the words go on with the profiles the owner can name (push_sender.candidates over the
 Hermes home of ``env``, files only): "; ready profiles: a, b", else "; profiles that may reach Telegram: c"
 (readiness cannot tell), else "; no profile can reach Telegram"; nothing is added when no Hermes home is known.
+A maybe already proven unable to send (proven_failed: the reply push-sender.json holds was applied on an unknown
+answer and its confirmation failed, the UNKNOWN_FAILED condition) is not offered again; when it was the only one
+and none is ready the words end "; no profile left that may reach Telegram (one already failed to send)".
 The constant stays the prefix, so a caller matches with ``startswith``. The outage is outage_recap.outage over the log rows (the same rule the
 recap and the state card use). No push log (``rows`` None) is missing with the reason, never a guess. Words only:
 never a digit, a path, a host or a time stamp, and no profile name but the candidates' (a name with a digit is only
@@ -63,20 +66,58 @@ BROKEN = UNKNOWN_PREFIX + "the push log or a mark could not be read"
 READY_PROFILES = "; ready profiles: "
 MAYBE_PROFILES = "; profiles that may reach Telegram: "
 NO_PROFILE = "; no profile can reach Telegram"
+# the only maybe already failed to send (proven_failed) and no profile is ready
+NO_MAYBE_LEFT = "; no profile left that may reach Telegram (one already failed to send)"
 
 
-def _who_can_send(cfg, env, hermes_home) -> str:
-    """What the owner could reply with, appended to WAITING_REPLY / REFUSED; "" when no Hermes home is known."""
+def proven_failed(state_dir, cfg: Optional[Mapping], rows: Optional[Iterable] = None) -> Optional[str]:
+    """The profile push-sender.json names when it is proven unable to send: the reply there was applied on an
+    ``unknown: ...`` readiness answer (sender_reply.applied_unknown) and its one confirmation failed to send (its
+    newest row in kevin-push's log, else its mark sender-confirm.json): the same condition as UNKNOWN_FAILED, but
+    whether or not an outage is open. ``rows`` default to kevin-push's log at config ``push_log``. None for anything
+    else, no state dir or a file that cannot be read. Read-only; stores nothing; never raises."""
+    try:
+        if state_dir is None or not _sr.applied_unknown(state_dir):
+            return None
+        reply_at = push_sender.reply_at(state_dir)
+        if reply_at is None:
+            return None
+        if rows is None:
+            path = _da.log_path(cfg, state_dir)
+            got = _da.read_log(path) if path is not None else None
+            rows = got[0] if got is not None else []
+        if _confirmation(state_dir, list(rows), cfg if isinstance(cfg, Mapping) else {}, reply_at) != FAILED:
+            return None
+        return push_sender.reply_profile(state_dir)
+    except Exception:  # noqa: BLE001 - nothing is dropped when it cannot be told
+        return None
+
+
+def drop_failed(cands: Optional[list], failed: Optional[str]) -> tuple:
+    """(candidates, dropped): ``cands`` without the ``failed`` profile when readiness only calls it a maybe
+    (``unknown: ...``); a READY one is kept. ``dropped`` is True when one was taken out."""
+    if cands is None or failed is None:
+        return cands, False
+    kept = [(n, w) for n, w in cands if not (n == failed and w.startswith(push_sender.UNKNOWN_PREFIX))]
+    return kept, len(kept) != len(cands)
+
+
+def _who_can_send(cfg, env, hermes_home, failed: Optional[str] = None) -> str:
+    """What the owner could reply with, appended to WAITING_REPLY / REFUSED; "" when no Hermes home is known.
+    ``failed`` (proven_failed) is a maybe that already failed to send: it is not offered again."""
     try:
         cands = push_sender.candidates(cfg, env, hermes_home)
     except Exception:  # noqa: BLE001 - the stage still holds without the names
         return ""
     if cands is None:
         return ""
+    cands, dropped = drop_failed(cands, failed)
     ready, maybe = push_sender.ready_names(cands), push_sender.maybe_names(cands)
     if ready:
         return READY_PROFILES + ", ".join(ready)
-    return MAYBE_PROFILES + ", ".join(maybe) if maybe else NO_PROFILE
+    if maybe:
+        return MAYBE_PROFILES + ", ".join(maybe)
+    return NO_MAYBE_LEFT if dropped else NO_PROFILE
 
 
 def _confirmation(state_dir, rows, cfg, reply_at: float) -> str:
@@ -115,9 +156,9 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
             reply_at = None
         refused = _sr.refused_at(state_dir)
         if refused is not None and refused >= o["first_at"] and (reply_at is None or refused > reply_at):
-            return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home)
+            return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
         if reply_at is None:
-            return MISSING, WAITING_REPLY + _who_can_send(cfg, env, hermes_home)
+            return MISSING, WAITING_REPLY + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
         why = _confirmation(state_dir, rows, cfg, reply_at)
         if why == FAILED and _sr.applied_unknown(state_dir):
             return MISSING, UNKNOWN_FAILED

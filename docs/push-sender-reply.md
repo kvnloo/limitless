@@ -16,6 +16,13 @@ or says `none can reach Telegram`. While pushes fail and the owner's reply is aw
 profiles: alpha, beta` (`; ready profiles: `, else `; profiles that may reach Telegram: `, else `; no profile can
 reach Telegram`). Files only and presence only, as below; hermes is never run.
 
+A maybe that already failed to send is not offered again. When the reply in `push-sender.json` was applied on an
+`unknown:` answer (the mark's `applied_unknown`, below) and its one confirmation then failed to send, both the
+`sender candidates` row and the `push recovery` words leave that profile out of the maybes. With no other maybe
+the row says `maybe: none left (one already failed to send)` and the words end `; no profile left that may reach
+Telegram (one already failed to send)`; a ready profile is still named. Nothing new is stored for this: the
+profile is the one `push-sender.json` already holds and the flag is the mark's; the next applied reply clears it.
+
 The sender ingest job applies that reply by itself, the way the apps ingest
 ([apps-ingest.md](apps-ingest.md#as-an-event-job)) and the ranked drop ingest
 ([ranked-ledger.md](ranked-ledger.md#as-an-event-job)) apply theirs. Nobody has to hand-edit config

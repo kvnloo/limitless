@@ -202,7 +202,8 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
                     hermes_home: "Path | str | None" = None) -> dict:
     """Whether bin/kevin-push's sender profile can reach Telegram (push_sender.readiness over the profile
     $KEVIN_PUSH_PROFILE, else config ``push_profile``, else the default, and its target): live when ``ready``;
-    missing when the profile does not exist (``missing: ...``), has no Telegram bot token or no chat to send to,
+    missing when the profile does not exist (push_sender.MISSING, its leading ``missing:`` dropped so the line
+    says it once), has no Telegram bot token or no chat to send to,
     or it cannot be told (``unknown: ...``). Files only, and only whether a key is present: hermes is never run,
     no process is started, nothing is sent and no secret value is read. Report-only: kevin-push's own preflight
     is push_sender.check. Words only: never a value, the profile name, the target or a path. Kind ``source``:
@@ -210,11 +211,15 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
     from . import push_sender
     words = push_sender.readiness(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
                                   hermes_home)
-    return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.READY else MISSING, words)
+    status = LIVE if words == push_sender.READY else MISSING
+    if words.startswith(status + ": "):   # push_sender.MISSING already says "missing:": print it once
+        words = words[len(status) + 2:]
+    return _row(PUSH_SENDER_ROW, "source", status, words)
 
 
 SENDER_CANDIDATES_ROW = "sender candidates"
 CANDIDATES_NONE = "none can reach Telegram"
+CANDIDATES_FAILED = "maybe: none left (one already failed to send)"
 # Why a candidate is only a maybe (its readiness ``unknown: ...``), one and several: (singular, plural).
 _MAYBE_WHY = {
     "SECRET_SOURCE": ("keeps its token in a secret source", "keep their tokens in a secret source"),
@@ -225,12 +230,14 @@ _MAYBE_OTHER = ("it cannot be told", "it cannot be told")
 
 
 def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
-                          hermes_home: "Path | str | None" = None) -> dict:
+                          hermes_home: "Path | str | None" = None, state_dir: "Path | str | None" = None) -> dict:
     """Which Hermes profiles the owner could reply ``push via <name>`` with (push_sender.candidates: ``default`` and
     each live profile dir, each with its readiness for kevin-push's target): off when no Hermes home is set or it
     does not exist; else ``ready: a, b`` (live), then ``maybe: c (why)`` for those readiness cannot tell, grouped
     by why, or ``none can reach Telegram`` (missing) when no profile is ready or a maybe. Missing too when only
-    maybes are left. The one row that names profiles (the owner's own labels); a name with a digit is only counted,
+    maybes are left. A maybe already proven unable to send (push_recovery.proven_failed over ``state_dir``: the
+    reply push-sender.json holds was applied on an unknown answer and its confirmation failed) is left out; when no
+    maybe is left then, the row says CANDIDATES_FAILED. The one row that names profiles (the owner's own labels); a name with a digit is only counted,
     and never a value, a path or the target. Files only: hermes is never run and no secret value is read.
     Report-only. Kind ``source``: --strict does not count it."""
     from . import push_sender as ps
@@ -243,6 +250,9 @@ def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
         status = MISSING if why == ps.HOME_UNREADABLE else OFF
         return _row(SENDER_CANDIDATES_ROW, "source", status,
                     why if status == MISSING else why[len(ps.UNKNOWN_PREFIX):])
+    from . import push_recovery
+    cands, dropped = push_recovery.drop_failed(
+        cands, push_recovery.proven_failed(state_dir, cfg) if state_dir is not None else None)
     parts = []
     ready = ps.ready_names(cands)
     if ready:
@@ -258,6 +268,8 @@ def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
         maybe.append(f"{', '.join(ps.maybe_names([(n, w) for n in names]))} ({one if len(names) == 1 else many})")
     if maybe:
         parts.append("maybe: " + "; ".join(maybe))
+    elif dropped:
+        parts.append(CANDIDATES_FAILED)
     return _row(SENDER_CANDIDATES_ROW, "source", LIVE if ready else MISSING, "; ".join(parts) or CANDIDATES_NONE)
 
 
@@ -934,7 +946,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
-             sender_candidates_row(cfg),
+             sender_candidates_row(cfg, state_dir=reader.path),
              push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]

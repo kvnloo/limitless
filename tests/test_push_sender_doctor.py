@@ -55,7 +55,7 @@ class Row(NoProcess):
 
     def test_the_profile_is_gone_is_missing(self):
         r = self.row({"push_profile": "sender-a"})
-        self.assertEqual((r["status"], r["reason"]), ("missing", "missing: the sender profile does not exist"))
+        self.assertEqual((r["status"], r["reason"]), ("missing", "the sender profile does not exist"))
 
     def test_a_profile_without_a_token_is_missing_with_why(self):
         self.sender("sender-a", "TELEGRAM_HOME_CHANNEL=12345\n")
@@ -103,7 +103,7 @@ class InTheReport(NoProcess):
         got = {r["name"]: r for r in self.rows({"push_profile": "sender-a", "push_to": "telegram"})}["push sender"]
         self.assertEqual((got["status"], got["reason"]), ("live", "ready"))
         got = {r["name"]: r for r in self.rows({"push_profile": "sender-a"}, KEVIN_PUSH_PROFILE="sender-b")}
-        self.assertEqual(got["push sender"]["reason"], "missing: the sender profile does not exist")
+        self.assertEqual(got["push sender"]["reason"], "the sender profile does not exist")
         got = {r["name"]: r for r in self.rows({"push_profile": "sender-a", "push_to": "telegram"},
                                                 KEVIN_PUSH_TO="telegram:example-zz")}
         self.assertEqual(got["push sender"]["reason"], "no Telegram chat set for the sender profile")
