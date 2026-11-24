@@ -36,7 +36,9 @@ PRIVATE = [
     (r"(?i)\b(?:pixel|galaxy|iphone|ipad|macbook|mac mini|mac studio|oura|whoop|fitbit|garmin)\b", "device"),
     (r"(?<![\w-])\+?\d{3}[ .-]\d{3}[ .-]\d{4}(?![\w-])", "phone number"),
     (r"\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8,}\b", "serial number"),
-    (r"(?<![\d#/-])\d{6,}(?![\d-])", "long number"),  # the design-comment id is the one allowed, see below
+    # a digit run glued to a letter (a short git sha like a910662) is not a standalone number;
+    # the design-comment id is the one allowed, see below
+    (r"(?<![\w#/-])\d{6,}(?![\d-])", "long number"),
 ]
 
 
@@ -95,7 +97,7 @@ class UpstreamPrBody(unittest.TestCase):
         for sample in ("/home/someone/x", "10.0.0.7", "box.local", "a@b.example", "@someone", "Kevin",
                        "62 bpm", "HRV", "Pixel", "555-123-4567", "ZX9Q81234AB", "1234567"):
             self.assertTrue(any(re.search(pat, sample) for pat, _ in BAD + PRIVATE), sample)
-        for fine in ("#158538", "16a9936", "2026-01-05T12:00:00+00:00", "stale_after_s=3600", "`ctx.register_x`"):
+        for fine in ("#158538", "16a9936", "a910662", "2026-01-05T12:00:00+00:00", "stale_after_s=3600", "`ctx.register_x`"):
             self.assertFalse([w for pat, w in BAD + PRIVATE if re.search(pat, fine)], fine)
 
     def test_every_date_is_the_synthetic_fixture_date(self):
