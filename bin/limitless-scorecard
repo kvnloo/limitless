@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """limitless-scorecard [path]: print the weekly review's north-star block from the hand-kept scorecard table.
 
-The path is the argument, else $LIMITLESS_SCORECARD, else "scorecard" in config.json. Read-only: it never
-writes a file (no bytecode either) and never sends. No table or no configured path: exit 0, no output.
+The path is the argument, else $LIMITLESS_SCORECARD, else "scorecard" in config.json. When the state dir
+exists, the block ends with what the audits measured for rows one and two ("Measured: loop uptime: ...",
+"Measured: delivery: ...") and a note when a green row's measurement says not met (scorecard.measured_lines).
+Read-only: it never writes a file (no bytecode either) and never sends. No table or no configured path: exit 0, no output.
 An unreadable file: exit 1 with a reason on stderr that does not echo the path.
 """
 import sys
@@ -11,7 +13,18 @@ sys.dont_write_bytecode = True
 from pathlib import Path  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import time  # noqa: E402
+
 from limitless import scorecard  # noqa: E402
+from limitless.state_reader import config, state_dir  # noqa: E402
+
+
+def _measured(rows):
+    """The measured lines for the block, or [] when there is no state dir to measure."""
+    st = state_dir()
+    if not st.is_dir():
+        return []
+    return scorecard.measured_lines(rows, scorecard.measured(st, config(), time.time()))
 
 
 def main(argv):
@@ -23,7 +36,8 @@ def main(argv):
     except OSError:
         print("limitless-scorecard: no scorecard file at that path", file=sys.stderr)
         return 1
-    block = scorecard.weekly_block(scorecard.summary(scorecard.parse(text)))
+    rows = scorecard.parse(text)
+    block = scorecard.weekly_block(scorecard.summary(rows), _measured(rows))
     if block:
         print(block)
     return 0

@@ -24,6 +24,7 @@ from . import mock_guard as _mock_guard
 from .envelope import STALE_H, _tier as _envelope_tier, envelope, missing, with_label
 from .state_reader import (BODY_CONFIG, OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, OWNER_DBS_CONFIG, OWNER_DBS_ENV,
                            PRESLEEP_HR_CONFIG, RIDES_CONFIG, SLEEP_CONFIG, WORK_QUEUE_CONFIG, StateReader, config, parse_ts)
+from .state_reader import state_dir as _state_dir
 from .glide_provider import GlideProvider
 from .window import MAX_AWAKE_H, wake_at
 from .window import window as _window
@@ -547,21 +548,59 @@ def skill_tree(state_dir, now: float, today: date) -> dict:
             "label": _t1(_skill_tree.label(t), SKILL_TREE_MODALITY), "note": SKILL_TREE_NOTE}
 
 
-def scorecard(path: Optional[Path], now: float) -> dict:
+SCORECARD_MODALITY = "measured"   # the measured rows: the audits read the loop's own logs
+
+
+def scorecard_measured(rows: list, state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None,
+                       raw: bool = False, env: Optional[Mapping[str, str]] = None,
+                       home: Optional[Path] = None) -> list:
+    """limitless_scorecard's ``measured`` field: rows one and two as the uptime and delivery audits measured
+    them (scorecard.measured_audits), ``[{n, criterion_words, label: T1, goal}]`` plus ``note`` when the hand
+    row is green and the goal is not met. The audit's counts sit in ``counts`` only with ``raw``."""
+    out = []
+    for m, a in _scorecard.measured_audits(state_dir, cfg, now, tz, env=env, home=home):
+        item = dict(m, label=_t1(m["label"], SCORECARD_MODALITY))
+        note = _scorecard.disagreement(rows, m)
+        if note:
+            item["note"] = note
+        # counts only beside a known label, as limitless_uptime and limitless_delivery give them
+        if raw and a is not None and m["label"] == a["label"]["label"]:
+            keys = UPTIME_RAW_KEYS if m["n"] == _scorecard.UPTIME_ROW else DELIVERY_RAW_KEYS
+            item["counts"] = {k: a[k] for k in keys}
+        out.append(item)
+    return out
+
+
+def scorecard(path: Optional[Path], now: float, state_dir=None, cfg: Optional[Mapping] = None,
+              tz: Optional[tzinfo] = None, raw: bool = False, env: Optional[Mapping[str, str]] = None,
+              home: Optional[Path] = None) -> dict:
     """The weekly review's scorecard block: at most 5 plain-word lines (counts, the stop rule, the criteria
-    furthest from green). Self-reported, aged by the file's mtime. Reasons never echo the path."""
+    furthest from green). Self-reported, aged by the file's mtime. Reasons never echo the path.
+
+    ``measured`` beside the envelope (scorecard_measured) says what the audits measured for rows one and two,
+    from ``state_dir`` (default the configured one) and ``cfg`` (default the host config); it never changes a
+    status. The value and the envelope's shape are the same with or without it."""
+    if state_dir is None:
+        state_dir = _state_dir(env, home)
+    cfg = config(env, home) if cfg is None else cfg
+    rows = []
     if path is None:
-        return missing(f"no scorecard path: set {_scorecard.ENV_KEY} or \"{_scorecard.CONFIG_KEY}\" in config.json")
-    try:
-        text = Path(path).read_text(errors="replace")
-        mtime = Path(path).stat().st_mtime
-    except OSError:
-        return missing("no scorecard file at the configured path")
-    age_h = max(0.0, now - mtime) / 3600
-    lines = _scorecard.summary(_scorecard.parse(text))
-    if not lines:
-        return envelope(None, "self_report", age_h, reason="the scorecard file has no scorecard table rows")
-    return envelope(lines, "self_report", age_h)
+        out = missing(f"no scorecard path: set {_scorecard.ENV_KEY} or \"{_scorecard.CONFIG_KEY}\" in config.json")
+    else:
+        try:
+            text = Path(path).read_text(errors="replace")
+            mtime = Path(path).stat().st_mtime
+        except OSError:
+            text = None
+            out = missing("no scorecard file at the configured path")
+        if text is not None:
+            age_h = max(0.0, now - mtime) / 3600
+            rows = _scorecard.parse(text)
+            lines = _scorecard.summary(rows)
+            out = (envelope(lines, "self_report", age_h) if lines else
+                   envelope(None, "self_report", age_h, reason="the scorecard file has no scorecard table rows"))
+    out["measured"] = scorecard_measured(rows, state_dir, cfg, now, tz, raw, env, home)
+    return out
 
 
 OWNER_KIND = "owner_message_age_h"
@@ -1306,6 +1345,10 @@ def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = No
     return out
 
 
+DELIVERY_RAW_KEYS = ("days", "delivered", "known_days", "cap", "over_cap_days", "wake", "no_action",
+                     "action_unknown", "skipped")
+
+
 def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
              home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> dict:
     """limitless_delivery: the delivery audit (delivery_audit.audit) of kevin-push's own log over the seven local
@@ -1344,8 +1387,7 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
            and float(r["at"]) <= now]
     value = {"label": a["label"]["label"]}
     if raw:
-        for k in ("days", "delivered", "known_days", "cap", "over_cap_days", "wake", "no_action",
-                  "action_unknown", "skipped"):
+        for k in DELIVERY_RAW_KEYS:
             value[k] = a[k]
     out = envelope(value, _delivery.MODALITY, (now - max(ats)) / 3600 if ats else None)
     out["label"] = a["label"]
@@ -1356,10 +1398,11 @@ UPTIME_RAW_KEYS = ("days", "inputs", "window_days", "known_days", "all_fresh_day
                    "goal", "skipped")
 
 
-def _uptime_read(reader: StateReader, now: float, env, home, tz) -> tuple:
-    """(audit, rows) of the state dir's runs.jsonl; (None, []) when there is no readable log."""
+def _uptime_read(reader: StateReader, now: float, env, home, tz, cfg: Optional[Mapping] = None) -> tuple:
+    """(audit, rows) of the state dir's runs.jsonl; (None, []) when there is no readable log. ``cfg`` is the
+    host config already read (default: read it from ``env``/``home``)."""
     from . import outage   # lazily: outage reads this module
-    cfg = config(env, home)
+    cfg = config(env, home) if cfg is None else cfg
     got = _uptime.read_log(reader.path / _uptime.LOG_NAME)
     if got is None:
         return None, []
@@ -1373,12 +1416,23 @@ def _uptime_read(reader: StateReader, now: float, env, home, tz) -> tuple:
 
 
 def uptime_audit(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
-                 home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[dict]:
+                 home: Optional[Path] = None, tz: Optional[tzinfo] = None,
+                 cfg: Optional[Mapping] = None) -> Optional[dict]:
     """uptime_audit.audit of the state dir's runs.jsonl over the config window (``uptime_days``) ending today
     (local, ``tz``), judging inputs.json's input names plus every name a run lists, config ``outage_ignore`` left
     out, against ``uptime_target``; None when there is no readable log. Read-only: limitless_uptime, the
-    doctor's uptime row and bin/limitless-uptime-audit all read through it."""
-    return _uptime_read(reader, now, env, home, tz)[0]
+    doctor's uptime row, the scorecard's measured rows and bin/limitless-uptime-audit all read through it."""
+    return _uptime_read(reader, now, env, home, tz, cfg)[0]
+
+
+def uptime_reason(a: Optional[dict]) -> Optional[str]:
+    """Why an uptime audit is unknown (no runs.jsonl, no run in the window, fewer than a week of runs that name
+    their stale inputs); None when its label is known. Words only, never a path."""
+    if a is None:
+        return _uptime.NO_LOG_REASON
+    if not any(d["runs"] for d in a["days"]):
+        return _uptime.NO_ROWS_REASON
+    return _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None
 
 
 def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
@@ -1396,9 +1450,7 @@ def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Map
     """
     unknown = {"label": _uptime.UNKNOWN, "tier": "T1", "modality": _uptime.MODALITY}
     a, rows = _uptime_read(reader, now, env, home, tz)
-    reason = (_uptime.NO_LOG_REASON if a is None
-              else _uptime.NO_ROWS_REASON if not any(d["runs"] for d in a["days"])
-              else _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None)
+    reason = uptime_reason(a)
     if reason:
         out = envelope(None, _uptime.MODALITY, None, reason=reason)
         out["label"] = unknown
