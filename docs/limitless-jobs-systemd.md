@@ -90,3 +90,27 @@ journalctl --user -u limitless-jobs.service -n 20
 ```
 
 Change `%h/src/limitless` to wherever the repo is checked out.
+
+## Timer: the reply ingests without sending (`--ingest`)
+
+When sends are gated elsewhere and the timer runs `limitless-jobs` without `--send`, that plain dry run never runs
+the reply ingests (`apps_ingest`, `ranked_ingest`, `sender_ingest`): their lines say `dry run of limitless-jobs: not
+run`, so a `push via <profile>` reply ([push-sender-reply.md](push-sender-reply.md)) never takes effect by itself.
+`--ingest` runs only those three for real, each by its own config mode (`off`: no line, `dry_run`: only the mark
+is written, `write`: writes), exactly as `--send` runs them, and keeps every other job a plain dry run: it never
+calls `kevin-push` or `limitless-brief`, never sends and starts no process. `--ingest --send` is `--send`.
+
+An example service for that timer (example text only: nothing here installs or touches a unit):
+
+```ini
+[Unit]
+Description=Limitless jobs pass: the reply ingests run, nothing is sent
+
+[Service]
+Type=oneshot
+ExecStart=%h/src/limitless/bin/limitless-jobs --ingest
+```
+
+The timer unit above drives it as is. While a sync waits for its ingest, `limitless-doctor`'s `job apps ingest`,
+`job ranked ingest` and `job sender ingest` rows say `(limitless-jobs --ingest or --send runs it)`
+([doctor.md](doctor.md)).

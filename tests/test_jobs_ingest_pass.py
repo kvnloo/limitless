@@ -354,5 +354,27 @@ class Runner(Base):
             self.assertIn("`limitless-jobs --ingest` or `--send` runs it", line[0])
 
 
+
+class TimerDoc(unittest.TestCase):
+    def test_the_systemd_doc_has_a_timer_section_whose_service_adds_ingest(self):
+        text = (ROOT / "docs" / "limitless-jobs-systemd.md").read_text(encoding="utf-8")
+        at = text.index("## Timer: the reply ingests without sending (`--ingest`)")
+        section = text[at:]
+        self.assertIn("ExecStart=%h/src/limitless/bin/limitless-jobs --ingest\n", section)
+        for word in ("apps_ingest", "ranked_ingest", "sender_ingest", "never sends", "`--ingest --send` is `--send`",
+                     "example text only"):
+            self.assertIn(word, section)
+        self.assertNotIn("systemctl", section)
+
+    def test_the_schedule_cards_doc_says_what_runs_the_ingest_cards(self):
+        text = (ROOT / "docs" / "schedule-cards.md").read_text(encoding="utf-8")
+        self.assertIn("`limitless-jobs --ingest or --send` (in `words.runs`)", text)
+
+    def test_the_cli_docstring_names_ingest(self):
+        head = CLI.read_text(encoding="utf-8").split('"""')[1]
+        self.assertIn("--ingest", head.splitlines()[0])
+        self.assertIn("--ingest with --send is --send", head)
+
+
 if __name__ == "__main__":
     unittest.main()

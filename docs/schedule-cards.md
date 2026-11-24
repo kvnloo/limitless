@@ -83,6 +83,10 @@ event ("after each sync run"), ending at the next sync run, sender `local`, budg
 `sender_ingest:<sync run time>`. It sends nothing and never names a profile
 ([push-sender-reply.md](push-sender-reply.md)).
 
+The three ingest cards (apps, ranked, sender) say `limitless-jobs --ingest or --send` (in `words.runs`): the
+timer's `--ingest` pass runs them for real and sends nothing
+([limitless-jobs-systemd.md](limitless-jobs-systemd.md#timer-the-reply-ingests-without-sending---ingest)).
+
 ## The outage recap's card
 
 When config `outage_recap` is `dry_run` or `write`, `cards(recap=True)` adds one more card last:
