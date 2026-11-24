@@ -241,6 +241,78 @@ def stop_request(text) -> bool:
     return any(tuple(words[:len(s)]) == s for s in STOP_WORDS)
 
 
+# Why a wake day had no delivered brief (brief_misses): the fixed list, in words, no digit.
+MISS_SLEEP, MISS_QUIET = "held while Sleep mode was on", "held by the quiet setting"
+MISS_REPEAT, MISS_GATE = "stopped as a repeat", "refused by the send gate"
+MISS_LOGGED, MISS_NONE, MISS_UNKNOWN = "logged but not sent", "no brief attempt on that day", "unknown"
+MISS_REASONS = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_NONE, MISS_UNKNOWN)
+# Precedence when a day has several brief rows and none delivered: the first of these that any of them has.
+# The cause that stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the event for a
+# retry that the gate then stops as a repeat, refuses (cap) or only logs, so those come after it. A day with
+# no brief row at all is MISS_NONE; a brief row whose ``how`` is none of the known words is MISS_UNKNOWN.
+MISS_ORDER = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_UNKNOWN)
+_MISS_EXACT = {"held (sleep mode)": MISS_SLEEP, "log (duplicate)": MISS_REPEAT,
+               f"log ({send_gate.ONCE_DROP})": MISS_REPEAT, "log (daily cap)": MISS_GATE,
+               "log (dropped)": MISS_GATE, "log": MISS_LOGGED, "folded (brief line)": MISS_LOGGED}
+
+
+def miss_reason(how) -> str:
+    """The MISS_REASONS word for one undelivered brief row's ``how`` (bin/kevin-push's HOW, the quiet drop
+    ``log (quiet: ...)`` and a failed transport ``log (telegram rc=N)``); MISS_UNKNOWN for anything else."""
+    if not isinstance(how, str):
+        return MISS_UNKNOWN
+    if how in _MISS_EXACT:
+        return _MISS_EXACT[how]
+    if how.startswith("log (quiet:"):
+        return MISS_QUIET
+    if how.startswith("log (telegram rc="):
+        return MISS_LOGGED
+    return MISS_UNKNOWN
+
+
+def brief_misses(rows: Optional[Iterable], wake_days: Optional[Iterable], tz: Optional[tzinfo] = None, *,
+                 days: Optional[Iterable] = None) -> dict:
+    """Why the wake brief did not reach the person on each known wake day without a delivered one.
+
+    A wake day (``wake_days``, as audit takes them) is judged only when the log has rows that day, like audit;
+    ``days`` (optional) limits the judged days (audit passes its window). One reason a missed day, decided only
+    from that day's rows titled WAKE_TITLE: a delivered one means no miss; else the first reason in MISS_ORDER
+    any of them has (miss_reason); no such row at all is MISS_NONE. Other titles never lend their reason.
+    T0: ``{"known", "missed", "reasons": {reason: count for every MISS_REASONS}, "days": {iso day: reason},
+    "unknown_wake_days", "top"}``; ``known`` is False (and nothing counted) when no wake day is known or the
+    log has no row. ``top`` is the most common reason (ties by MISS_REASONS order), None with no miss.
+    """
+    good = [r for r in rows or () if valid(r)]
+    wakes = _wake_set(wake_days) or set()
+    if days is not None:
+        wakes &= _wake_set(days) or set()
+    out = {"known": bool(good and wakes), "missed": 0, "reasons": {r: 0 for r in MISS_REASONS}, "days": {},
+           "unknown_wake_days": 0, "top": None}
+    if not out["known"]:
+        return out
+    by_day = {}
+    for r in good:
+        d = _day(r, tz)
+        if d in wakes:
+            by_day.setdefault(d, []).append(r)
+    for d in sorted(wakes):
+        got = by_day.get(d)
+        if not got:
+            out["unknown_wake_days"] += 1
+            continue
+        briefs = [r for r in got if r.get("title") == WAKE_TITLE]
+        if any(delivered(r) for r in briefs):
+            continue
+        seen = {miss_reason(r.get("how")) for r in briefs}
+        reason = next((m for m in MISS_ORDER if m in seen), MISS_NONE)
+        out["days"][d.isoformat()] = reason
+        out["reasons"][reason] += 1
+        out["missed"] += 1
+    if out["missed"]:
+        out["top"] = max(MISS_REASONS, key=lambda m: (out["reasons"][m], -MISS_REASONS.index(m)))
+    return out
+
+
 MUTING = (quiet.OFF, quiet.TONIGHT, quiet.SNOOZED)
 
 
