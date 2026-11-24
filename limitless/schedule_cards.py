@@ -25,6 +25,8 @@ The idea ledger (idea_ledger.py) adds one more card when a ledger is configured:
 ``local`` (bin/limitless-ledger-append --write on the wind_down event; nothing is sent, budget zero).
 The sender ingest (sender_ingest_job.py) adds ``sender_ingest_card()`` when config ``sender_ingest`` is not off:
 sender ``local``, on the sync event, budget zero; it never names a profile.
+The sender confirmation (sender_confirm_job.py) adds ``sender_confirm_card()`` when config ``sender_confirm`` is
+not off: sender ``plugin``, on the sender_changed event (the owner's reply changed the sender), once per change.
 The outage recap (outage_recap_job.py) adds ``outage_recap_card()`` when config ``outage_recap`` is not off:
 sender ``plugin``, on the push_back event (a push delivered after an outage), once per outage.
 
@@ -77,18 +79,19 @@ def specs(habit: Optional[dict] = None) -> list:
 
 def cards(external: Iterable[str] = (), habit: Optional[dict] = None, ledger: bool = False,
           noop: bool = False, apps: bool = False, ranked: bool = False, recap: bool = False,
-          sender: bool = False) -> list:
+          sender: bool = False, confirm: bool = False) -> list:
     """One card per job spec, in jobs.SPECS order. ``external``: job names another sender owns
     (jobs_runner.external_jobs); ``habit``: habit.json, whose ``cue`` moves the two habit cards; ``ledger``
     (an idea ledger is configured) adds ledger_card(); ``noop`` (config ``noop_export`` is not off) adds
     noop_export_card(); ``apps`` (config ``apps_ingest`` is not off) adds apps_ingest_card(); ``ranked`` (config
     ``ranked_ingest`` is not off) adds ranked_ingest_card(); ``sender`` (config ``sender_ingest`` is not off) adds
-    sender_ingest_card(); ``recap`` (config ``outage_recap`` is not off) adds outage_recap_card() last."""
+    sender_ingest_card(); ``confirm`` (config ``sender_confirm`` is not off) adds sender_confirm_card(); ``recap``
+    (config ``outage_recap`` is not off) adds outage_recap_card() last."""
     ext = set(external or ())
     return [card_for(s, ext) for s in specs(habit)] + ([ledger_card()] if ledger else []) + \
         ([noop_export_card()] if noop else []) + ([apps_ingest_card()] if apps else []) + \
         ([ranked_ingest_card()] if ranked else []) + ([sender_ingest_card()] if sender else []) + \
-        ([outage_recap_card()] if recap else [])
+        ([sender_confirm_card()] if confirm else []) + ([outage_recap_card()] if recap else [])
 
 
 LEDGER_ID = "idea_ledger"
@@ -184,6 +187,25 @@ def sender_ingest_card() -> dict:
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
             "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
+
+
+CONFIRM_WINDOW = "any time you are awake: Sleep mode holds it, like every push, until you are back"
+
+
+def sender_confirm_card() -> dict:
+    """The sender confirmation's one card (jobs.SENDER_CONFIRM, sender_confirm_job): limitless-jobs sends one short
+    plain message right after the owner's reply changes the sender (the sender_changed event), once per change, so
+    a broken new sender shows up at once. Not a jobs.SPECS job: no decision window holds it, but it goes through
+    the send gate like every limitless push (budget the daily cap). It has no clock time and never names a
+    profile."""
+    spec = jobs.SENDER_CONFIRM
+    w = jobs.to_schedule_card(spec)
+    w.update(window=CONFIRM_WINDOW)
+    desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {w["delivery"]}'
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+            "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
+            "stale_after_s": spec.stale_after_s, "once_key": f"{spec.name}:<sender reply time>",
+            "budget": send_gate.DAILY_CAP, "per_window": spec.max_per_window, "sender": PLUGIN, "words": w}
 
 
 RECAP_WINDOW = "any time a push has just reached you: the delivery that ends an outage shows you can be reached"

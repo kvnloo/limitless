@@ -31,9 +31,11 @@ from .window import MAX_AWAKE_H
 # ingest job (APPS_INGEST), the ranked ingest job (RANKED_INGEST) and the sender ingest job (SENDER_INGEST) wake on
 # it. push_back is a push kevin-push
 # delivered after an outage (outage_recap.outage: SEND_FAIL_RUN or more failed sends in a row); only the outage
-# recap (OUTAGE_RECAP) wakes on it.
+# recap (OUTAGE_RECAP) wakes on it. sender_changed is the owner's "push via <profile>" reply setting the sender
+# (push-sender.json's ``at``, newer than the last confirmation; sender_changed_verdict); only the sender
+# confirmation (SENDER_CONFIRM) wakes on it.
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block", "noop_copy",
-          "sync", "push_back")
+          "sync", "push_back", "sender_changed")
 TRIGGER_AFTER = ("", "short_on")
 NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
 SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake_proxy) carries less
@@ -46,7 +48,8 @@ ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED, RUN)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
 _WORDS = {"wake": "wake", "sleep_mode_on": "Sleep-mode on", "sleep_mode_off": "Sleep-mode off",
           "wind_down": "wind-down", "habit_cue": "habit cue", "focus_end": "focus-end", "nap": "nap",
-          "long_block": "long focus block", "noop_copy": "NOOP copy", "sync": "sync", "push_back": "pushes back"}
+          "long_block": "long focus block", "noop_copy": "NOOP copy", "sync": "sync", "push_back": "pushes back",
+          "sender_changed": "sender change"}
 
 
 @dataclass(frozen=True)
@@ -286,6 +289,54 @@ def outage_recap_mode(cfg: Any) -> str:
     v = cfg.get(OUTAGE_RECAP_CONFIG) if isinstance(cfg, Mapping) else None
     v = v.strip().lower() if isinstance(v, str) else v
     return v if v in OUTAGE_RECAP_MODES else OUTAGE_RECAP_OFF
+
+
+# The sender confirmation: one short plain message right after the owner's whole "push via <profile>" reply set the
+# sender (sender_reply writes push-sender.json), so a broken new sender shows up at once instead of at some later
+# push. Its event is sender_changed (push-sender.json's ``at`` newer than the last confirmation the mark
+# sender-confirm.json settled), never a clock. Like the outage recap it is not in SPECS, but it goes through
+# kevin-push's send gate (--once, quiet, Sleep mode, daily cap). sender_confirm_job runs it; config
+# ``sender_confirm`` is off (default), dry_run or write.
+SENDER_CONFIRM_STALE_S = 12 * 3600   # the sender changed longer ago than this: a late confirmation is noise
+SENDER_CONFIRM = JobSpec("sender_confirm", "sender_changed", "anytime", "Pushes", 1, "sender_changed",
+                         stale_after_s=SENDER_CONFIRM_STALE_S)
+SENDER_CONFIRM_CONFIG = "sender_confirm"
+SENDER_CONFIRM_OFF, SENDER_CONFIRM_DRY_RUN, SENDER_CONFIRM_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
+SENDER_CONFIRM_MODES = (SENDER_CONFIRM_OFF, SENDER_CONFIRM_DRY_RUN, SENDER_CONFIRM_WRITE)
+SENDER_CONFIRM_IS_OFF = f"off (config {SENDER_CONFIRM_CONFIG})"
+SENDER_CHANGED = "your reply changed the sender for your phone pushes"
+SENDER_NO_REPLY = "no reply has set the sender"
+SENDER_SETTLED = "this sender change was already confirmed"
+
+
+def sender_confirm_mode(cfg: Any) -> str:
+    """Config ``sender_confirm``: off (the default, and for any value that is not one of SENDER_CONFIRM_MODES),
+    dry_run or write."""
+    v = cfg.get(SENDER_CONFIRM_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in SENDER_CONFIRM_MODES else SENDER_CONFIRM_OFF
+
+
+def sender_changed_verdict(mode: str, reply_at: Optional[float], settled_at: Optional[float],
+                           now: float) -> Verdict:
+    """Deliver, drop or not triggered for the sender confirmation. Pure: reads its inputs, sends nothing.
+
+    Due (DELIVER, trigger_at the reply's epoch) only when ``mode`` is dry_run or write, push-sender.json names a
+    sender with an epoch (``reply_at``, push_sender.reply_at), it is not after ``now``, it is newer than
+    ``settled_at`` (the reply the mark last settled: told or dropped) and not older than SENDER_CONFIRM_STALE_S.
+    The same reply again is a drop: one confirmation per sender change. Reasons are words, never a digit.
+    """
+    if mode not in (SENDER_CONFIRM_DRY_RUN, SENDER_CONFIRM_WRITE):
+        return Verdict(NOT_TRIGGERED, SENDER_CONFIRM_IS_OFF)
+    if reply_at is None:
+        return Verdict(NOT_TRIGGERED, SENDER_NO_REPLY)
+    if reply_at > now:
+        return Verdict(NOT_TRIGGERED, "the sender reply is timestamped in the future")
+    if settled_at is not None and reply_at <= settled_at:
+        return Verdict(DROP, SENDER_SETTLED, reply_at)
+    if now - reply_at > SENDER_CONFIRM_STALE_S:
+        return Verdict(DROP, "too late: the sender changed a while ago; a late confirmation is noise", reply_at)
+    return Verdict(DELIVER, SENDER_CHANGED, reply_at)
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
@@ -598,7 +649,8 @@ _SPEAKS = {"wake": "when you wake up", "sleep_mode_on": "when Sleep mode goes on
            "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends",
            "long_block": "when a focus block runs long",
            "noop_copy": "after a sync that copied the NOOP database", "sync": "after each sync run",
-           "push_back": "when a push reaches you again after pushes stopped getting through"}
+           "push_back": "when a push reaches you again after pushes stopped getting through",
+           "sender_changed": "right after your reply changes the sender for your pushes"}
 _IN_WINDOW = {"peak": "in a peak window, at most one decision per window",
               "trough": "in a low-energy window, for a review or an easy read",
               "wind_down": "once your wind-down has started", "anytime": "any time you are awake"}
@@ -607,7 +659,8 @@ _ENDS = {"wake": "when you next wake up", "sleep_mode_on": "when Sleep mode goes
          "habit_cue": "at your habit's next cue", "focus_end": "when a focus block ends",
          "long_block": "when a focus block next runs long",
          "noop_copy": "at the next sync that copies the NOOP database", "sync": "at the next sync run",
-         "push_back": "when pushes next come back after an outage"}
+         "push_back": "when pushes next come back after an outage",
+         "sender_changed": "when your next reply changes the sender again"}
 _NUM = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 

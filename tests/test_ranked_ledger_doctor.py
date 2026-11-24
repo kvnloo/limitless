@@ -98,7 +98,8 @@ class Row(unittest.TestCase):
         self.assertEqual(names.index(doctor.RANKED_ROW), names.index(doctor.APPS_INGEST_ROW) + 1)
         self.assertEqual(names.index(doctor.RANKED_INGEST_ROW), names.index(doctor.RANKED_ROW) + 1)
         self.assertEqual(names.index(doctor.SENDER_INGEST_ROW), names.index(doctor.RANKED_INGEST_ROW) + 1)
-        self.assertEqual(names.index(doctor.VOICE_MIQ_ROW), names.index(doctor.SENDER_INGEST_ROW) + 1)
+        self.assertEqual(names.index(doctor.SENDER_CONFIRM_ROW), names.index(doctor.SENDER_INGEST_ROW) + 1)
+        self.assertEqual(names.index(doctor.VOICE_MIQ_ROW), names.index(doctor.SENDER_CONFIRM_ROW) + 1)
         self.assertEqual(rows[names.index(doctor.RANKED_ROW)]["status"], doctor.LIVE)
         for secret in (A, EVIDENCE):
             self.assertNotIn(secret, json.dumps(rows))

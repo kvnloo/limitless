@@ -64,6 +64,12 @@ Ingest pass: ``run_once(..., dry_run=True, ingest=True)`` (bin/limitless-jobs --
 these three reply ingests as a pass that is not a dry run would (each still by its own config mode), and every other
 job as a dry run: nothing is pushed, ``push`` and ``brief`` are never called and nothing is logged as sent.
 
+Sender confirmation: with config ``sender_confirm`` dry_run or write, one more row right after the sender ingest's
+(sender_confirm_job.run_pass). When push-sender.json records a sender change newer than the last one the mark
+``sender-confirm.json`` settled, a pass that is not a dry run pushes one plain confirmation ("Pushes") through
+``push`` with ``once`` ``sender_confirm:<reply time>``; its delivery result is the proof the new sender works.
+When it pushed in a pass, the outage recap waits for the next pass. Off (the default): no row, nothing read.
+
 Outage recap: with config ``outage_recap`` dry_run or write, one more row, last (outage_recap_job.run). After a push
 kevin-push delivered closed an outage in its log (config ``push_log``; outage_recap.outage), a pass that is not a
 dry run pushes one plain recap of what the outage swallowed through ``push`` with ``once``
@@ -1269,8 +1275,12 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     ranked = ranked_ingest_row(state_dir, now, dry_ingest, env, home)  # sends nothing; None (no row) when off
     from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
     sender = _sender.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
+    from . import sender_confirm_job as _confirm   # uses _push and _write_mark from here; None (no row) when off
+    # the confirmation is a push: an --ingest pass leaves it a dry run (only --send sends it)
+    confirm, _confirmed = _confirm.run_pass(state_dir, now, push=push, dry_run=dry_run, env=env, home=home)
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
-    recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz)   # None when off
-    return rows + [r for r in (noop, apps, ranked, sender, voice, recap) if r is not None]
+    recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz,   # None when off
+                       wait=_confirm.RECAP_WAITS if _confirmed else None)   # never two pushes in one pass
+    return rows + [r for r in (noop, apps, ranked, sender, confirm, voice, recap) if r is not None]

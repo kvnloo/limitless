@@ -191,6 +191,45 @@ class Job(unittest.TestCase):
         self.assertNotIn(spec.name, jobs.SPECS)          # not a should_fire job: no window, its own event
         self.assertEqual(spec.stale_after_s, job.STALE_S)
 
+    def test_a_wait_keeps_the_recap_for_the_next_pass_without_a_push_or_a_mark(self):
+        self.log(CLOSED)
+        push = FakePush()
+        r = job.run(self.st, NOW, push=push, dry_run=False, env=self.env, tz=UTC,
+                    wait="the sender confirmation went out in this pass")
+        self.assertEqual(r["action"], jobs.HOLD)
+        self.assertEqual(r["reason"], "pushes came back after an outage; waits for the next pass: the sender "
+                                      "confirmation went out in this pass")
+        self.assertEqual(push.calls, [])
+        self.assertIsNone(self.mark())
+        self.assertEqual(self.run_job(push, now=NOW + 300)["action"], jobs.DELIVER)
+        self.assertEqual([c["once"] for c in push.calls], [KEY])
+
+    def test_run_once_sends_the_sender_confirmation_first_and_the_recap_on_the_next_pass(self):
+        self.log(CLOSED)
+        self.cfg_path.write_text(json.dumps({"outage_recap": "write", "push_log": "push-log.jsonl",
+                                             "sender_confirm": "write"}))
+        (self.st / "push-sender.json").write_text(json.dumps({"profile": "backup-bot", "at": NOW - 900}))
+        push = FakePush()
+        rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=False, env=self.env, tz=UTC)
+        self.assertEqual([c["title"] for c in push.calls], ["Pushes"])
+        recap = [r for r in rows if r["job"] == job.TITLE][0]
+        self.assertEqual(recap["action"], jobs.HOLD)
+        self.assertIn("waits for the next pass", recap["reason"])
+        names = [r["job"] for r in rows]
+        self.assertLess(names.index("Sender confirm"), names.index(job.TITLE))
+        rows = jobs_runner.run_once(self.st, NOW + 300, push=push, dry_run=False, env=self.env, tz=UTC)
+        self.assertEqual([c["title"] for c in push.calls], ["Pushes", outage_recap.TITLE])
+        self.assertEqual([r for r in rows if r["job"] == job.TITLE][0]["action"], jobs.DELIVER)
+
+    def test_a_confirmation_that_did_not_push_never_holds_the_recap(self):
+        self.log(CLOSED)
+        self.cfg_path.write_text(json.dumps({"outage_recap": "write", "push_log": "push-log.jsonl",
+                                             "sender_confirm": "dry_run"}))
+        (self.st / "push-sender.json").write_text(json.dumps({"profile": "backup-bot", "at": NOW - 900}))
+        push = FakePush()
+        jobs_runner.run_once(self.st, NOW, push=push, dry_run=False, env=self.env, tz=UTC)
+        self.assertEqual([c["title"] for c in push.calls], [outage_recap.TITLE])
+
     def test_run_once_carries_the_row_and_sends_through_its_push(self):
         self.log(CLOSED)
         push = FakePush()

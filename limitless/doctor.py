@@ -32,7 +32,9 @@ then the ranked ledger's row (scorecard row ten's private ledger, config ranked_
 words, or broken as status missing; never an id or evidence text), then the ranked ingest job's row (config
 ranked_ingest, its status file ranked-ingest.json: off, live with the mode and the last result in words, stale,
 or broken as status missing), then the sender ingest job's row (config sender_ingest, its mark
-push-sender-ingest.json: off, live with the mode and the last result in words, or stale; never the profile name).
+push-sender-ingest.json: off, live with the mode and the last result in words, or stale; never the profile name),
+then the sender confirmation's row (config sender_confirm: the confirmation's own delivery result in kevin-push's
+log, else its mark sender-confirm.json: off, live when it reached the owner or waits, missing when its send failed).
 The outage recap job's row (config outage_recap, from kevin-push's log, config
 push_log, and its mark outage-recap.json: off, waiting, told or nothing to recap; missing with no push log) comes
 right after the voice MIQ's.
@@ -440,6 +442,40 @@ def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
                 f"{mode}: ran {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}{wins}")
 
 
+SENDER_CONFIRM_ROW = "job sender confirm"
+_CONFIRM_MODE_WORDS = {"dry_run": "dry run mode (nothing sent)", "write": "write mode"}
+
+
+def sender_confirm_row(reader: StateReader, cfg: Mapping, now: float,
+                       env: Optional[Mapping[str, str]] = None) -> dict:
+    """The sender confirmation (sender_confirm_job, config ``sender_confirm``): its own delivery result is the proof
+    the sender the owner's reply set works. From kevin-push's log (config ``push_log``: the newest confirmation row
+    after the reply), else its mark sender-confirm.json (sender_confirm_job.state): off by config; missing when the
+    confirmation's send failed ("the new sender did not reach you"); else live: it reached you (with when, in
+    words), it waits (Sleep mode held it, or the next pass sends it), it was not sent, or there is no sender change
+    to confirm; then the mode. Never the profile name, a message or a path; never sends; read-only."""
+    from . import sender_confirm_job as job   # sender_confirm_job -> jobs_runner -> card
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    head = "sender confirm: "
+    st, at = job.state(reader.path, cfg, now, env)
+    if st == job.S_OFF:
+        return _row(SENDER_CONFIRM_ROW, "job", OFF, f"{head}off (config {job.CONFIG_KEY})")
+    ago = "" if at is None else f" {age_words(max(0.0, now - at) / 3600)}"
+    if st == job.S_FAILED:
+        said = (f"{job.NOT_REACHED}: its confirmation failed to send{ago}; reply push via another profile, or fix "
+                f"this one and the next pass tries again")
+    else:
+        said = {job.S_TOLD: f"the new sender reached you: its confirmation was delivered{ago}",
+                job.S_HELD: "waits: Sleep mode held the confirmation; it goes out once Sleep mode is off",
+                job.S_WAITING: "waiting: the sender changed; the next pass sends the confirmation",
+                job.S_DROPPED: "not proven: the confirmation was not sent (quiet, or the same one went out lately)",
+                job.S_ENV: f"{job.ENV_WINS}, so no confirmation is sent",
+                job.S_NOTHING: ("no sender change to confirm" if at is None else
+                                "the sender changed a while ago and was never confirmed")}[st]
+    return _row(SENDER_CONFIRM_ROW, "job", MISSING if st == job.S_FAILED else LIVE,
+                f"{head}{said}; {_CONFIRM_MODE_WORDS[job.mode(cfg)]}")
+
+
 RANKED_ROW = "ranked ledger"
 RANKED_SKIPPED = "some lines could not be read and were skipped"
 
@@ -795,7 +831,7 @@ def report(cfg: Mapping, now: float) -> list:
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
     then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the sender
-    ingest job's (sender_ingest_row), then the voice MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
+    ingest job's (sender_ingest_row), then the sender confirmation's (sender_confirm_row), then the voice MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
     packet's, and the sleep coverage audit
     (sleep_coverage_row) right after the context packet's, just before the two wearable export rows that write
     the sleep file.
@@ -814,7 +850,7 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [noop_mcp_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
-             sender_ingest_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
+             sender_ingest_row(reader, cfg, now), sender_confirm_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
     rows += [context_packet_row(cfg, now), sleep_coverage_row(reader, now), open_wearables_row(reader, cfg, now),
              noop_export_row(reader, cfg, now)]
     return [dict(r, reason=words(r["reason"])) for r in rows]
