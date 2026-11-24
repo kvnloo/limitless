@@ -35,6 +35,7 @@ with tempfile.TemporaryDirectory() as tmp:
     sender("sender-named", [f"TELEGRAM_BOT_TOKEN={TOKEN}"],
            {"channel_directory.json": {"platforms": {"telegram": [{"id": HOME_CHANNEL, "name": "owner",
                                                                    "type": "dm"}]}}})
+    (root / "profiles" / ".deleted" / "sender-old").mkdir(parents=True)   # a tombstone: never opened
     cases = [
         ("a bot token and a home channel; push_to \"telegram\"", "sender-ready", "telegram"),
         ("a profile with no .env at all", "sender-new", "telegram"),
@@ -42,6 +43,7 @@ with tempfile.TemporaryDirectory() as tmp:
         ("a bot token; push_to names a chat its channel directory has", "sender-named", "telegram:owner"),
         ("a bot token; push_to names a chat its channel directory lacks", "sender-named", "telegram:someone"),
         ("a profile that does not exist", "sender-gone", "telegram"),
+        ("a profile Hermes deleted (profiles/.deleted/sender-old)", "sender-old", "telegram"),
         ("a target on another platform", "sender-ready", "discord:ops"),
     ]
     env = {k: v for k, v in os.environ.items() if not k.startswith(("KEVIN_PUSH_", "HERMES_", "TELEGRAM_"))}

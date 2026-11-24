@@ -1,10 +1,10 @@
 """The synthetic push-reach example in docs/push-reach.md: python3 -I scripts/push_reach_example.py
 
 A made-up state dir (a copy of the synthetic fixture state, tests/fixtures/state), a made-up Hermes home and a
-made-up kevin-push log, all in a temporary dir, at the fixture clock in UTC. Four cases: the sender profile is
+made-up kevin-push log, all in a temporary dir, at the fixture clock in UTC. Five cases: the sender profile is
 missing, the sender is set but the last pushes failed to send (no profile has a bot, then one made-up profile
-``helper`` with a made-up token and chat key, so the card names the reply), and the sender is set with the last
-push delivered. For each it prints the real pre_llm_call card (card.make_pre_llm_call, through tier_audit.gate),
+``helper`` with a made-up token and chat key, so the card names the reply), the sender is set with the last
+push delivered, and Hermes deleted the sender (a tombstone under ``profiles/.deleted/``) while pushes fail. For each it prints the real pre_llm_call card (card.make_pre_llm_call, through tier_audit.gate),
 limitless_status's ``delivery`` (tools.status_with_delivery) and the context packet's ``delivery`` row. Reads no
 real state, never runs hermes, writes nothing outside the temporary dir, sends nothing.
 """
@@ -27,6 +27,7 @@ DAY = TODAY - timedelta(days=3)
 FIX = REPO / "tests" / "fixtures" / "state"
 PROFILE = "sender-a"
 RC1 = "log (telegram rc=1)"
+NO_SENDER = "log (no sender profile)"   # push_sender.NO_SENDER_HOW: kevin-push started no hermes
 
 os.environ["TZ"] = "UTC"
 if hasattr(time, "tzset"):
@@ -48,6 +49,8 @@ CASES = (
      [log_row(10), log_row(11, RC1), log_row(12, RC1)], True),
     ("the sender profile is there; the last push was delivered", True,
      [log_row(10, RC1), log_row(11, RC1), log_row(12)], False),
+    ("Hermes deleted the sender profile (profiles/.deleted/sender-a); the last pushes were not sent", None,
+     [log_row(10), log_row(11, RC1), log_row(12, NO_SENDER)], True),
 )
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -61,6 +64,8 @@ with tempfile.TemporaryDirectory() as tmp:
         (hermes / "profiles" / "other").mkdir(parents=True)
         if sender:
             (hermes / "profiles" / PROFILE).mkdir()
+        elif sender is None:     # a tombstone: hermes profile delete moved it under profiles/.deleted/
+            (hermes / "profiles" / ".deleted" / PROFILE).mkdir(parents=True)
         if helper:
             (hermes / "profiles" / "helper").mkdir()
             (hermes / "profiles" / "helper" / ".env").write_text(

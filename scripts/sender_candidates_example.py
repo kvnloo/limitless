@@ -70,3 +70,6 @@ with tempfile.TemporaryDirectory() as tmp:
     print(doctor.text([doctor.push_recovery_row(StateReader(st), rcfg, NOW, env=env)]))
     print("# the same, on the Hermes home where no profile has a bot token")
     print(doctor.text([doctor.push_recovery_row(StateReader(st), rcfg, NOW, env=lone_env)]))
+    (root / "profiles" / push_sender.DELETED_DIR / "gone").mkdir()   # Hermes deleted the sender: a tombstone
+    print("# the first Hermes home, where the sender profile was deleted (profiles/.deleted/gone)")
+    print(doctor.text([doctor.push_recovery_row(StateReader(st), rcfg, NOW, env=env)]))

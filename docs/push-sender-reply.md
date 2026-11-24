@@ -23,6 +23,17 @@ the row says `maybe: none left (one already failed to send)` and the words end `
 Telegram (one already failed to send)`; a ready profile is still named. Nothing new is stored for this: the
 profile is the one `push-sender.json` already holds and the flag is the mark's; the next applied reply clears it.
 
+When the sender profile was deleted by Hermes (`hermes profile delete` moves it to
+`<Hermes home>/profiles/.deleted/<name>`, a tombstone) and no live dir of that name is back, the simplest fix is
+to restore it, so every surface says so (`push_sender.tombstoned`: the tombstone dir is there; nothing in it is
+opened, no secret is read, hermes is never run): the `push sender` row says `missing: the sender profile was
+deleted; restoring it should bring pushes back`, the state card's reason is `the sender profile was deleted` and
+its hint `Reply restore <name> to bring it back.` (`Restore the deleted sender profile to bring it back.` for a
+name with a digit; a ready profile is still offered after it, `... or reply push via <a>.`), and the `push
+recovery` words read `pushes are failing; waiting for a sender reply; the sender profile was deleted and can be
+restored` before the names. The restore itself happens in Hermes: the sender ingest only parses `push via`, and
+limitless never restores, moves or deletes a profile. Without a tombstone every word above stays as it was.
+
 The sender ingest job applies that reply by itself, the way the apps ingest
 ([apps-ingest.md](apps-ingest.md#as-an-event-job)) and the ranked drop ingest
 ([ranked-ledger.md](ranked-ledger.md#as-an-event-job)) apply theirs. Nobody has to hand-edit config
