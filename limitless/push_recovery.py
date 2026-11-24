@@ -36,6 +36,9 @@ that tail and the list; when the profile is live again the request is stale and 
 A maybe already proven unable to send (proven_failed: the reply push-sender.json holds was applied on an unknown
 answer and its confirmation failed, the UNKNOWN_FAILED condition) is not offered again; when it was the only one
 and none is ready the words end "; no profile left that may reach Telegram (one already failed to send)".
+A maybe the operator settled with bin/limitless-sender-probe (sender-probe.json in the state dir: Hermes' own
+``send --list telegram`` found no Telegram target, and the profile's files are unchanged since) is not a maybe:
+push_sender.candidates reads it as PROBED_NONE, so it is not offered either.
 The constant stays the prefix, so a caller matches with ``startswith``. The outage is outage_recap.outage over the log rows (the same rule the
 recap and the state card use). No push log (``rows`` None) is missing with the reason, never a guess. Words only:
 never a digit, a path, a host or a time stamp, and no profile name but the candidates' (a name with a digit is only
@@ -111,11 +114,12 @@ def drop_failed(cands: Optional[list], failed: Optional[str]) -> tuple:
     return kept, len(kept) != len(cands)
 
 
-def _who_can_send(cfg, env, hermes_home, failed: Optional[str] = None) -> str:
+def _who_can_send(cfg, env, hermes_home, failed: Optional[str] = None, state_dir=None) -> str:
     """What the owner could reply with, appended to WAITING_REPLY / REFUSED; "" when no Hermes home is known.
-    ``failed`` (proven_failed) is a maybe that already failed to send: it is not offered again."""
+    ``failed`` (proven_failed) is a maybe that already failed to send: it is not offered again. A maybe the
+    operator's probe settled (push_sender.PROBED_NONE, from sender-probe.json in ``state_dir``) is no maybe."""
     try:
-        cands = push_sender.candidates(cfg, env, hermes_home)
+        cands = push_sender.candidates(cfg, env, hermes_home, state_dir)
     except Exception:  # noqa: BLE001 - the stage still holds without the names
         return ""
     if cands is None:
@@ -187,12 +191,12 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
             reply_at = None
         refused = _sr.refused_at(state_dir)
         if refused is not None and refused >= o["first_at"] and (reply_at is None or refused > reply_at):
-            return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
+            return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows), state_dir)
         if reply_at is None:
             if _rr.asked(state_dir, cfg, o["first_at"], env, hermes_home):
                 return MISSING, WAITING_REPLY + RESTORE_ASKED
             return MISSING, (WAITING_REPLY + _deleted(cfg, env, hermes_home)
-                             + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows)))
+                             + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows), state_dir))
         why = _confirmation(state_dir, rows, cfg, reply_at)
         if why == FAILED and _sr.applied_unknown(state_dir):
             return MISSING, UNKNOWN_FAILED

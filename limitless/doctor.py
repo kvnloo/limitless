@@ -235,7 +235,11 @@ _MAYBE_WHY = {
     "SECRET_SOURCE": ("keeps its token in a secret source", "keep their tokens in a secret source"),
     "NOT_TELEGRAM": ("the send target is not a Telegram chat", "the send target is not a Telegram chat"),
     "FILES_UNREADABLE": ("its files cannot be read", "their files cannot be read"),
+    "PROBED_TARGETS": ("hermes send lists a Telegram target", "hermes send lists a Telegram target"),
 }
+# A candidate the operator's probe settled (push_sender.PROBED_NONE): named after the others with this.
+CANDIDATES_NONE_READY = "none ready"
+CANDIDATES_PROBED_NONE = ": no Telegram target (checked)"
 _MAYBE_OTHER = ("it cannot be told", "it cannot be told")
 
 
@@ -247,13 +251,17 @@ def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
     by why, or ``none can reach Telegram`` (missing) when no profile is ready or a maybe. Missing too when only
     maybes are left. A maybe already proven unable to send (push_recovery.proven_failed over ``state_dir``: the
     reply push-sender.json holds was applied on an unknown answer and its confirmation failed) is left out; when no
-    maybe is left then, the row says CANDIDATES_FAILED. The one row that names profiles (the owner's own labels); a name with a digit is only counted,
+    maybe is left then, the row says CANDIDATES_FAILED. A secret-source maybe the operator settled with
+    bin/limitless-sender-probe (push_sender.candidates reads sender-probe.json while the profile's files are
+    unchanged) is a maybe with "hermes send lists a Telegram target", or, when Hermes found no Telegram target,
+    is named last as "<name>: no Telegram target (checked)" (after "none ready" when nothing else is said); with
+    no probe applied the words are as before. The one row that names profiles (the owner's own labels); a name with a digit is only counted,
     and never a value, a path or the target. Files only: hermes is never run and no secret value is read.
     Report-only. Kind ``source``: --strict does not count it."""
     from . import push_sender as ps
     env = os.environ if env is None else env
     cfg = cfg if isinstance(cfg, Mapping) else {}
-    cands = ps.candidates(cfg, env, hermes_home)
+    cands = ps.candidates(cfg, env, hermes_home, state_dir)
     if cands is None:
         root = Path(hermes_home) if hermes_home is not None else ps.hermes_root(env)
         why = ps.NO_HOME if root is None else ps.HOME_MISSING if not _is_dir(root) else ps.HOME_UNREADABLE
@@ -280,6 +288,10 @@ def sender_candidates_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
         parts.append("maybe: " + "; ".join(maybe))
     elif dropped:
         parts.append(CANDIDATES_FAILED)
+    checked = ps.probed_none_names(cands)
+    if checked:
+        parts = parts or [CANDIDATES_NONE_READY]
+        parts.append(", ".join(checked) + CANDIDATES_PROBED_NONE)
     return _row(SENDER_CANDIDATES_ROW, "source", LIVE if ready else MISSING, "; ".join(parts) or CANDIDATES_NONE)
 
 

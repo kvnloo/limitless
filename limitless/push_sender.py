@@ -7,6 +7,7 @@
     readiness(cfg, env, hermes_home=None)  # "ready" / "no Telegram bot token ..." / "no Telegram chat ..." /
                                            # "missing: ..." / "unknown: <reason>", words only, report-only
     candidates(cfg, env, hermes_home=None) # [(name, readiness)] for every live profile ``-p`` resolves, or None
+                                           # (a recorded ``hermes send --list telegram`` check applied: PROBE_FILE)
     tombstoned(cfg, env, hermes_home=None) # the missing sender was deleted (``profiles/.deleted/<name>``)
 
 kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else the
@@ -28,6 +29,10 @@ a key is present and non-empty, never a value; kevin-push never asks it, so a wr
 ``candidates`` asks readiness once per profile Hermes could resolve (``default`` and each ``is_live`` dir under
 ``profiles/``), so the doctor's "sender candidates" row and the push recovery words can name the profiles the owner
 may reply ``push via <name>`` with. Profile names are the owner's own labels and appear only there.
+A SECRET_SOURCE answer is only a maybe; the operator can settle it with bin/limitless-sender-probe --write, which
+runs Hermes' own ``hermes -p <name> send --list telegram`` once and records the verdict in PROBE_FILE with the
+profile's ``config.yaml`` / ``.env`` mtimes. ``candidates`` reads that record (never runs anything): while the
+mtimes still match, "no targets" reads PROBED_NONE (not a maybe any more) and "targets found" PROBED_TARGETS.
 ``tombstoned`` says whether a missing sender was deleted by Hermes (``profiles/.deleted/<name>`` exists, presence
 only), so the doctor, the card and the push recovery words can say that restoring it brings pushes back.
 Stdlib only, Python 3.9+.
@@ -495,8 +500,91 @@ def tombstoned(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
         return False
 
 
+# -- the operator's recorded ``hermes send --list telegram`` check (bin/limitless-sender-probe writes it) ------------
+
+# {name: {"verdict": PROBE_TARGETS / PROBE_NONE, "at": epoch, "files": fingerprint}} in the state dir, 0600
+PROBE_FILE = "sender-probe.json"
+PROBE_TARGETS, PROBE_NONE = "targets found", "no targets"
+# What a SECRET_SOURCE candidate reads once a probe with a matching fingerprint applies.
+PROBED_NONE = "no Telegram target: hermes send found none"
+PROBED_TARGETS = UNKNOWN_PREFIX + "hermes send lists a Telegram target"
+FINGERPRINT_FILES = ("config.yaml", ".env")
+
+
+def profile_dir(root: "Path | str", name: str) -> Path:
+    """The home ``hermes -p <name>`` runs in: the Hermes home itself for ``default``, else ``profiles/<name>``."""
+    return Path(root) if name.casefold() == DEFAULT_NAME else Path(root) / "profiles" / name
+
+
+def fingerprint(home: "Path | str") -> Optional[dict]:
+    """``{"config.yaml": st_mtime_ns or None, ".env": ...}`` for a profile home (None for a file that is not there);
+    None when one cannot be told. Stats only: no file is opened."""
+    out = {}
+    for fname in FINGERPRINT_FILES:
+        try:
+            out[fname] = os.stat(Path(home) / fname).st_mtime_ns
+        except OSError as err:
+            if not _absent(err):
+                return None
+            out[fname] = None
+    return out
+
+
+def _valid_fingerprint(v) -> bool:
+    return (isinstance(v, dict) and sorted(v) == sorted(FINGERPRINT_FILES)
+            and all(x is None or (isinstance(x, int) and not isinstance(x, bool)) for x in v.values()))
+
+
+def load_probes(state_dir: "Path | str | None") -> dict:
+    """The well-formed entries of PROBE_FILE in ``state_dir``: ``{name: {"verdict", "at", "files"}}`` with a known
+    verdict, a finite ``at`` and a fingerprint of FINGERPRINT_FILES; {} for no state dir, no file or a broken one
+    (a malformed entry is skipped). Never raises."""
+    if state_dir is None:
+        return {}
+    try:
+        data = json.loads((Path(state_dir) / PROBE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for name, e in data.items():
+        if not (isinstance(name, str) and isinstance(e, dict) and e.get("verdict") in (PROBE_TARGETS, PROBE_NONE)):
+            continue
+        at = e.get("at")
+        if isinstance(at, bool) or not isinstance(at, (int, float)) or not math.isfinite(at):
+            continue
+        if _valid_fingerprint(e.get("files")):
+            out[name] = {"verdict": e["verdict"], "at": at, "files": dict(e["files"])}
+    return out
+
+
+def apply_probes(cands: Optional[list], root: "Path | str | None", state_dir: "Path | str | None") -> Optional[list]:
+    """``cands`` with each SECRET_SOURCE answer settled by the operator's probe (load_probes) when its fingerprint
+    still matches the profile's files now: PROBE_NONE reads PROBED_NONE, PROBE_TARGETS reads PROBED_TARGETS.
+    Anything else (another answer, no entry, a stale fingerprint, no file) is left as it was. Never raises."""
+    if not cands or root is None:
+        return cands
+    probes = load_probes(state_dir)
+    if not probes:
+        return cands
+    out = []
+    for name, words in cands:
+        e = probes.get(name)
+        if words == SECRET_SOURCE and e is not None:
+            try:
+                now = fingerprint(profile_dir(root, name))
+            except Exception:  # noqa: BLE001 - cannot be told: unchanged
+                now = None
+            if now is not None and now == e["files"]:
+                words = PROBED_NONE if e["verdict"] == PROBE_NONE else PROBED_TARGETS
+        out.append((name, words))
+    return out
+
+
 def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
-               hermes_home: "Path | str | None" = None) -> Optional[list]:
+               hermes_home: "Path | str | None" = None, state_dir: "Path | str | None" = None,
+               probed: bool = True) -> Optional[list]:
     """Every profile ``hermes -p <name>`` could resolve, as ``[(name, readiness words)]`` sorted by name: DEFAULT_NAME
     (the Hermes home itself) and each dir under ``<home>/profiles/`` that ``is_live`` (a name Hermes resolves,
     PROFILE_ID, an identity marker in it, no tombstone ``profiles/.deleted/<name>``; one that cannot be read is
@@ -504,7 +592,10 @@ def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
     sender and kevin-push's own target, so a name listed READY is one the owner can reply ``push via <name>`` with.
     None when no Hermes home is known, it does not exist or cannot be listed. ``hermes_home`` defaults to
     hermes_root(env). Files only and presence only, like readiness: never runs hermes or any process, and never
-    reads a value into what it returns."""
+    reads a value into what it returns. With ``probed`` (the default) a SECRET_SOURCE answer the operator settled
+    with bin/limitless-sender-probe is replaced (apply_probes over PROBE_FILE in ``state_dir``, default
+    state_dir_for(cfg, env)): PROBED_NONE, or PROBED_TARGETS; with no probe file, a broken one or a profile whose
+    ``config.yaml`` / ``.env`` changed since, every answer is readiness' own."""
     env = os.environ if env is None else env
     root = Path(hermes_home) if hermes_home is not None else hermes_root(env)
     if root is None:
@@ -522,7 +613,13 @@ def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
     except (OSError, ValueError):
         return None
     base = dict(env)
-    return [(name, readiness(cfg, dict(base, **{PROFILE_ENV: name}), root)) for name in sorted(names)]
+    cands = [(name, readiness(cfg, dict(base, **{PROFILE_ENV: name}), root)) for name in sorted(names)]
+    if not probed:
+        return cands
+    try:
+        return apply_probes(cands, root, state_dir if state_dir is not None else state_dir_for(cfg, env))
+    except Exception:  # noqa: BLE001 - a broken probe file never changes an answer
+        return cands
 
 
 _COUNT_WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}
@@ -548,3 +645,8 @@ def ready_names(cands: Optional[list]) -> list:
 def maybe_names(cands: Optional[list]) -> list:
     """The candidates readiness answers ``unknown: ...`` for, as printable names (``_named``)."""
     return _named([n for n, w in cands or () if w.startswith(UNKNOWN_PREFIX)])
+
+
+def probed_none_names(cands: Optional[list]) -> list:
+    """The candidates the operator's probe settled as PROBED_NONE, as printable names (``_named``)."""
+    return _named([n for n, w in cands or () if w == PROBED_NONE])
