@@ -83,9 +83,9 @@ class Fixture(unittest.TestCase):
 class Measured(Fixture):
     def test_measured_rows_in_order_with_the_brief_shape(self):
         got = self.measured()
-        self.assertEqual([m["n"] for m in got], [1, 2, 3, 4, 7])
+        self.assertEqual([m["n"] for m in got], list(sc.MEASURED_ROWS))
         self.assertEqual([m["criterion_words"] for m in got],
-                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "foundation", "privacy"])
         for m in got:
             self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
 
@@ -98,7 +98,7 @@ class Measured(Fixture):
 
     def test_missing_state_dir_is_unknown_not_an_error(self):
         got = sc.measured(self.root / "nowhere", None, NOW, UTC, env=self.env, home=self.root)
-        self.assertEqual([m["goal"] for m in got], ["unknown"] * 5)
+        self.assertEqual([m["goal"] for m in got], ["unknown"] * len(sc.MEASURED_ROWS))
 
     def test_unreadable_push_log_and_a_quiet_week_are_unknown(self):
         self.cfg["push_log"] = "absent.jsonl"
@@ -280,7 +280,7 @@ class ToolField(Fixture):
     def test_measured_field_carries_t1_labels_and_goals(self):
         self.runs(stale_days=7)
         out = self.tool()
-        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 7])
+        self.assertEqual([m["n"] for m in out["measured"]], list(sc.MEASURED_ROWS))
         want = {m["n"]: m for m in self.measured()}
         for m in out["measured"]:
             self.assertEqual(m["label"], {"label": want[m["n"]]["label"], "tier": "T1", "modality": "measured"})

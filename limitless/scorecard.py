@@ -310,18 +310,37 @@ def _privacy_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tup
     return label, goal, dict(counts, window_days=PRIVACY_WINDOW_DAYS, label={"label": label})
 
 
+FOUNDATION_ROW = 5
+FOUNDATION_WORDS = "foundation"
+
+
+def _foundation_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row five: tools.sleep_coverage_audit, the same read as limitless_sleep_coverage and
+    the doctor's sleep coverage row, with sleep_coverage's own goal and unknown rules (the host config's
+    ``sleep_file``, ``sleep_coverage_days`` and ``sleep_coverage_target``)."""
+    from . import tools   # lazily: tools reads this module
+    from .state_reader import StateReader
+    a, reason = tools.sleep_coverage_audit(StateReader(Path(state_dir)), now, env, home, tz)
+    if reason or a is None:
+        return UNKNOWN_PREFIX + (reason or "no wearable sleep file"), "unknown", None
+    return a["label"]["label"], a["goal"], a
+
+
+_READS = ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
+          (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
+          (HABIT_ROW, HABIT_WORDS, _habit_measured),
+          (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
+          (FOUNDATION_ROW, FOUNDATION_WORDS, _foundation_measured),
+          (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured))
+
+
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
-    """``[(row, audit)]`` for rows one, two, three, four and seven, in that order: ``row`` as measured() gives
-    it, ``audit`` the audit's own dict (its T0 counts, and its ``label``) or None when there was nothing to
-    audit."""
+    """``[(row, audit)]`` for every measured row, in row order (MEASURED_ROWS): ``row`` as measured() gives it,
+    ``audit`` the audit's own dict (its T0 counts, and its ``label``) or None when there was nothing to audit."""
     cfg = cfg if isinstance(cfg, Mapping) else {}
     out = []
-    for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
-                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
-                           (HABIT_ROW, HABIT_WORDS, _habit_measured),
-                           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
-                           (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured)):
+    for n, words, read in _READS:
         try:
             label, goal, audit = read(state_dir, cfg, now, tz, env, home)
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
@@ -349,7 +368,7 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
 MEASURED_LINE = "Measured: {}: {}"
 DISAGREE_LINE = "Row {} says green but the measurement says not met."
 MORE_LINE = "More measured rows in limitless_scorecard."
-MEASURED_ROWS = (UPTIME_ROW, DELIVERY_ROW, HABIT_ROW, EVIDENCE_ROW, PRIVACY_ROW)
+MEASURED_ROWS = tuple(n for n, _words, _read in _READS)
 
 
 def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:

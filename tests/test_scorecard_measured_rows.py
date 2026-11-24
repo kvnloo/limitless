@@ -142,6 +142,62 @@ class Fixture(unittest.TestCase):
         jsonl(self.st / "screen-events.jsonl", rows)
 
 
+class Foundation(Fixture):
+    def test_row_five_is_the_foundation(self):
+        m, _a = self.audits()[5]
+        self.assertEqual(m["criterion_words"], "foundation")
+        self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
+
+    def test_no_sleep_file_is_unknown_never_met(self):
+        m, a = self.audits()[5]
+        self.assertEqual(m["goal"], "unknown")
+        self.assertTrue(m["label"].startswith("unknown: "), m)
+        self.assertIsNone(a)
+
+    def test_wearable_sleep_every_night_is_the_audits_own_met(self):
+        self.sleep(range(1, 29))
+        m, a = self.audits()[5]
+        self.assertEqual(m["goal"], "met")
+        self.assertEqual(m["label"], "wearable sleep on every night; wearable goal met")
+        self.assertEqual(a["label"]["label"], m["label"])
+        self.assertEqual(a["wearable_nights"], 28)
+
+    def test_wearable_sleep_on_few_nights_is_not_met(self):
+        self.sleep(range(1, 11))
+        self.phone(range(1, 29))           # the phone estimate knows every night: the rest are not wearable
+        m, _a = self.audits()[5]
+        self.assertEqual(m["goal"], "not met")
+        self.assertIn("wearable goal not met", m["label"])
+
+    def test_the_goal_is_sleep_coverages_own(self):
+        self.sleep(range(1, 24))         # twenty-three of twenty-eight: just under four fifths
+        reader_goal = tools.sleep_coverage_audit(tools.StateReader(self.st), NOW, self.env, self.root, UTC)[0]["goal"]
+        self.assertEqual(self.row(5)["goal"], reader_goal)
+        self.set(sleep_coverage_target=0.5)
+        self.assertEqual(self.row(5)["goal"], "met")
+
+    def test_too_few_known_nights_is_unknown(self):
+        self.sleep(range(1, 4))
+        m, a = self.audits()[5]
+        self.assertEqual(m["goal"], "unknown")
+        self.assertTrue(m["label"].startswith("unknown: "), m)
+
+    def test_a_broken_sleep_file_is_unknown_not_a_traceback(self):
+        self.set(sleep_file="sleep.jsonl")
+        (self.st / "sleep.jsonl").mkdir()
+        m, _a = self.audits()[5]
+        self.assertEqual(m["goal"], "unknown")
+        (self.st / "sleep.jsonl").rmdir()
+        (self.st / "sleep.jsonl").write_bytes(b"\xff\xfe{not json\n[1, 2]\n")
+        self.assertEqual(self.row(5)["goal"], "unknown")
+
+    def test_label_has_no_digit(self):
+        for nights in ((), range(1, 4), range(1, 11), range(1, 29)):
+            if nights:
+                self.sleep(nights)
+            self.assertIsNone(DIGIT.search(self.row(5)["label"]), self.row(5))
+
+
 class Layout(Fixture):
     """The weekly block: the self-reported counts line first, then the measured rows, at most five bullets."""
 
