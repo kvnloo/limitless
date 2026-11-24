@@ -199,6 +199,15 @@ class Job(unittest.TestCase):
         rows = jobs_runner.run_once(self.st, NOW, push=None, dry_run=True, env=self.env)
         self.assertEqual([r for r in rows if r["job"] == job.TITLE], [])
 
+    def test_an_ingest_pass_never_sends_the_confirmation_and_leaves_it_due(self):
+        push = FakePush()
+        rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=True, ingest=True, env=self.env)
+        mine = [r for r in rows if r["job"] == job.TITLE]
+        self.assertEqual(len(mine), 1)
+        self.assertIn("nothing sent", mine[0]["reason"])
+        self.assertEqual([c for c in push.calls if c["title"] == "Pushes"], [])
+        self.assertIsNone(self.mark())   # still due: the next --send pass confirms it
+
 
 if __name__ == "__main__":
     unittest.main()
