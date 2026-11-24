@@ -208,6 +208,34 @@ class Job(unittest.TestCase):
         self.assertEqual([c for c in push.calls if c["title"] == "Pushes"], [])
         self.assertIsNone(self.mark())   # still due: the next --send pass confirms it
 
+    def test_an_ingest_confirm_pass_sends_the_confirmation_once_and_marks_it_told(self):
+        push = FakePush()
+        rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=True, ingest=True, confirm=True, env=self.env)
+        mine = [r for r in rows if r["job"] == job.TITLE]
+        self.assertEqual(len(mine), 1)
+        self.assertEqual(mine[0]["action"], jobs.DELIVER)
+        self.assertTrue(mine[0]["reason"].endswith("sent"), mine[0])
+        self.assertEqual([(c["title"], c["body"], c["once"], c["why"]) for c in push.calls],
+                         [("Pushes", job.BODY, KEY, job.WHY)])
+        self.assertEqual(self.mark()["outcome"], job.TOLD)
+        self.assertFalse((self.st / jobs_runner.SENT_LOG).exists())
+
+    def test_an_ingest_confirm_pass_in_dry_run_mode_sends_nothing(self):
+        push = FakePush()
+        self.config("dry_run")
+        rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=True, ingest=True, confirm=True, env=self.env)
+        mine = [r for r in rows if r["job"] == job.TITLE]
+        self.assertIn('config sender_confirm "write" sends it', mine[0]["reason"])
+        self.assertEqual(push.calls, [])
+        self.assertIsNone(self.mark())
+
+    def test_confirm_without_ingest_is_still_a_dry_run(self):
+        push = FakePush()
+        rows = jobs_runner.run_once(self.st, NOW, push=push, dry_run=True, confirm=True, env=self.env)
+        self.assertIn("nothing sent", [r for r in rows if r["job"] == job.TITLE][0]["reason"])
+        self.assertEqual(push.calls, [])
+        self.assertIsNone(self.mark())
+
 
 if __name__ == "__main__":
     unittest.main()
