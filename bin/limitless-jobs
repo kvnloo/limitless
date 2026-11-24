@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""limitless-jobs [--send]: one pass over the event-triggered jobs; prints one line per job.
+"""limitless-jobs [--send | --ingest]: one pass over the event-triggered jobs; prints one line per job.
 
 Without --send it is a dry run: verdicts only, nothing is pushed or written.
+With --ingest (the timer's pass) the reply ingests (apps, ranked, sender; each by its own config mode) run for real,
+exactly as --send runs them, and every other job is a plain dry run: kevin-push and limitless-brief are never called,
+nothing is sent and no process is started. --ingest with --send is --send.
 With --send, a deliver verdict goes out through `kevin-push limitless <title> <body> --once <job>:<event time>`
 and --why <the verdict's reason> (its "Why now" line), with KEVIN_PUSH_STRICT=1 (any other sender for the same event should pass the same --once key), and the job is logged as sent (jobs-sent.jsonl in the state dir) only when
 kevin-push reports a real Telegram delivery. kevin-push is $KEVIN_PUSH_BIN, else `kevin-push` on PATH.
@@ -94,12 +97,12 @@ def limitless_brief():
 
 def main(argv):
     args = argv[1:]
-    if any(a not in ("--send",) for a in args):
-        print("usage: limitless-jobs [--send]", file=sys.stderr)
+    if any(a not in ("--send", "--ingest") for a in args):
+        print("usage: limitless-jobs [--send | --ingest]", file=sys.stderr)
         return 2
     send = "--send" in args
     rows = jobs_runner.run_once(state_dir(), time.time(), push=kevin_push if send else None, dry_run=not send,
-                                brief=limitless_brief if send else None)
+                                brief=limitless_brief if send else None, ingest="--ingest" in args)
     for r in rows:
         print(f"{r['job']}: {r['action']}: {r['reason']}")
     return 0

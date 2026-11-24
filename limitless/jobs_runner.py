@@ -60,6 +60,10 @@ owner's whole "push via <profile>" reply from the Hermes session DB and runs sen
 push-sender.json, only for a profile push_sender.check says exists), then writes ``push-sender-ingest.json`` in
 words only. No Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing read.
 
+Ingest pass: ``run_once(..., dry_run=True, ingest=True)`` (bin/limitless-jobs --ingest, the timer's pass) runs only
+these three reply ingests as a pass that is not a dry run would (each still by its own config mode), and every other
+job as a dry run: nothing is pushed, ``push`` and ``brief`` are never called and nothing is logged as sent.
+
 Outage recap: with config ``outage_recap`` dry_run or write, one more row, last (outage_recap_job.run). After a push
 kevin-push delivered closed an outage in its log (config ``push_log``; outage_recap.outage), a pass that is not a
 dry run pushes one plain recap of what the outage swallowed through ``push`` with ``once``
@@ -1200,13 +1204,16 @@ def ranked_ingest_row(state_dir, now: float, dry_run: bool = True, env: Optional
 def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]] = None, dry_run: bool = True,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
              tz: Optional[tzinfo] = None, today: Optional[date] = None,
-             external: Optional[Iterable[str]] = None, brief: Optional[Callable[[], object]] = None) -> list:
+             external: Optional[Iterable[str]] = None, brief: Optional[Callable[[], object]] = None,
+             ingest: bool = False) -> list:
     """One ``{job, action, reason}`` row per job spec, in plain words. Sends only when not ``dry_run``.
 
     A triggered habit check-in drops outside a started habit week (jobs.habit_week_gate); ``today``
     is the date of ``now`` in ``tz`` (default: local zone) unless the caller passes one.
     ``external`` (default: external_jobs(env, home)) names jobs another sender owns: verdict only, no
     push, no sent log. ``brief``, when given, sends the wake brief in place of ``push`` (no placeholder).
+    ``ingest`` runs the three reply ingests (apps, ranked, sender) for real even in a dry run, exactly as a pass that
+    is not a dry run runs them; they send nothing, so every other job stays as ``dry_run`` says.
     """
     external = set(external_jobs(env, home) if external is None else external)
     p = _read_pass(state_dir, now, env=env, home=home)
@@ -1257,10 +1264,11 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
                 action, reason = jobs.HOLD, f"{reason}; not delivered: {how}; the next run tries again"
         rows.append({"job": spec.send_title, "action": action, "reason": reason})
     noop = noop_export_row(state_dir, now, dry_run, env, home, tz)   # sends nothing; None (no row) when off
-    apps = apps_ingest_row(state_dir, now, dry_run, env, home)        # sends nothing; None (no row) when off
-    ranked = ranked_ingest_row(state_dir, now, dry_run, env, home)    # sends nothing; None (no row) when off
+    dry_ingest = dry_run and not ingest                               # --ingest: the reply ingests run for real
+    apps = apps_ingest_row(state_dir, now, dry_ingest, env, home)     # sends nothing; None (no row) when off
+    ranked = ranked_ingest_row(state_dir, now, dry_ingest, env, home)  # sends nothing; None (no row) when off
     from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
-    sender = _sender.run(state_dir, now, dry_run=dry_run, env=env, home=home)
+    sender = _sender.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
