@@ -1,6 +1,6 @@
 """Push reach: whether phone pushes can reach the person, in words, for the state card and limitless_status.
 
-    r = reason(cfg, state_dir, today, env)   # SENDER_MISSING / SENDER_NO_BOT / SEND_FAILING / None, words only
+    r = reason(cfg, state_dir, today, env)   # SENDER_DELETED / SENDER_MISSING / SENDER_NO_BOT / SEND_FAILING / None
     hint(cfg, state_dir, env)                # "Reply push via <name> to fix it." while a reply is due, or None
     line(r, h=None)                          # "Phone pushes are not reaching you: <reason>[. <hint>]", or None
     item(r)                                  # the envelope the card items, limitless_status and the packet carry
@@ -10,14 +10,15 @@ When kevin-push's sender breaks every push fails and is only logged, so the one 
 person is the broken one. The pre_llm_call state card reaches them in any Hermes chat instead. Two facts, both
 already on main:
 
-- push_sender.check: BROKEN (the sender profile does not exist) is SENDER_MISSING;
+- push_sender.check: BROKEN (the sender profile does not exist) is SENDER_MISSING, or SENDER_DELETED when
+  push_sender.tombstoned (Hermes deleted it: ``profiles/.deleted/<name>`` is there, so restoring it is the fix);
 - push_recovery.stage over the same log: UNKNOWN_FAILED (the owner's reply set a profile push_sender.readiness
   could not vouch for, and its confirmation failed to send) is SENDER_NO_BOT, so the card asks for another
   profile instead of only saying the pushes fail;
 - delivery_audit.audit over config ``push_log``: ``send_failures`` failing (the last transport attempts of the
   window failed, delivery_audit.SEND_FAIL_RUN in a row) is SEND_FAILING.
 
-The order is REASONS: a broken sender wins, then SENDER_NO_BOT, then SEND_FAILING. Nothing is said when the sender is set and the last transport attempt was
+The order is REASONS: a deleted, then a missing sender wins, then SENDER_NO_BOT, then SEND_FAILING. Nothing is said when the sender is set and the last transport attempt was
 delivered, nor when neither can be told (push_sender unknown, no push log set, unreadable, or no row): unknown
 is silent, never alarming. The words never hold a digit, the profile name, the target or a path. It never runs
 hermes or any process and never sends. Stdlib only, Python 3.9+.
@@ -27,7 +28,9 @@ log is missing with WAITING_REPLY, REFUSED or UNKNOWN_FAILED (the owner's reply 
 the one reply that fixes it. REPLY_ONE names the single profile push_sender.candidates calls READY, REPLY_SOME
 names several, and REPLY_ANY asks for a profile with a Telegram bot when none is ready (a maybe, readiness
 ``unknown: ...``, is never offered as sure). The sender that is failing is never offered, and neither is a name
-with a digit (only owner-chosen profile names that Hermes resolves, PROFILE_ID: no path, no host).
+with a digit (only owner-chosen profile names that Hermes resolves, PROFILE_ID: no path, no host). When the sender
+was deleted (push_sender.tombstoned) the hint first asks to restore it: RESTORE_ONE with its name, RESTORE_ANY when
+the name holds a digit, then OR_ONE / OR_SOME with any ready profile.
 """
 from __future__ import annotations
 
@@ -41,15 +44,19 @@ from .envelope import envelope
 
 PREFIX = "Phone pushes are not reaching you: "
 SENDER_MISSING = "the sender profile is missing"
+SENDER_DELETED = "the sender profile was deleted"   # SENDER_MISSING with a tombstone (push_sender.tombstoned)
 SENDER_NO_BOT = ("the profile you named was set but could not send, so it may have no Telegram bot; reply push "
                  "via another profile")    # push_recovery.UNKNOWN_FAILED without its "pushes are failing; "
 SEND_FAILING = _delivery.SEND_FAILING          # "the last pushes failed to send"
-REASONS = (SENDER_MISSING, SENDER_NO_BOT, SEND_FAILING)   # the order is the precedence
+REASONS = (SENDER_DELETED, SENDER_MISSING, SENDER_NO_BOT, SEND_FAILING)   # the order is the precedence
 MODALITY = _delivery.MODALITY                  # kevin-push's own log and the profile dir: measured
 NONE_KNOWN = "no push outage is known"
 REPLY_ONE = "Reply push via {} to fix it."
 REPLY_SOME = "Reply push via one of: {}."
 REPLY_ANY = "Reply with a profile that has a Telegram bot."
+RESTORE_ONE = "Reply restore {} to bring it back."             # the deleted sender's name holds no digit
+RESTORE_ANY = "Restore the deleted sender profile to bring it back."
+OR_ONE, OR_SOME = " or reply push via {}.", " or reply push via one of: {}."   # a ready profile after restore
 _MARKS = (_sender.REPLY_FILE, "push-sender-ingest.json", "sender-confirm.json")   # what push_recovery reads
 
 
@@ -59,14 +66,15 @@ def _cfg(cfg) -> Mapping:
 
 def reason(cfg: Optional[Mapping], state_dir, today: date, env: Optional[Mapping[str, str]] = None,
            tz: Optional[tzinfo] = None) -> Optional[str]:
-    """SENDER_MISSING when push_sender.check is BROKEN; else SENDER_NO_BOT when push_recovery.stage over the push
+    """SENDER_MISSING when push_sender.check is BROKEN (SENDER_DELETED when push_sender.tombstoned: Hermes moved
+    it to ``profiles/.deleted/``); else SENDER_NO_BOT when push_recovery.stage over the push
     log is UNKNOWN_FAILED; else SEND_FAILING when the delivery audit of the push log over the seven local days to
     ``today`` has ``send_failures`` failing; else None. Read-only; never raises (a broken input is unknown, and
     unknown is None)."""
     cfg = _cfg(cfg)
     try:
         if _sender.check(cfg, env) == _sender.BROKEN:
-            return SENDER_MISSING
+            return SENDER_DELETED if _sender.tombstoned(cfg, env) else SENDER_MISSING
     except Exception:  # noqa: BLE001 - a broken input must not break the card
         pass
     try:
@@ -105,7 +113,9 @@ def hint(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = N
          hermes_home=None) -> Optional[str]:
     """The reply that fixes an open push outage while the owner's reply is due (``_reply_due``): REPLY_ONE with
     the one ready profile, REPLY_SOME with several, else REPLY_ANY; None when no reply is due or nothing can be
-    told. Ready is push_sender.candidates' READY over the Hermes home of ``env`` (or ``hermes_home``); the current
+    told. When push_sender.tombstoned (Hermes deleted the sender) RESTORE_ONE with its name comes first (RESTORE_ANY
+    for a name with a digit), and a ready profile is still offered after it (OR_ONE / OR_SOME). Ready is
+    push_sender.candidates' READY over the Hermes home of ``env`` (or ``hermes_home``); the current
     sender and any name with a digit are left out. Read-only; never raises."""
     cfg = _cfg(cfg)
     try:
@@ -115,12 +125,18 @@ def hint(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = N
             return None
     except Exception:  # noqa: BLE001 - a broken input must not break the card
         return None
+    current = None
     try:
         current = _sender.profile(cfg, env, state_dir).lower()
         cands = _sender.candidates(cfg, env, hermes_home) or ()
         ready = [n for n, w in cands if w == _sender.READY and n != current and not re.search(r"\d", n)]
     except Exception:  # noqa: BLE001
         ready = []
+    if current is not None and _sender.tombstoned(cfg, env, hermes_home):
+        restore = RESTORE_ANY if re.search(r"\d", current) else RESTORE_ONE.format(current)
+        if not ready:
+            return restore
+        return restore[:-1] + (OR_ONE.format(ready[0]) if len(ready) == 1 else OR_SOME.format(", ".join(ready)))
     if len(ready) == 1:
         return REPLY_ONE.format(ready[0])
     return REPLY_SOME.format(", ".join(ready)) if ready else REPLY_ANY
@@ -152,7 +168,8 @@ def key(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = No
     """What ``reason`` depends on, from stats alone: push_sender.check's words (directory checks only), the
     push log's mtime and the mtimes of the reply and mark files push_recovery reads (push-sender.json, the sender
     ingest and sender confirm marks), and the mtime of the Hermes home's ``profiles`` dir (a profile added or
-    removed changes ``hint``). The card caches its line under this (and the day), so a turn opens no extra file."""
+    removed changes ``hint``) and of its ``profiles/.deleted`` dir (a tombstone added or restored changes ``reason``
+    and ``hint``). The card caches its line under this (and the day), so a turn opens no extra file."""
     cfg = _cfg(cfg)
     try:
         words = _sender.check(cfg, env)
@@ -167,5 +184,6 @@ def key(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = No
         root = _sender.hermes_root(env)
     except Exception:  # noqa: BLE001
         root = None
-    return (words, None if path is None else str(path), _mtime(path), marks,
-            _mtime(None if root is None else root / "profiles"))
+    profiles = None if root is None else root / "profiles"
+    return (words, None if path is None else str(path), _mtime(path), marks, _mtime(profiles),
+            _mtime(None if profiles is None else profiles / _sender.DELETED_DIR))

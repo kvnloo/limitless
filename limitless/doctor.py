@@ -203,14 +203,17 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
     """Whether bin/kevin-push's sender profile can reach Telegram (push_sender.readiness over the profile
     $KEVIN_PUSH_PROFILE, else config ``push_profile``, else the default, and its target): live when ``ready``;
     missing when the profile does not exist (push_sender.MISSING, its leading ``missing:`` dropped so the line
-    says it once), has no Telegram bot token or no chat to send to,
+    says it once; push_sender.DELETED instead when push_sender.tombstoned: Hermes deleted it and restoring it
+    should bring pushes back), has no Telegram bot token or no chat to send to,
     or it cannot be told (``unknown: ...``). Files only, and only whether a key is present: hermes is never run,
     no process is started, nothing is sent and no secret value is read. Report-only: kevin-push's own preflight
     is push_sender.check. Words only: never a value, the profile name, the target or a path. Kind ``source``:
     --strict does not count it."""
     from . import push_sender
-    words = push_sender.readiness(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
-                                  hermes_home)
+    cfg, env = cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env
+    words = push_sender.readiness(cfg, env, hermes_home)
+    if words == push_sender.MISSING and push_sender.tombstoned(cfg, env, hermes_home):
+        words = push_sender.DELETED     # Hermes deleted it (profiles/.deleted/<name>): restoring it is the fix
     status = LIVE if words == push_sender.READY else MISSING
     if words.startswith(status + ": "):   # push_sender.MISSING already says "missing:": print it once
         words = words[len(status) + 2:]

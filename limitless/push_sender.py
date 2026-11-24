@@ -6,6 +6,7 @@
     readiness(cfg, env, hermes_home=None)  # "ready" / "no Telegram bot token ..." / "no Telegram chat ..." /
                                            # "missing: ..." / "unknown: <reason>", words only, report-only
     candidates(cfg, env, hermes_home=None) # [(name, readiness)] for every profile ``-p`` resolves, or None
+    tombstoned(cfg, env, hermes_home=None) # the missing sender was deleted (``profiles/.deleted/<name>``)
 
 kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else the
 owner's ``push via <name>`` reply (REPLY_FILE ``push-sender.json`` in the state dir, written by
@@ -25,6 +26,8 @@ a key is present and non-empty, never a value; kevin-push never asks it, so a wr
 ``candidates`` asks readiness once per profile Hermes could resolve (``default`` and each live dir under
 ``profiles/``), so the doctor's "sender candidates" row and the push recovery words can name the profiles the owner
 may reply ``push via <name>`` with. Profile names are the owner's own labels and appear only there.
+``tombstoned`` says whether a missing sender was deleted by Hermes (a dir at ``profiles/.deleted/<name>``, presence
+only), so the doctor, the card and the push recovery words can say that restoring it brings pushes back.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -387,6 +390,30 @@ def readiness(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
 # ``<root>/profiles/.deleted/<name>`` and ``-p <name>`` then refuses it (named_profile_is_live).
 DELETED_DIR = ".deleted"
 DEFAULT_NAME = "default"
+
+
+# The push sender row's words when the sender profile is missing and a tombstone of it is there (tombstoned).
+DELETED = "missing: the sender profile was deleted; restoring it should bring pushes back"
+
+
+def tombstoned(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
+               hermes_home: "Path | str | None" = None) -> bool:
+    """True only when the sender profile (the name ``readiness`` resolves) is not a live profile (check is BROKEN)
+    and ``<hermes_home>/profiles/.deleted/<name>`` is a directory: ``hermes profile delete`` moved it there, so
+    restoring it brings the sender back. Presence only: no file inside is opened, no secret is read, hermes is
+    never run. ``default`` and names Hermes never resolves are never tombstoned. False on anything that cannot be
+    read; never raises."""
+    try:
+        env = os.environ if env is None else env
+        name = profile(cfg, env).lower()
+        if name.casefold() == DEFAULT_NAME or not PROFILE_ID.match(name):
+            return False
+        root = Path(hermes_home) if hermes_home is not None else hermes_root(env)
+        if root is None or check(cfg, env, root) != BROKEN:
+            return False
+        return (root / "profiles" / DELETED_DIR / name).is_dir()
+    except Exception:  # noqa: BLE001 - unreadable is not deleted
+        return False
 
 
 def candidates(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,

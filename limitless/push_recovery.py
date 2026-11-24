@@ -28,6 +28,8 @@ stage on (a READY one drops the flag; any new reply waits for its own confirmati
 (WAITING_REPLY, REFUSED) the words go on with the profiles the owner can name (push_sender.candidates over the
 Hermes home of ``env``, files only): "; ready profiles: a, b", else "; profiles that may reach Telegram: c"
 (readiness cannot tell), else "; no profile can reach Telegram"; nothing is added when no Hermes home is known.
+WAITING_REPLY puts "; the sender profile was deleted and can be restored" (SENDER_DELETED) before that list when
+push_sender.tombstoned: Hermes moved the sender to ``profiles/.deleted/``, so restoring it is a fix too.
 A maybe already proven unable to send (proven_failed: the reply push-sender.json holds was applied on an unknown
 answer and its confirmation failed, the UNKNOWN_FAILED condition) is not offered again; when it was the only one
 and none is ready the words end "; no profile left that may reach Telegram (one already failed to send)".
@@ -66,6 +68,8 @@ BROKEN = UNKNOWN_PREFIX + "the push log or a mark could not be read"
 READY_PROFILES = "; ready profiles: "
 MAYBE_PROFILES = "; profiles that may reach Telegram: "
 NO_PROFILE = "; no profile can reach Telegram"
+# WAITING_REPLY when the sender is tombstoned (push_sender.tombstoned): before the candidate list
+SENDER_DELETED = "; the sender profile was deleted and can be restored"
 # the only maybe already failed to send (proven_failed) and no profile is ready
 NO_MAYBE_LEFT = "; no profile left that may reach Telegram (one already failed to send)"
 
@@ -120,6 +124,14 @@ def _who_can_send(cfg, env, hermes_home, failed: Optional[str] = None) -> str:
     return NO_MAYBE_LEFT if dropped else NO_PROFILE
 
 
+def _deleted(cfg, env, hermes_home) -> str:
+    """SENDER_DELETED when Hermes deleted the sender profile (push_sender.tombstoned), else ""."""
+    try:
+        return SENDER_DELETED if push_sender.tombstoned(cfg, env, hermes_home) else ""
+    except Exception:  # noqa: BLE001 - the stage still holds without it
+        return ""
+
+
 def _confirmation(state_dir, rows, cfg, reply_at: float) -> str:
     """Why the confirmation of the reply at ``reply_at`` is not delivered yet: its newest log row
     (sender_confirm_job.logged), else its mark for this reply, else not sent yet."""
@@ -158,7 +170,7 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
         if refused is not None and refused >= o["first_at"] and (reply_at is None or refused > reply_at):
             return MISSING, REFUSED + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
         if reply_at is None:
-            return MISSING, WAITING_REPLY + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
+            return MISSING, WAITING_REPLY + _deleted(cfg, env, hermes_home) + _who_can_send(cfg, env, hermes_home, proven_failed(state_dir, cfg, rows))
         why = _confirmation(state_dir, rows, cfg, reply_at)
         if why == FAILED and _sr.applied_unknown(state_dir):
             return MISSING, UNKNOWN_FAILED
