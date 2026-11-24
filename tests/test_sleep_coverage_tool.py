@@ -4,6 +4,7 @@ Label only; counts only under the raw opt-in. Demo-marked sleep file rows never 
 missing one, is value None with a reason that never echoes a path; fewer than a week of known nights is the
 label "unknown" with a reason. Synthetic sleep rows and synthetic unlock rows only, a fixed clock.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

@@ -1,6 +1,7 @@
 """The result_tier transform_tool_result hook: it replaces a listed health tool's numbers, fails open, and
 records one content-free tier_audit row per replaced result (the glob and the count, never a value).
 Made-up tool names and readings only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

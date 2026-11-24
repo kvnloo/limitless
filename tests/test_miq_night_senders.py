@@ -8,6 +8,7 @@ on PATH that only records its arguments, so nothing really sends. Synthetic data
 The local zone is a fixed offset (TZ) chosen so local time is shortly after midnight, so the test is
 the same whatever the clock says: the night date is a key, never a trigger.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -92,11 +93,11 @@ class TwoSendersOneNight(unittest.TestCase):
         self.att.write_text(json.dumps({"block": None, "resume": {"saved": at - 30}}))
 
     def shell_sender(self):
-        return subprocess.run(["sh", "-c", SHELL_NIGHT], cwd=ROOT, env=self.env, capture_output=True, text=True,
+        return subprocess.run(["sh", "-c", SHELL_NIGHT], cwd=ROOT, env=child_env(self.env), capture_output=True, text=True,
                               timeout=60)
 
     def jobs_cli(self):
-        return subprocess.run([sys.executable, "-I", str(JOBS), "--send"], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(JOBS), "--send"], env=child_env(self.env),
                               capture_output=True, text=True, timeout=60)
 
     def miq_deliveries(self):

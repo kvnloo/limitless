@@ -12,6 +12,7 @@ Glide's real writer on a synthetic anchor with no session database:
 With ``LIMITLESS_GLIDE_SRC`` set to a Glide checkout, ``LiveWriter`` re-runs the writer and fails on
 drift; without it those tests skip (CI has no Glide checkout).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

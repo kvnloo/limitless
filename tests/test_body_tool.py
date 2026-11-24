@@ -3,6 +3,7 @@
 Synthetic rows only. Raw numbers (medians, change) appear only under LIMITLESS_RAW_IN_PROMPT=1, the same
 opt-in the state card uses. No file or no rows is value None with a reason: unknown, not zero.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

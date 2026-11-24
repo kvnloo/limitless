@@ -3,6 +3,7 @@ bin/limitless-brief end to end. It rides the brief through the tier audit gate; 
 
 Synthetic inputs.json, a temp config and HOME, a fake limitless_loop; nothing real.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -121,7 +122,7 @@ class Cli(unittest.TestCase):
         self.env["HOME"] = str(self.home)
 
     def run_cli(self, *args, **extra):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **extra),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **extra)),
                               capture_output=True, text=True, timeout=60)
 
     def sent(self):

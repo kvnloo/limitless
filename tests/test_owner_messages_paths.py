@@ -1,5 +1,6 @@
 """Where the owner's session stores are: $LIMITLESS_OWNER_DBS (os.pathsep-separated) or config "owner_dbs" (a
 list; a relative path is in the state dir). None set means the input is missing, never zero. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

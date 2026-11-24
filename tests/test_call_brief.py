@@ -2,6 +2,7 @@
 
 Synthetic fixtures only (tests/fixtures/state, fixture clock 2030-01-15T12:00:00Z). Nothing sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

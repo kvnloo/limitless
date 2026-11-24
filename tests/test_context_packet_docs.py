@@ -1,5 +1,6 @@
 """docs/context-packet.md shows the real output of scripts/context_packet_example.py, names the schema and its
 rules, and the README points at it."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -13,7 +14,7 @@ DOC = ROOT / "docs" / "context-packet.md"
 class Docs(unittest.TestCase):
     def test_the_doc_example_is_the_scripts_real_output(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "context_packet_example.py")],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         blocks = re.findall(r"```text\n(.*?)```", DOC.read_text(), re.S)
         self.assertIn(r.stdout, blocks)

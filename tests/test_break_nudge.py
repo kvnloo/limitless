@@ -3,6 +3,7 @@
 Synthetic data only: a made-up work app in a synthetic ActivityWatch DB, epoch times picked for the test.
 Nothing reads the clock and nothing sends: push is a fake that records its calls.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

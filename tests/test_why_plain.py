@@ -3,6 +3,7 @@
 The "Why now" line is the last line of every push (send_gate.why_line). decide's reasons are for logs and
 rows ("anytime job and awake"); the person gets plain words, digit-free. Synthetic states only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import itertools
 import os
 import re

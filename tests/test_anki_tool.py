@@ -4,6 +4,7 @@ Synthetic collections only. value is the week's reviews in words; the raw count 
 only under LIMITLESS_RAW_IN_PROMPT=1. Modality measured, age_h from the newest review. No collection set or an
 unreadable one is value None with a path-free reason: unknown, not zero. tier_audit logs the label.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

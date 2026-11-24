@@ -4,6 +4,7 @@ Synthetic only: each test builds a tiny sqlite file with a ``revlog`` table (id 
 No real collection is ever committed. Missing, locked or malformed input is unknown with a path-free reason,
 never zero and never a traceback.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sqlite3
 import sys

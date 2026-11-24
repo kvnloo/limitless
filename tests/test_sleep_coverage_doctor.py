@@ -6,6 +6,7 @@ export job) and right after the context packet's row, kind source
 (--strict never counts it): live when the wearable goal was met, stale when it was not, missing when unknown,
 off when no sleep file is set. Synthetic state dirs only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -138,7 +139,7 @@ class Cli(Case):
         keep = {k: v for k, v in os.environ.items() if k in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT")}
         env = dict(keep, LIMITLESS_CONFIG=str(self.cfg), LIMITLESS_STATE=str(self.st), HOME=str(self.dir), TZ="UTC")
         r = subprocess.run([sys.executable, "-I", str(BIN), *args], capture_output=True, text=True, timeout=60,
-                           env=env)
+                           env=child_env(env))
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 

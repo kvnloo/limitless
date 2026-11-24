@@ -1,4 +1,5 @@
 """window_chain: first_known(*providers) and the Sleep-mode/unlock classifier as a WindowProvider."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

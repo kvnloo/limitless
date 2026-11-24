@@ -1,5 +1,6 @@
 """limitless-doctor's `export context packet` row: off (no context_packet_path), live (written within STALE_H) or
 stale (not written yet, older, or not a packet this plugin wrote). Words only. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

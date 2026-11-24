@@ -1,4 +1,5 @@
 """limitless_blocks: focus blocks as a read-only envelope (a proxy) with a plain T1 label. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

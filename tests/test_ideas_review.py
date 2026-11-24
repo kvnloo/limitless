@@ -3,6 +3,7 @@
 At most one line, "Ideas recorded this week: <words>.", through tier_audit.gate (hook week_review:ideas);
 nothing when no ledger is set. Synthetic rows, a fake push, a fixed clock, UTC. No new job and no new push.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

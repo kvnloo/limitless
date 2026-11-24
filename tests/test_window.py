@@ -1,4 +1,5 @@
 """limitless_window: peak|trough|anytime|asleep from state events (Sleep mode, unlocks), never a clock rule."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

@@ -1,4 +1,5 @@
 """limitless_schedule: the schedule cards in plain words, read-only (raw fields only in ``value``)."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

@@ -1,6 +1,7 @@
 """catchup: after more than catchup_after_h (default 24) since the person last wrote, the first turn gets a short
 catch-up: at most 5 digit-free lines, TLDR first, at most one action, unknown never shown as none.
 Synthetic data only; the fixture clock is 2030-01-15T12:00:00Z."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

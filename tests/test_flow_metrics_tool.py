@@ -2,6 +2,7 @@
 
 Synthetic ActivityWatch DBs only. Raw numbers appear only under LIMITLESS_RAW_IN_PROMPT=1.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

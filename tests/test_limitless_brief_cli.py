@@ -1,4 +1,5 @@
 """bin/limitless-brief end to end with a fake limitless_loop in a temp HOME. Synthetic data only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -39,7 +40,7 @@ class LimitlessBriefCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(self.env),
                               capture_output=True, text=True, timeout=30)
 
     def test_send_adds_one_asks_line_and_no_card_ids(self):

@@ -1,4 +1,5 @@
 """Pre-sleep heart rate in words, wearable rows only (presleep_hr.py). Synthetic rows only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

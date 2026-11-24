@@ -2,6 +2,7 @@
 
 Synthetic only: no person's data. The list is code; these tests pin its shape and its words.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

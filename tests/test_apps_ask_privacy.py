@@ -2,6 +2,7 @@
 in the pre_llm_call state card (raw opt-in or not), the catch-up hook, a doctor reason, a tier-audit log row, a
 T1 label or apps-ask.json. Synthetic phone DBs with well-known public app ids only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

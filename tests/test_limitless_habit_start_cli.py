@@ -1,4 +1,5 @@
 """bin/limitless-habit-start end to end in a temp HOME. Synthetic data only; nothing sends."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -26,7 +27,7 @@ class HabitStartCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args, env=None):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=env or self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(env or self.env),
                               capture_output=True, text=True, timeout=60)
 
     def test_dry_run_prints_would_start_and_writes_nothing(self):

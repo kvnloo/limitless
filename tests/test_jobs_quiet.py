@@ -1,6 +1,7 @@
 """jobs_runner and bin/limitless-jobs with quiet: a quiet drop is a drop (never "the next run tries again"),
 and the job's decision-window reason goes to kevin-push as --why. Synthetic data only; nothing really sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -115,7 +116,7 @@ class JobsCliQuiet(unittest.TestCase):
         self.tmp.cleanup()
 
     def jobs_cli(self):
-        return subprocess.run([sys.executable, "-I", str(CLI), "--send"], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), "--send"], env=child_env(self.env),
                               capture_output=True, text=True, timeout=30)
 
     def bodies(self):

@@ -1,6 +1,7 @@
 """limitless_explain_back: read-only. {offered, answered_this_week} in words, self_report, a digit-free T1 label.
 The answers' text appears only under the raw opt-in. No score, no streak. Synthetic state only.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

@@ -4,6 +4,7 @@ Label only; counts only under the raw opt-in. Config push_log unset is value Non
 zero); reasons never echo a path. Synthetic rows in bin/kevin-push's log shape, a fixed clock. Nothing is
 written or sent.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

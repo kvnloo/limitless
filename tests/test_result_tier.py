@@ -1,6 +1,7 @@
 """result_tier: a health tool's raw readings never enter the prompt. For a tool whose name matches a config
 t0_tools glob, every number in its result becomes the words "a number"; keys and words stay, JSON stays JSON.
 Made-up tool names and readings only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

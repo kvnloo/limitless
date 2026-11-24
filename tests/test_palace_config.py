@@ -1,6 +1,7 @@
 """palace config: ``palace_link`` (a deep link or URL; unset by default) and ``palace_label`` (default "memory
 palace"). Unset, or a link that may not ride in a line the person reads, is off with one plain-words reason.
 Synthetic links only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import unittest
 from pathlib import Path

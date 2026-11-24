@@ -1,4 +1,5 @@
 """bin/limitless-habit-ingest end to end in a temp HOME with a synthetic Hermes DB. Synthetic data only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import sqlite3
@@ -44,7 +45,7 @@ class HabitIngestCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args, env=None):
-        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=dict(self.env, **(env or {})),
+        return subprocess.run([sys.executable, "-I", str(CLI), *args], env=child_env(dict(self.env, **(env or {}))),
                               capture_output=True, text=True, timeout=60)
 
     def habit(self):

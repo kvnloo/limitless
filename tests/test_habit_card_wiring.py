@@ -1,5 +1,6 @@
 """The habit code calls habit_card for its three card operations: jobs.record_checkin (record), jobs.week_logged
 (week_number) and stop_rule.verdict (verdict_inputs). Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

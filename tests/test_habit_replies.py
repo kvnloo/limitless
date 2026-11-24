@@ -1,4 +1,5 @@
 """habit_replies.ingest: a Done / No / Skip reply to the habit check-in lands in habit.json. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

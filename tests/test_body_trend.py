@@ -2,6 +2,7 @@
 
 Synthetic rows only. Windows: recent = today and the 13 days before; prior = the 14 days before that.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import random

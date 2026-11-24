@@ -1,5 +1,6 @@
 """docs/apps-ingest.md says how the apps-set line is told once in the wake brief and shows the real output of
 scripts/apps_set_example.py; docs/apps-ask.md says the line and the ask never share a brief; the README names it."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -20,7 +21,7 @@ class Docs(unittest.TestCase):
 
     def test_the_example_is_the_scripts_real_output(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "apps_set_example.py")],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(r.stdout, re.findall(r"```text\n(.*?)```", self.section(INGEST, SECTION), re.S))
         for w in ("Work and feed app lists set from your reply.", "Feed app list set from your reply.",

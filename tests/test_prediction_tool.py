@@ -1,6 +1,7 @@
 """limitless_habit and predictions: it shows a locked prediction and its receipt (digit-free T1 labels);
 `predict` locks one and `receipt` writes one only with confirm true, else it says what it would do.
 Synthetic fixtures only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

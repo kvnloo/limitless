@@ -1,4 +1,5 @@
 """docs/habit-catalogue.md lists every catalogue habit as the code has it, and the README points to it."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import unittest
 from pathlib import Path

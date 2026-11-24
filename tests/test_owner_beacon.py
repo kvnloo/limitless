@@ -1,5 +1,6 @@
 """Owner beacons: a content-free {"at": ISO UTC, "v": 1} file, written on another machine, read as one more
 source by owner_messages.newest_user_message. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

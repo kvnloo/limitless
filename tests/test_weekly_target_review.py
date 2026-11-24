@@ -2,6 +2,7 @@
 
 Synthetic habit weeks; NOW is an arbitrary epoch; pushes go to a fake sender, nothing really sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

@@ -5,6 +5,7 @@ start_week(state_dir, habit, today, write) writes habit.json {"habit", "week_of"
 the habit text is empty or a week is already running (habit_week_gate is None for the existing file).
 A finished week is kept as habit-<week_of>.json next to the new one, never deleted.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import stat

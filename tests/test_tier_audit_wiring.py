@@ -1,4 +1,5 @@
 """The pre_llm_call card and every labeled tool result pass through tier_audit (synthetic fixtures only)."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import hashlib
 import json
 import os

@@ -2,6 +2,7 @@
 
 Synthetic cards only: the marker string below stands in for card text and must never reach the log.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -135,7 +136,7 @@ class Cli(Base):
         e = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.home)}
         e.update(env or {})
         return subprocess.run([sys.executable, "-I", str(self.BIN), *args], capture_output=True, text=True,
-                              env=e, timeout=30)
+                              env=child_env(e), timeout=30)
 
     def test_plain_words_and_exit_zero(self):
         tier_audit.gate("pre_llm_call", CARD_T1, False, env=self.env, home=self.home, now=NOW)

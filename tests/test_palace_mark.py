@@ -1,6 +1,7 @@
 """palace mark and for_turn: at most one palace offer per wake day, kept in palace.json under the state dir
 (epoch seconds only, mode 0600, like explain-back's mark); for_turn reads config, quiet and the wake event.
 Synthetic state only; the wake is the fixture's Sleep-mode event, never a clock time."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import shutil
 import stat

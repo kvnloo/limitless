@@ -1,6 +1,7 @@
 """The Unknown != No contract of the habit card. A week replied Done, Done, (nothing), No, Skip, (nothing), Done
 is done three, logged four, unknown three: never "four of seven failed" and never a rate over seven.
 Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

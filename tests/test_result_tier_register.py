@@ -1,6 +1,7 @@
 """result_tier registers its transform_tool_result hook only on a host that knows that hook name (the
 VALID_HOOKS of the host's loaded hermes_cli.plugins module); an older host or a bare fake ctx still loads the
 plugin. Synthetic fake modules only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import types

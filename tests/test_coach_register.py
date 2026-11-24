@@ -1,6 +1,7 @@
 """register(ctx) offers the coach skill (skills/coach/SKILL.md), with the plugin's other skills, to a host with
 register_skill (feature detection); without it one content-free line and nothing else; a host that raises never
 breaks the other registrations."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import logging
 import os
 import re

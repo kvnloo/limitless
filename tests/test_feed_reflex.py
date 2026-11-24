@@ -1,4 +1,5 @@
 """feed_reflex.reflex: unlocks whose first phone app, within the gap, is a feed app; per day. Synthetic rows only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

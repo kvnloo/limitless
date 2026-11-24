@@ -3,6 +3,7 @@
 Synthetic DBs only, built in setUp with the ActivityWatch schema; app names are made up. The zone is a
 fixed synthetic offset; only the local day boundaries it gives matter.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sqlite3

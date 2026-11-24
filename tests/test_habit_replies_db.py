@@ -3,6 +3,7 @@
 The tables keep the columns the reader uses, with the types and constraints of NousResearch/hermes-agent
 hermes_state.py (v2026.4.13, 1af2e18) and persistence/sqlite/_schema_ddl.py (0f602c5).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sqlite3

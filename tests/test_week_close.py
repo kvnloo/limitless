@@ -3,6 +3,7 @@
 A decided week is finished as of today: the check-in drops ("habit week closed"), habit_start starts the
 next week and keeps the old file byte for byte as habit-<week_of>.json, and tools.habit shows the decision.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

@@ -1,4 +1,5 @@
 """naps.naps(): Sleep-mode on/off pairs that are a nap, not the night. Synthetic events only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import unittest
 from datetime import datetime, timezone

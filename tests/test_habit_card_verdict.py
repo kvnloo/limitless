@@ -1,5 +1,6 @@
 """habit_card.verdict_inputs(card_state, week_start, rule) -> what a Keep / Drop rule reads: the week number, the
 rule id as given and the two decisions. The rule itself is the host's (limitless: stop_rule). Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

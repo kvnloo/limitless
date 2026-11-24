@@ -3,6 +3,7 @@
 Words only, through tier_audit.gate; no new push or job. Synthetic ActivityWatch DBs, a fixed clock, UTC as the
 local zone (the CLI test uses this machine's zone and clock).
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -126,7 +127,7 @@ class BriefCli(unittest.TestCase):
                                                                              "flow_work_apps": ["editor"]}))
             env = {k: v for k, v in os.environ.items() if not k.startswith("LIMITLESS_")}
             env["HOME"] = str(home)
-            r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=env,
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=child_env(env),
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual((home / "delivered.txt").read_text(),

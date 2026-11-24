@@ -2,6 +2,7 @@
 
 The link itself only under LIMITLESS_RAW_IN_PROMPT=1; otherwise "a link is set". Modality derived, age_h the
 wearable input's age (limitless_status's rule), a digit-free T1 label. Synthetic link and inputs only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

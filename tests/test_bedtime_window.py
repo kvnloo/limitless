@@ -1,5 +1,6 @@
 """The bedtime question (a ``wind_down`` job) delivers only when the window chain says wind_down,
 whatever hour of the day the Glide fixture's events fall on. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

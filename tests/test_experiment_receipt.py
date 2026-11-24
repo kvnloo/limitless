@@ -1,6 +1,7 @@
 """prediction.receipt with a lag: pending (nothing written) until the lagged span is over, then judged on that
 span against the week before the habit week; fewer than three days in the judged span is inconclusive, never a
 guess. Synthetic fixtures only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

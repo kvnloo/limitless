@@ -4,6 +4,7 @@ scorecard.measured reads the uptime audit of the state dir's runs.jsonl and the 
 kevin-push's log; the weekly block cites both in words beside the hand status. Synthetic fixtures only: an
 invented NORTH-STAR-shaped table, a synthetic runs.jsonl and a synthetic push log. Fixed clock, UTC.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

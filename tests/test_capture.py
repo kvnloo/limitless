@@ -1,4 +1,5 @@
 """limitless_capture appends exactly one line to captures.jsonl and never starts work."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import subprocess

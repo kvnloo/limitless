@@ -3,6 +3,7 @@
 Words only, through tier_audit.gate; nothing when unknown. Synthetic Sleep-mode rows, a fake push, a fixed clock,
 UTC as the local zone.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -173,7 +174,7 @@ class BriefCli(unittest.TestCase):
                 json.dumps(r) + "\n" for r in rows_for(nap=(12, 0, 12, 30), base=today, local=True)[:-2]))
             env = {k: v for k, v in os.environ.items() if not k.startswith("LIMITLESS_")}
             env["HOME"] = str(home)
-            r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=env,
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=child_env(env),
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual((home / "delivered.txt").read_text(),

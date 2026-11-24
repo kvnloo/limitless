@@ -4,6 +4,7 @@ A row's ``inputs`` is "stale a,b,c" or absent; a row without it is unknown for t
 fresh for an input when one run that day has ``inputs`` and does not list it; a day with no run or only unknown
 rows is unknown. Synthetic rows only, a fixed day, a UTC zone and one fixed non-UTC offset (no DST).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

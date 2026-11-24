@@ -1,5 +1,6 @@
 """habit_card: the habit card as one generic, data-free module. A card is a name, an event cue (never a clock
 time), a start of at most two minutes and the replies Done / No / Skip. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

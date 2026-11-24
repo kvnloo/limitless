@@ -1,5 +1,6 @@
 """bedtime.route: in an asleep or wind_down window an owner message is saved for tomorrow, not started.
 The window comes from state (a class name), never a clock time. Synthetic text only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

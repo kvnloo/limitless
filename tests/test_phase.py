@@ -1,5 +1,6 @@
 """phase.phase: the part of the day in words, from the wake event (never a clock), a posture file overriding
 only when fresher than the wake and naming a known phase. Synthetic numbers only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

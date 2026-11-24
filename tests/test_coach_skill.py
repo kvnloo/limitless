@@ -1,5 +1,6 @@
 """skills/coach/SKILL.md: the plugin's own coach skill (limitless:coach) stays short, names only real tools,
 covers every tool in plugin.yaml, and never holds a clock time or a dosing word."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

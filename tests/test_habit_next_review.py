@@ -2,6 +2,7 @@
 tier_audit.gate. Nothing after Keep, nothing when the decision is unknown, nothing when the list is exhausted.
 No new push and no new job: the line is said where the Drop is logged (bin/limitless-habit-ingest).
 Synthetic data only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import sqlite3
@@ -119,7 +120,7 @@ class IngestCli(unittest.TestCase):
         con.close()
 
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, "-I", str(CLI), "--db", str(self.db), *args], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), "--db", str(self.db), *args], env=child_env(self.env),
                               capture_output=True, text=True, timeout=60)
 
     def test_drop_then_one_next_line(self):

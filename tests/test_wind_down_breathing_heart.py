@@ -1,6 +1,7 @@
 """Whether live heart data backs the breathing choice: "with live heart data" only when the wearable input is
 fresh by the rule limitless_status uses (inputs.json ``ageHours.wearable`` plus the snapshot's age, at most
 envelope.STALE_H); otherwise "without heart data". Never a breath count, pace, HR or HRV value. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

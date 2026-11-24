@@ -1,5 +1,6 @@
 """pre_llm_call state card: <= 6 lines, privacy tier T2 (coarse labels, no raw numbers unless opted in),
 cached until the window class or a state file mtime changes. Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

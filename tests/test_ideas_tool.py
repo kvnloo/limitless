@@ -1,4 +1,5 @@
 """limitless_ideas: the idea ledger's week in words, read-only; idea text only under the raw opt-in."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

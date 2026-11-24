@@ -1,6 +1,7 @@
 """docs/mock-guard.md: its synthetic run is the example script's real output, it cites the markers by file and line,
 and the README names it. A digit walk over every word the guard adds to a label or a doctor reason. Synthetic only.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -18,7 +19,7 @@ DOC = ROOT / "docs" / "mock-guard.md"
 class Docs(unittest.TestCase):
     def test_the_doc_example_is_the_scripts_real_output(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "mock_guard_example.py")],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(r.stdout, re.findall(r"```text\n(.*?)```", DOC.read_text(), re.S))
 

@@ -2,6 +2,7 @@
 every needs-the-person ask into one row of the asks queue (the fields limitless/asks.py reads) with a one-tap reply,
 lets limitless_window and the asks plan decide when it reaches him, keeps one status board in words, and acts only on
 his yes. No clock time, no dosing word, no digit outside a fenced example."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

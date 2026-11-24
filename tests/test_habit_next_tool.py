@@ -1,5 +1,6 @@
 """limitless_habit_next (read-only): the next habit from the catalogue as one derived envelope with a
 digit-free T1 label. It only suggests: nothing is written or sent, and no habit week starts. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

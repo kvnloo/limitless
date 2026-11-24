@@ -3,6 +3,7 @@ callable and maps them to the sleep_file row shape noop_export writes, with sour
 
 Synthetic JSON only (tests/fixtures/open_wearables). No test touches the network. UTC stands in for the local zone.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import sys
 import unittest

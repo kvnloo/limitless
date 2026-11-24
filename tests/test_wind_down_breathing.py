@@ -3,6 +3,7 @@
 Off by default. A link is one token with no digit and no space (it rides in a line that tier_audit.gate would
 drop for a digit); anything else is ignored, never sent. Synthetic links only (example://breathe).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

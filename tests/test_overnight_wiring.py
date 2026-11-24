@@ -1,6 +1,7 @@
 """The overnight lines in the messages that already go out: one plan line in the MIQ job body at wind-down
 (the MIQ question stays first) and one landed line in the wake brief (brief_post.finalize, called by
 bin/limitless-brief). No dir configured adds nothing. Synthetic lane names only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import re
@@ -131,7 +132,7 @@ class BriefCli(unittest.TestCase):
         self.env["HOME"] = str(self.home)
 
     def send(self):
-        r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=self.env,
+        r = subprocess.run([sys.executable, "-I", str(ROOT / "bin" / "limitless-brief"), "send"], env=child_env(self.env),
                            capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return (self.home / "delivered.txt").read_text()

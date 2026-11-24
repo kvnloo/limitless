@@ -3,6 +3,7 @@
 Synthetic data only.
 Nothing really sends: pushes are fakes, and the CLI tests put a fake `hermes` on PATH.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -82,11 +83,11 @@ class BriefSenders(unittest.TestCase):
         return f"wake_brief:{int(off)}"
 
     def brief(self, env=None):
-        return subprocess.run([sys.executable, "-I", str(BRIEF), "send"], env=env or self.env,
+        return subprocess.run([sys.executable, "-I", str(BRIEF), "send"], env=child_env(env or self.env),
                               capture_output=True, text=True, timeout=30)
 
     def jobs_cli(self):
-        return subprocess.run([sys.executable, "-I", str(JOBS), "--send"], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(JOBS), "--send"], env=child_env(self.env),
                               capture_output=True, text=True, timeout=30)
 
     def shown(self, r):

@@ -1,5 +1,6 @@
 """prediction.lock with a stated falsifier and a lag (none, one week or two weeks): stored on the one
 prediction row in predictions.jsonl; old rows without them stay valid. Synthetic fixtures only; nothing sends."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

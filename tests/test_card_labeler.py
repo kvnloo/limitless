@@ -1,5 +1,6 @@
 """The card builds its lines from labeler (T1) output; the digit mask stays as a second guard only.
 Synthetic fixtures only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

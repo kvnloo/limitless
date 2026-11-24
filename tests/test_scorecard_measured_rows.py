@@ -5,6 +5,7 @@ flow numbers (flow_week), the local integrations (Glide's attention file, the ca
 voice MIQ) and an optional ranked ledger. Synthetic fixtures only (invented apps, synthetic sleep rows, synthetic
 ActivityWatch rows, synthetic attention, brief, asks and ledger files). Fixed clock, UTC.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

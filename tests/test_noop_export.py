@@ -3,6 +3,7 @@
 Synthetic DBs only (tests/noop_fixture.py: NOOP's public table and column names, made-up rows). UTC stands in
 for the local zone. Nothing here sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sqlite3
 import sys

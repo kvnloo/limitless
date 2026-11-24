@@ -1,4 +1,5 @@
 """The doctor's feed reflex row: off, live or unknown, words only, never a value. Synthetic DBs only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

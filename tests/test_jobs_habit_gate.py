@@ -3,6 +3,7 @@
 A week is started when habit.json names a habit and its ``week_of`` date is today or up to six days
 back (days one to seven). No started week, or a week past its seventh day: the check-in drops.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import subprocess
@@ -143,7 +144,7 @@ class CliDryRun(unittest.TestCase):
             write_rows(st / "events.jsonl", [{"event": "habit_cue", "at": at}])
             env = {"HOME": str(home), "PATH": os.environ.get("PATH", ""), "LIMITLESS_STATE": str(st),
                    "LIMITLESS_CONFIG": str(home / "no-config.json")}
-            r = subprocess.run([sys.executable, "-I", str(CLI)], env=env, capture_output=True, text=True, timeout=30)
+            r = subprocess.run([sys.executable, "-I", str(CLI)], env=child_env(env), capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("Habit check-in: drop: no habit week started", r.stdout.splitlines(), r.stdout)
             self.assertFalse((st / "jobs-sent.jsonl").exists())

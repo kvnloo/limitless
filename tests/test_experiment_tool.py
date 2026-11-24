@@ -1,6 +1,7 @@
 """limitless_experiment: one read-only view over the prediction ledger. {current: words, past: [{week_of, verdict,
 falsifier_stated}]}, modality derived, a digit-free T1 label; prediction and falsifier text only under the raw
 opt-in. No score, no streak. Synthetic state only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

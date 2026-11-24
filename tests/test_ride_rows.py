@@ -5,6 +5,7 @@ Synthetic rows only. One row per exercise session: {"start": ISO-8601 with offse
 configured is no rows; malformed rows, future starts and duplicates (same start and source) are skipped;
 nothing raises.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

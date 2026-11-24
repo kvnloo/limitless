@@ -2,6 +2,7 @@
 
 Synthetic fixtures only. Times are epoch seconds picked for the test; nothing reads the clock.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import dataclasses
 import os
 import re

@@ -3,6 +3,7 @@ session DBs as a content-free {"at": ISO UTC, "v": 1} file, written atomically w
 
 Synthetic data only. Times are relative to the clock the CLI reads; only differences matter. Nothing sends.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -49,7 +50,7 @@ class Base(unittest.TestCase):
 
     def run_cli(self, *args, env=None):
         return subprocess.run([sys.executable, "-I", str(CLI), *args], capture_output=True, text=True,
-                              env=self.env if env is None else env, timeout=30)
+                              env=child_env(self.env if env is None else env), timeout=30)
 
     def assert_one_line(self, text):
         self.assertEqual(len(text.strip().splitlines()), 1, text)

@@ -1,23 +1,18 @@
 """The suite never reads or writes the host's real Limitless config, state or audit log.
 
 On a host with ~/.config/limitless/config.json (audit_path, state, ...), tests that call the library with the
-default env used to append synthetic rows to the real audit log. This module sorts first in discovery, so its
-import-time isolation applies to the whole run: HOME points at an empty temp dir and every LIMITLESS_* variable
-is dropped.
+default env used to append synthetic rows to the real audit log. The isolation lives in tests/hermetic_env.py,
+which every test module imports first (test_hermetic_guard enforces it): HOME points at an empty temp dir and
+every LIMITLESS_* variable is dropped. This module checks the result.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-for _k in [k for k in os.environ if k.startswith("LIMITLESS_")]:
-    del os.environ[_k]
-TEST_HOME = Path(tempfile.mkdtemp(prefix="limitless-test-home-"))
-os.environ["HOME"] = str(TEST_HOME)
-# A test that clears os.environ drops HOME too, and Path.home() then falls back to the passwd entry.
-Path.home = classmethod(lambda cls: cls(TEST_HOME))
+from hermetic_env import TEST_HOME
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

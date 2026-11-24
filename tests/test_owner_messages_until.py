@@ -1,5 +1,6 @@
 """owner_messages.newest_user_message(until=...): the newest message from the person at or before a bound,
 so a caller can ask for the message before this turn's own. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import tempfile

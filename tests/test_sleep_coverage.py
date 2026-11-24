@@ -4,6 +4,7 @@ A night is wearable only from a non-demo wearable row; the phone proxy never cou
 judged like uptime_audit: unknown nights never count for it, and fewer than a week of known nights is unknown.
 Synthetic rows only, a fixed day, a UTC zone and one fixed non-UTC offset (no DST).
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import re
 import sys

@@ -1,5 +1,6 @@
 """limitless.context_packet: the state card as one data-free context packet for other long-horizon agents.
 Synthetic fixtures only (tests/fixtures/state); never a real person's data."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

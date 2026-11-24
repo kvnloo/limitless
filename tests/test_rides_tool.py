@@ -3,6 +3,7 @@
 Synthetic rows only. Total minutes appear only under LIMITLESS_RAW_IN_PROMPT=1, the same opt-in the state
 card uses. No file or no rides is value None with a reason: unknown, not zero. tier_audit logs the label.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

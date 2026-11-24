@@ -1,5 +1,6 @@
 """The context packet's one write (config context_packet_path, atomic, mode 0600) and bin/limitless-context-packet
 (dry run by default). Synthetic fixtures only (tests/fixtures/state)."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import io
 import json
 import os
@@ -172,11 +173,11 @@ class Cli(Base):
         self.config(context_packet_path="context.json")
         env = {k: v for k, v in os.environ.items() if not k.startswith("LIMITLESS_")}
         env.update(self.env, HOME=str(self.home), LIMITLESS_RAW_IN_PROMPT="1")
-        r = subprocess.run([sys.executable, "-I", str(CLI), "--json"], env=env, capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-I", str(CLI), "--json"], env=child_env(env), capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["schema"], cp.SCHEMA)
         self.assertFalse((self.st / "context.json").exists())
-        r = subprocess.run([sys.executable, "-I", str(CLI), "--write"], env=env, capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-I", str(CLI), "--write"], env=child_env(env), capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(stat.S_IMODE((self.st / "context.json").stat().st_mode), 0o600)
 

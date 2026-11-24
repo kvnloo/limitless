@@ -1,5 +1,6 @@
 """register(ctx) wires bedtime capture to post_gateway_admission, a real Hermes hook (hermes_cli/plugins.py
 VALID_HOOKS), and the hook is inert while bedtime_capture is off (the default). Synthetic state only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import tempfile

@@ -1,4 +1,5 @@
 """limitless_card_view: the state card or the week review as one ephemeral HTML card (synthetic fixtures only)."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

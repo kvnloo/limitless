@@ -3,6 +3,7 @@
 Synthetic only: a phone DB built with the AW schema (test_flow_week.make_db), a desktop served by a fake
 fetch or a synthetic export file. App names and window titles are made up; nothing reads the clock.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

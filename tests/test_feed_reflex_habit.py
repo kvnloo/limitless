@@ -1,5 +1,6 @@
 """The circuit-breaker hint: when the feed reflex is "often" and the feeds-free habit is not running, the existing
 "Next up" suggestion may name the circuit-breaker habit. Suggest only: nothing starts, nothing is written."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

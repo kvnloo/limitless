@@ -2,6 +2,7 @@
 at most once per wake day (keyed on the wake event). Never in a peak, asleep, an unknown window, a focus block
 or focused mode. Pure: synthetic inputs only, no clock.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import unittest
 from pathlib import Path

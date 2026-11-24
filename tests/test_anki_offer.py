@@ -4,6 +4,7 @@ pre_llm_call card: added like the card's other optional lines, through tier_audi
 
 Synthetic state and collections only. No clock time decides anything here.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import shutil

@@ -1,5 +1,6 @@
 """The focus_safe pre_tool_call hook: advisory only. It never blocks, never rewrites args and fails open; on a
 warn it records one content-free tier_audit line. Synthetic serials and display ids only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

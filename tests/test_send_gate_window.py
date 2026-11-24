@@ -2,6 +2,7 @@
 
 tests/test_send_gate.py is left unchanged: with no window every result is the same as before.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

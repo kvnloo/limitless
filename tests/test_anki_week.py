@@ -4,6 +4,7 @@ Synthetic collections only. The words are wording, not targets: "no reviews this
 has none, "reviewed most days this week" when more than half of the days so far had a review, else "some
 reviews this week". A day with no review is unlogged, never failed; unknown is never zero.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import sys
 import tempfile
 import unittest

@@ -1,5 +1,6 @@
 """habit_card.week_number(card_state, week_start) -> {done, logged, unknown}: the one day-seven number. Unknown is
 the days with no Done or No entry and is never counted as a No. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

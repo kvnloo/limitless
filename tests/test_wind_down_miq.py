@@ -1,6 +1,7 @@
 """The wind-down line rides inside the one MIQ push: after the question and the overnight line, before
 ``Reply: Yes / No / Later``, through tier_audit.gate. No new job, no second push, no extra send-gate call.
 Quiet (off / tonight / snoozed) and Sleep mode keep the whole push held as before. Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

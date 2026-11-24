@@ -3,6 +3,7 @@
 Covers every job spec (and its per-habit variants) with every extra line the runner can add. Synthetic
 habit and lines only; nothing sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

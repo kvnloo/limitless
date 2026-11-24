@@ -1,5 +1,6 @@
 """The breathing choice rides in the one MIQ push, inside the wind-down line: no new push, no new job, no
 extra send-gate call, still one line through tier_audit.gate (hook miq:wind_down). Synthetic data only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

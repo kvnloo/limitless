@@ -2,6 +2,7 @@
 
 Synthetic rows only, UTC as the local zone, a fake push.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

@@ -1,4 +1,5 @@
 """The measured scorecard lines are documented where the audits say where they show, and in the README."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import unittest
 from pathlib import Path
 

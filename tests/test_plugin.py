@@ -3,6 +3,7 @@
 Loaded the way hermes_cli/plugins_loader.py loads one (spec_from_file_location with the plugin dir as
 the package path, module name hermes_plugins.<slug>), against a fake ctx: Hermes is not needed.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import importlib.util
 import json
 import os

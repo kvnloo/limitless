@@ -4,6 +4,7 @@ nothing that identifies a person or a device leaves the NOOP DB.
 Synthetic DBs only (tests/noop_fixture.py); the planted name, device name and serial-like strings are made up.
 Times are local, as the plugin's handlers read them. Nothing here sends.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import io
 import json
 import os

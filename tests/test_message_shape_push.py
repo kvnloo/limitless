@@ -1,5 +1,6 @@
 """bin/kevin-push holds every delivered message to its shape (message_shape), with one content-free audit row
 when anything was folded or cut. Fake `hermes` on PATH, temp HOME, synthetic text only."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import stat
@@ -36,7 +37,7 @@ class Wired(unittest.TestCase):
                         LIMITLESS_CONFIG=str(self.cfg), LIMITLESS_AUDIT=str(self.audit), CIRCADIAN_CLASS="decision")
 
     def push(self, body, title="Week review"):
-        r = subprocess.run([sys.executable, "-I", str(CLI), "x", title, body], env=self.env,
+        r = subprocess.run([sys.executable, "-I", str(CLI), "x", title, body], env=child_env(self.env),
                            capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout

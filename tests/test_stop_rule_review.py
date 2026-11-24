@@ -1,6 +1,7 @@
 """The week review's stop-rule line: "Your rule says: keep it" / "drop it" / "your call", digit-free, through
 tier_audit.gate, last before "Reply: Keep / Drop"; no line when the verdict is unknown or no rule was set.
 The rule only suggests: the reply decides. Synthetic data, a fake push, a fixed clock."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import re
 import sys

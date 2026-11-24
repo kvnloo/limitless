@@ -1,4 +1,5 @@
 """Every tool result is {value, modality, age_h, evidence_tier}; missing data is value null + reason."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import unittest

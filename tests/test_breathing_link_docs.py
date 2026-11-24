@@ -1,4 +1,5 @@
 """docs/breathing-link.md shows the real output of scripts/breathing_link_example.py, and the README points at it."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -12,7 +13,7 @@ DOC = ROOT / "docs" / "breathing-link.md"
 class Docs(unittest.TestCase):
     def run_example(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "breathing_link_example.py")],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 

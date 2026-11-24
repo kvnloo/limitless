@@ -1,6 +1,7 @@
 """skills/learn/SKILL.md: the plugin's learning skill (limitless:learn) stays short, names only real tools, runs a
 learning turn as struggle-first guess, explain-back, a notebook of unknowns and trough-only Anki review, and never
 holds a clock time, a dosing word or a score/grade offered as a feature."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

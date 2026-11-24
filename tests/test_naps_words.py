@@ -1,4 +1,5 @@
 """naps words: the day label and the week line, T1 and digit-free. Synthetic events only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import re
 import sys
 import unittest

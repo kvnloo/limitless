@@ -1,4 +1,5 @@
 """The repo is public: no personal data, private paths, hostnames or secrets in any tracked file."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import unittest
@@ -17,7 +18,7 @@ BAD = [
 
 
 def tracked():
-    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, env=child_env()).stdout.split()
     return [ROOT / p for p in out if p != "tests/test_public_hygiene.py"]
 
 

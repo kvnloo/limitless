@@ -1,5 +1,6 @@
 """limitless_card_view kind skill_tree: the skill tree as one self-contained HTML card through ui_card, one
 digit-free row per layer, written only when a card dir is set. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import re

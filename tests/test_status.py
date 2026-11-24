@@ -1,4 +1,5 @@
 """limitless_status: each input's age, a Not-recording list (>24 h or down), the last run. Synthetic only."""
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import os
 import sys
 import tempfile

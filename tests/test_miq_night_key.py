@@ -5,6 +5,7 @@ wake belongs to the previous date. The wake is the latest wake event (Sleep mode
 events.jsonl row) at most window.MAX_AWAKE_H before the event; with none, the event's own date.
 Times are fixed synthetic epochs in UTC (tz=timezone.utc); nothing sends: the push is a fake.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys

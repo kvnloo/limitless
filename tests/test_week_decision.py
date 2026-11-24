@@ -6,6 +6,7 @@ than DECISION_REPLY_S before the reply) writes ``decision`` and ``decided_at`` i
 with every other key kept. Dry run by default. No reply, or any other reply, writes nothing: the week stays
 undecided, never a Drop. A decision already in habit.json is never overwritten.
 """
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
 import sqlite3
@@ -169,7 +170,7 @@ class IngestCli(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_cli(self, *args):
-        return subprocess.run([sys.executable, "-I", str(CLI), "--db", str(self.db), *args], env=self.env,
+        return subprocess.run([sys.executable, "-I", str(CLI), "--db", str(self.db), *args], env=child_env(self.env),
                               capture_output=True, text=True, timeout=60)
 
     def habit(self):

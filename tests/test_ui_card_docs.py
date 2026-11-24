@@ -1,4 +1,5 @@
 """docs/ui-card.md and its committed synthetic examples match ui_card's real output; the README points at it."""
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import re
 import subprocess
 import sys
@@ -13,7 +14,7 @@ EXAMPLES = ROOT / "docs" / "examples"
 class Docs(unittest.TestCase):
     def test_the_committed_examples_are_the_scripts_real_output(self):
         r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "ui_card_example.py"), "--check"],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, env=child_env())
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_the_examples_are_self_contained_and_digit_free_to_read(self):

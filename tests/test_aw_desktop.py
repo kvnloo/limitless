@@ -3,6 +3,7 @@
 Synthetic buckets and events served by a fake fetch: no network, no real server. App names and window
 titles are made up; a title is planted in every fixture so the tests can show it never comes out.
 """
+import hermetic_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
 import json
 import os
 import sys
