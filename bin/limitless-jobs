@@ -5,10 +5,11 @@ Without --send it is a dry run: verdicts only, nothing is pushed or written.
 With --ingest (the timer's pass) the reply ingests (apps, ranked, sender; each by its own config mode) run for real,
 exactly as --send runs them, and every other job is a plain dry run: kevin-push and limitless-brief are never called,
 nothing is sent and no process is started. --ingest with --send is --send.
-With --ingest --confirm the pass also sends the one sender confirmation (below) through the same kevin-push call
---send uses, in config "sender_confirm" write mode only; nothing else is pushed or logged as sent, limitless-brief is
-never called and the outage recap stays a dry run. --confirm without --ingest is a usage error (exit 2); --send with
-anything is --send.
+With --ingest --confirm the pass also sends the two recovery messages through the same kevin-push call --send uses:
+the one sender confirmation (below; config "sender_confirm" write mode only) and, on a later pass, the outage recap
+(below; config "outage_recap" write mode only), never both in one pass. Nothing else is pushed or logged as sent and
+limitless-brief is never called. --confirm without --ingest is a usage error (exit 2); --send with anything is
+--send.
 With --send, a deliver verdict goes out through `kevin-push limitless <title> <body> --once <job>:<event time>`
 and --why <the verdict's reason> (its "Why now" line), with KEVIN_PUSH_STRICT=1 (any other sender for the same event should pass the same --once key), and the job is logged as sent (jobs-sent.jsonl in the state dir) only when
 kevin-push reports a real Telegram delivery. kevin-push is $KEVIN_PUSH_BIN, else `kevin-push` on PATH.

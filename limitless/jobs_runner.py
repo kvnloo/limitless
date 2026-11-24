@@ -64,7 +64,8 @@ Ingest pass: ``run_once(..., dry_run=True, ingest=True)`` (bin/limitless-jobs --
 these three reply ingests as a pass that is not a dry run would (each still by its own config mode), and every other
 job as a dry run: nothing is pushed, ``push`` and ``brief`` are never called and nothing is logged as sent.
 ``run_once(..., dry_run=True, ingest=True, confirm=True)`` (bin/limitless-jobs --ingest --confirm) is that pass plus
-one send: the sender confirmation may go out through ``push``; nothing else is pushed or logged as sent.
+the two recovery sends, at most one per pass: the sender confirmation, and on a later pass the outage recap, may go
+out through ``push``; nothing else is pushed or logged as sent.
 
 Sender confirmation: with config ``sender_confirm`` dry_run or write, one more row right after the sender ingest's
 (sender_confirm_job.run_pass). When push-sender.json records a sender change newer than the last one the mark
@@ -1222,9 +1223,9 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     push, no sent log. ``brief``, when given, sends the wake brief in place of ``push`` (no placeholder).
     ``ingest`` runs the three reply ingests (apps, ranked, sender) for real even in a dry run, exactly as a pass that
     is not a dry run runs them; they send nothing, so every other job stays as ``dry_run`` says.
-    ``confirm`` (only with ``ingest``) lets that pass send the one sender confirmation through ``push`` as a pass
-    that is not a dry run would (sender_confirm_job: write mode only); every other job still stays as ``dry_run``
-    says, the outage recap included. Without ``ingest`` it changes nothing.
+    ``confirm`` (only with ``ingest``) lets that pass send the one sender confirmation and the outage recap through
+    ``push`` as a pass that is not a dry run would (each in its own write mode only; the recap waits a pass after a
+    confirmation push); every other job still stays as ``dry_run`` says. Without ``ingest`` it changes nothing.
     """
     external = set(external_jobs(env, home) if external is None else external)
     p = _read_pass(state_dir, now, env=env, home=home)
@@ -1281,12 +1282,13 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     from . import sender_ingest_job as _sender   # sends nothing; None (no row) when off
     sender = _sender.run(state_dir, now, dry_run=dry_ingest, env=env, home=home)
     from . import sender_confirm_job as _confirm   # uses _push and _write_mark from here; None (no row) when off
-    # the confirmation is a push: a plain --ingest pass leaves it a dry run; --ingest --confirm (or --send) sends it
+    # the confirmation and the recap are pushes: a plain --ingest pass leaves them a dry run; --ingest --confirm (the
+    # timer's pass, often the host's only sender) or --send sends them, the recap on the pass after a confirmation
     dry_confirm = dry_run and not (ingest and confirm)
     confirm_row, _confirmed = _confirm.run_pass(state_dir, now, push=push, dry_run=dry_confirm, env=env, home=home)
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
-    recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz,   # None when off
+    recap = _recap.run(state_dir, now, push=push, dry_run=dry_confirm, env=env, home=home, tz=tz,   # None when off
                        wait=_confirm.RECAP_WAITS if _confirmed else None)   # never two pushes in one pass
     return rows + [r for r in (noop, apps, ranked, sender, confirm_row, voice, recap) if r is not None]

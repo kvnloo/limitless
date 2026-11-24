@@ -43,7 +43,8 @@ sender ingest's row, so a reply the ingest applies in a pass is confirmed in tha
   `CIRCADIAN_CLASS=decision`): the normal send gate, its Sleep-mode hold, quiet and the daily cap included.
 
 A `limitless-jobs` pass without `--send` is a dry run too, except `--ingest --confirm` (the timer's pass): it sends
-this confirmation in write mode and nothing else ([limitless-jobs-systemd.md](limitless-jobs-systemd.md)).
+this confirmation in write mode and, on a later pass, the outage recap, and nothing else
+([limitless-jobs-systemd.md](limitless-jobs-systemd.md)).
 
 - At most one confirmation per change: the push carries `--once sender_confirm:<sender reply time>`, so a replay
   never sends twice, whatever polls it.

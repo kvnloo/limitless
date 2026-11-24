@@ -94,7 +94,8 @@ ingest's and before the outage recap's: `schedule_cards.sender_confirm_card()`, 
 `sender_changed` event ("right after your reply changes the sender for your pushes"), ending when the next reply
 changes the sender again, sender `plugin`, budget the send gate's daily cap, once-key
 `sender_confirm:<sender reply time>`. `limitless-jobs --ingest --confirm or --send` (in `words.runs`) sends it: the
-timer's `--ingest --confirm` pass sends this one message and nothing else. It never names a profile
+timer's `--ingest --confirm` pass sends this message (and, a pass later, the outage recap) and nothing else. It
+never names a profile
 ([sender-confirm.md](sender-confirm.md)).
 
 ## The outage recap's card

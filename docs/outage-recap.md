@@ -50,6 +50,9 @@ Reply: OK / More
 - `dry_run`: the row says it would send the recap; nothing is pushed or written.
 - `write`: the recap is sent through `limitless-jobs`' kevin-push call (`KEVIN_PUSH_STRICT=1`).
 
+`limitless-jobs --send` sends it, and so does the timer's `limitless-jobs --ingest --confirm` pass
+([limitless-jobs-systemd.md](limitless-jobs-systemd.md)); a plain `--ingest` pass or a dry run never does.
+
 Its event is `push_back` (`jobs.OUTAGE_RECAP`): a push delivered after an outage, never a clock time. It is not a
 `jobs.SPECS` job, so no decision window holds it (the delivery that woke it shows the person can be reached), but it
 goes through kevin-push's send gate like every push: quiet, Sleep mode and the daily cap still apply.
