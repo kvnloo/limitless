@@ -10,6 +10,8 @@ TARGET_DEFAULT. A blank or non-string value is skipped. When the profile is remo
 non-zero rc that is only logged, so ``check`` says, from files alone, whether ``-p <profile>`` can resolve: the
 profile is ``default``, or ``<Hermes home>/profiles/<profile>`` is a directory. It never runs hermes, never
 starts a process and never sends. Its words never hold the profile name, the target, a path or a digit.
+kevin-push asks ``check`` before each send: BROKEN starts no hermes and logs NO_SENDER_HOW instead (SET and
+``unknown: ...`` try the send). There is never a fallback sender: choosing one is the owner's call.
 Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -30,6 +32,8 @@ UNKNOWN_PREFIX = "unknown: "
 NO_HOME = UNKNOWN_PREFIX + "no Hermes home is set (HERMES_HOME or HOME)"
 HOME_MISSING = UNKNOWN_PREFIX + "the Hermes home does not exist"
 HOME_UNREADABLE = UNKNOWN_PREFIX + "the Hermes home cannot be read"
+# kevin-push's log ``how`` for a send it did not start because check() is BROKEN (delivery_audit reads it).
+NO_SENDER_HOW = "log (no sender profile)"
 
 # hermes_constants.PROFILE_ID_RE: the only names Hermes resolves under profiles/ (others fail before a send).
 PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")

@@ -31,6 +31,16 @@ the delivery audit sees each attempt. held.rows() is the reader: it lists each h
 A delivery runs `hermes -p <profile> send --to <target>` (limitless/push_sender.py): the profile is
 $KEVIN_PUSH_PROFILE, else config push_profile, else "intake"; the target is $KEVIN_PUSH_TO, else config push_to,
 else "telegram:kevin". limitless-doctor's "push sender" row says whether that profile can exist.
+Before a delivery kevin-push asks the same check (push_sender.check, files only). When it says the profile
+does not exist, hermes is not started: the row is logged "log (no sender profile)", nothing claims a key or
+counts as a send, and the exit is that of a failed send (3 with KEVIN_PUSH_STRICT=1). An unknown answer (no
+Hermes home known, or it cannot be read) tries the send as before. There is never a fallback sender or another
+profile: choosing a sender is the owner's call. A message Sleep mode held goes out later through this same
+path, so it starts no hermes either while the profile is missing. For example, with a Hermes home that has no
+profiles/intake directory:
+
+    $ CIRCADIAN_CLASS=decision kevin-push x "Pick one" "Keep the loop?"
+    kevin-push: log (no sender profile)
 """
 import json
 import os
@@ -143,15 +153,19 @@ def main(argv):
         text, folded, cut = message_shape.fit(title, text, message_shape.limits(cfg))
         if folded or cut:
             tier_audit.record(tier_audit.shape_event(folded, cut, now))   # counts only, never the text
-        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-            f.write(text)
-        # the Hermes profile that owns the Telegram bot and the contact alias (not a chat id): env > config > default
-        r = subprocess.run(["hermes", "-p", push_sender.profile(cfg), "send", "--to", push_sender.target(cfg),
-                            "--subject", title,
-                            "--file", f.name, "-q"], capture_output=True, text=True, timeout=60)
-        os.unlink(f.name)
-        how = "telegram" if r.returncode == 0 else f"log (telegram rc={r.returncode})"
-        if r.returncode == 0:
+        if push_sender.check(cfg) == push_sender.BROKEN:
+            # the profile cannot exist: no hermes, no fallback sender (choosing one is the owner's call)
+            rc, how = None, push_sender.NO_SENDER_HOW
+        else:
+            with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+                f.write(text)
+            # the Hermes profile that owns the Telegram bot and the contact alias (not a chat id): env > config > default
+            rc = subprocess.run(["hermes", "-p", push_sender.profile(cfg), "send", "--to", push_sender.target(cfg),
+                                 "--subject", title,
+                                 "--file", f.name, "-q"], capture_output=True, text=True, timeout=60).returncode
+            os.unlink(f.name)
+            how = "telegram" if rc == 0 else f"log (telegram rc={rc})"
+        if rc == 0:
             row = {"t": now, "k": g.key(title, body)}   # the key is the message without its why line
             if once:
                 row["once"] = once        # claimed only on real delivery
