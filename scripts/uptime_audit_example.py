@@ -3,7 +3,8 @@
 Four weeks of synthetic sync rows in the shape the sync appends to runs.jsonl ({at, job, ok} and, on newer rows,
 inputs: "stale a,b"), with a synthetic inputs.json, in a temporary state dir, at a fixed clock in UTC. Reads no
 real state, writes nothing outside that dir, sends nothing. It runs the limitless_uptime tool (without and with
-the raw opt-in), then with config outage_ignore and uptime_days, then over older rows only.
+the raw opt-in), then with config outage_ignore and uptime_days, then over older rows only, then with loop gaps
+(also while too few runs name their inputs).
 """
 import json
 import sys
@@ -94,5 +95,19 @@ with tempfile.TemporaryDirectory() as tmp:
     print("# the same with config loop_gap_limit_s: eight hours (neither stretch is over it)")
     cfg.write_text(json.dumps({"loop_gap_limit_s": 8 * HOUR}))
     print(tools.uptime(StateReader(gaps), NOW, env=env, home=root, tz=UTC)["label"]["label"])
+
+    print("\n# a loop that stopped while too few runs name their inputs: hourly runs, none for two days ending two"
+          " days ago,\n# only the newest three with an inputs key (the goal is unknown, the stop is not)")
+    few = st / "few"
+    few.mkdir()
+    hourly = [NOW - HOUR / 2 - k * HOUR for k in range(5 * 24)]
+    hourly = sorted(t for t in hourly if not NOW - 4 * DAY < t < NOW - 2 * DAY)
+    rows = [{"at": iso(t), "job": "sync", "ok": True} for t in hourly]
+    for r in rows[-3:]:
+        r["inputs"] = "stale"
+    (few / "runs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    cfg.write_text(json.dumps({}))
+    res = tools.uptime(StateReader(few), NOW, env=env, home=root, tz=UTC)
+    print(json.dumps({k: res[k] for k in keep if k in res}))
 
     print("\n# runs.jsonl is unchanged:", (st / "runs.jsonl").read_text().count("\n"), "lines")

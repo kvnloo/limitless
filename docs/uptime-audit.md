@@ -61,12 +61,18 @@ themselves, from the rows' own `"at"`:
   else three times that median spacing. A gap is one "loop down" stretch. No clock time: only the runs'
   spacing is read, never a time of day.
 - An open gap: the newest run up to now is older than the limit (runs stamped after now are left out).
-- In words, only when the label is known (too few rows keep the `unknown` words unchanged):
+- In words:
   - an open gap comes first: "the loop has not run for under an hour" / "for hours" / "for over a day";
   - closed gaps that ended in the last seven local days add one clause before the goal: "the loop stopped once
     this week for hours", or "the loop stopped a few times this week, the longest for over a day" ("for under
     an hour", "for hours", "for over a day" is the longest one);
   - no gap: no clause. No count, no time stamp and no host name is ever said.
+- The gaps need no `inputs` key, so they are known while the goal is not. When fewer than a week of runs name
+  their stale inputs, the same clauses come before that reason (`uptime_audit.unknown_words`), in the doctor
+  row, the tool's reason, `bin/limitless-uptime-audit` and the scorecard's measured line: "the loop has not run
+  for hours; the loop stopped once this week for over a day; fewer than a week of sync runs name their stale
+  inputs". The status stays missing and the goal unknown. No `runs.jsonl` or no run in the window keeps its
+  reason alone.
 - The gap times and lengths are T0 and stay in the audit dict (`loop`). The words never set a status: the
   doctor row still follows the uptime goal alone, and the scorecard never sets a status either.
 
@@ -107,7 +113,8 @@ then the goal reads unknown or not met rather than met: it errs low, never high.
 
 `python3 -I scripts/uptime_audit_example.py`: four weeks of synthetic rows (six older rows with no `inputs`
 key, a wearable stale for a week, a desktop source stale on and off, a day stale early and fresh later, and two
-days with no run at all), then hourly runs with a loop that stopped, at a fixed clock in UTC. Real output:
+days with no run at all), then hourly runs with a loop that stopped (once with every run naming its inputs,
+once with only the newest three), at a fixed clock in UTC. Real output:
 
 ```text
 # limitless_uptime, no raw opt-in (default window: four weeks, target nineteen days in twenty)
@@ -146,6 +153,10 @@ phone apps, phone unlocks and wearable fresh every day; uptime goal met
 the loop has not run for hours; phone apps, phone unlocks, wearable and desktop AW fresh every day; the loop stopped once this week for hours; uptime goal met
 # the same with config loop_gap_limit_s: eight hours (neither stretch is over it)
 phone apps, phone unlocks, wearable and desktop AW fresh every day; uptime goal met
+
+# a loop that stopped while too few runs name their inputs: hourly runs, none for two days ending two days ago,
+# only the newest three with an inputs key (the goal is unknown, the stop is not)
+{"value": null, "modality": "measured", "age_h": null, "evidence_tier": "none", "reason": "the loop stopped once this week for over a day; fewer than a week of sync runs name their stale inputs"}
 
 # runs.jsonl is unchanged: 28 lines
 ```
