@@ -577,7 +577,8 @@ def miq_wind_down(evs: list, trigger_at: Optional[float], env: Optional[Mapping[
                   home: Optional[Path] = None, tz: Optional[tzinfo] = None, state_dir=None,
                   now: Optional[float] = None) -> str:
     """The MIQ body's wind-down line (wind_down.line: config ``wind_down_line``, and nothing when Glide's
-    attention file says Glide already nudged on this night), through tier_audit.gate (hook ``miq:wind_down``).
+    attention file says Glide already nudged on this night; a manual explicit wind-down event at ``now`` is not
+    a nudge), through tier_audit.gate (hook ``miq:wind_down``).
     With config ``wind_down_breathing_link`` set, the same line offers slow breathing in the person's own app,
     "with live heart data" only when ``state_dir``'s inputs.json says the wearable is recording at ``now``
     (wind_down.wearable_live, limitless_status's rule); without ``state_dir`` or ``now`` it is never live.
@@ -589,7 +590,7 @@ def miq_wind_down(evs: list, trigger_at: Optional[float], env: Optional[Mapping[
         live = (state_dir is not None and now is not None
                 and wind_down.wearable_live(StateReader(Path(state_dir)).inputs(), now,
                                             wind_down.wearable_inputs(cfg)))
-        text = wind_down.line(cfg, glide_provider.attention(env, home), night, heart_live=live)
+        text = wind_down.line(cfg, glide_provider.attention(env, home), night, heart_live=live, now=now)
         return _gated("miq:wind_down", text, env, home)
     except Exception:  # noqa: BLE001 - a broken line must never stop the bedtime question
         return ""

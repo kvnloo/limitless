@@ -36,4 +36,22 @@ One more key in the same `attention.json`, set by `wind_down()` next to `nudged`
   `start_block()` (the person went back to deep work); `null` while wind-down is open.
 
 It adds no new file, no new dependency and no clock rule, and older readers ignore it. With it,
-`GlideProvider` would read `wind_down.started`/`ended` first and fall back to `resume.saved`.
+`GlideProvider` reads `wind_down.started`/`ended` first and falls back to `resume.saved`.
+
+## Reader
+
+What limitless does with each field (`limitless/glide_provider.py`, `wind_down_event`):
+
+- `started`: the start of the window. Wind-down is open from `started` until `ended` or
+  `WIND_DOWN_MAX_S` (4 h) after `started`, whichever comes first. The cap is a duration from the
+  event, never a clock time. Outside that span the Glide window is unknown, even when an older
+  `resume.saved` would still look fresh. A running focus block still wins (`peak`).
+- `ended`: closes the window at that instant (take_resume or start_block). `null`, or anything that
+  isn't a finite number, means still open, up to the cap.
+- `by`: exposed as `"nudge"`, `"manual"` or `"unknown"` (anything else). Both kinds count as
+  wind-down. Only a nudge counts as "Glide already nudged tonight", so the MIQ wind-down line
+  (`wind_down.glide_nudged`, which keys on `nudged` == tonight) still goes out after a manual
+  `/glide focus wind-down`. An unknown `by` keeps the `nudged` answer (fewer messages).
+- Malformed key: not an object, `started` not a finite number or after `now`, or `ended` before
+  `started`. limitless ignores it and answers exactly as if it were absent.
+- No key (older Glide): the `resume.saved` path with the same cap, unchanged.

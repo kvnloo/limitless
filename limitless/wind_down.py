@@ -12,7 +12,10 @@ This adds at most one short line to that same message: no new job, no second pus
   ``nudged = "<night date>"``; when that equals ``night`` (tonight's night date, jobs_runner.night_date),
   Glide already nudged tonight and this says nothing: one nudge per night across both systems. With no
   ``night`` to compare, any recorded nudge counts (fewer messages is the safe side). No or broken state is
-  no nudge.
+  no nudge. Newer Glide also writes an explicit ``wind_down`` event (glide_provider.wind_down_event); when
+  it is well formed at ``now`` and says ``by: "manual"`` (the person ran ``/glide focus wind-down``, which
+  sets ``nudged`` too), Glide did not nudge and the line still goes out. A malformed key, an unknown
+  ``by`` or no ``now`` keep the ``nudged`` answer above.
 - Config ``wind_down_breathing_link`` (off by default): a link to the person's own breathing app, a URL or an
   app deep link such as ``example://breathe``. When set, the same line offers ONE more choice, "slow breathing
   in your app", with the link at the end (docs/breathing-link.md):
@@ -34,7 +37,7 @@ from __future__ import annotations
 import re
 from typing import Mapping, Optional
 
-from . import mock_guard
+from . import glide_provider, mock_guard
 from .envelope import STALE_H
 from .state_reader import parse_ts
 
@@ -120,18 +123,24 @@ def wearable_live(inputs, now: float, names=WEARABLE_INPUTS) -> bool:
     return age is not None and age <= STALE_H
 
 
-def glide_nudged(glide_state, night: Optional[str] = None) -> bool:
-    """True when Glide's attention state records its own wind-down nudge for ``night`` (any night when None)."""
+def glide_nudged(glide_state, night: Optional[str] = None, now: Optional[float] = None) -> bool:
+    """True when Glide's attention state records its own wind-down nudge for ``night`` (any night when None).
+    A well-formed explicit ``wind_down`` event at ``now`` with ``by: "manual"`` is not a nudge."""
     nudged = glide_state.get("nudged") if isinstance(glide_state, Mapping) else None
     if not isinstance(nudged, str) or not nudged.strip():
         return False
-    return night is None or nudged.strip() == night
+    if night is not None and nudged.strip() != night:
+        return False
+    ev = glide_provider.wind_down_event(dict(glide_state), now)
+    return ev is None or ev["by"] != "manual"
 
 
-def line(cfg: Optional[Mapping], glide_state=None, night: Optional[str] = None, heart_live: bool = False) -> str:
+def line(cfg: Optional[Mapping], glide_state=None, night: Optional[str] = None, heart_live: bool = False,
+         now: Optional[float] = None) -> str:
     """One short wind-down line for tonight's MIQ body, or ``""`` (off, or Glide already nudged tonight).
-    ``heart_live`` (wearable_live) only picks the breathing choice's words; it never adds a number."""
-    if glide_nudged(glide_state, night):
+    ``heart_live`` (wearable_live) only picks the breathing choice's words; it never adds a number. ``now``
+    lets a manual explicit wind-down event count as no nudge (glide_nudged)."""
+    if glide_nudged(glide_state, night, now):
         return ""
     base, link = choice(cfg), breathing_link(cfg)
     if link is None:
