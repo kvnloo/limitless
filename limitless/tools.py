@@ -1356,10 +1356,11 @@ UPTIME_RAW_KEYS = ("days", "inputs", "window_days", "known_days", "all_fresh_day
                    "goal", "skipped")
 
 
-def _uptime_read(reader: StateReader, now: float, env, home, tz) -> tuple:
-    """(audit, rows) of the state dir's runs.jsonl; (None, []) when there is no readable log."""
+def _uptime_read(reader: StateReader, now: float, env, home, tz, cfg: Optional[Mapping] = None) -> tuple:
+    """(audit, rows) of the state dir's runs.jsonl; (None, []) when there is no readable log. ``cfg`` is the
+    host config already read (default: read it from ``env``/``home``)."""
     from . import outage   # lazily: outage reads this module
-    cfg = config(env, home)
+    cfg = config(env, home) if cfg is None else cfg
     got = _uptime.read_log(reader.path / _uptime.LOG_NAME)
     if got is None:
         return None, []
@@ -1373,12 +1374,23 @@ def _uptime_read(reader: StateReader, now: float, env, home, tz) -> tuple:
 
 
 def uptime_audit(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
-                 home: Optional[Path] = None, tz: Optional[tzinfo] = None) -> Optional[dict]:
+                 home: Optional[Path] = None, tz: Optional[tzinfo] = None,
+                 cfg: Optional[Mapping] = None) -> Optional[dict]:
     """uptime_audit.audit of the state dir's runs.jsonl over the config window (``uptime_days``) ending today
     (local, ``tz``), judging inputs.json's input names plus every name a run lists, config ``outage_ignore`` left
     out, against ``uptime_target``; None when there is no readable log. Read-only: limitless_uptime, the
-    doctor's uptime row and bin/limitless-uptime-audit all read through it."""
-    return _uptime_read(reader, now, env, home, tz)[0]
+    doctor's uptime row, the scorecard's measured rows and bin/limitless-uptime-audit all read through it."""
+    return _uptime_read(reader, now, env, home, tz, cfg)[0]
+
+
+def uptime_reason(a: Optional[dict]) -> Optional[str]:
+    """Why an uptime audit is unknown (no runs.jsonl, no run in the window, fewer than a week of runs that name
+    their stale inputs); None when its label is known. Words only, never a path."""
+    if a is None:
+        return _uptime.NO_LOG_REASON
+    if not any(d["runs"] for d in a["days"]):
+        return _uptime.NO_ROWS_REASON
+    return _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None
 
 
 def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
@@ -1396,9 +1408,7 @@ def uptime(reader: StateReader, now: float, raw: bool = False, env: Optional[Map
     """
     unknown = {"label": _uptime.UNKNOWN, "tier": "T1", "modality": _uptime.MODALITY}
     a, rows = _uptime_read(reader, now, env, home, tz)
-    reason = (_uptime.NO_LOG_REASON if a is None
-              else _uptime.NO_ROWS_REASON if not any(d["runs"] for d in a["days"])
-              else _uptime.FEW_KNOWN_REASON if a["label"]["label"] == _uptime.UNKNOWN else None)
+    reason = uptime_reason(a)
     if reason:
         out = envelope(None, _uptime.MODALITY, None, reason=reason)
         out["label"] = unknown

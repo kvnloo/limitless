@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime, tzinfo
 from pathlib import Path
 from typing import List, Mapping, Optional
 
@@ -138,3 +139,60 @@ def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -
         return Path(env[ENV_KEY])
     p = config(env, home).get(CONFIG_KEY)
     return Path(p) if isinstance(p, str) and p else None
+
+
+# --- measured rows: north-star rows one and two as the audits measured them -----------------------------------
+
+UPTIME_ROW, DELIVERY_ROW = 1, 2
+UPTIME_WORDS, DELIVERY_WORDS = "loop uptime", "delivery"
+UNKNOWN_PREFIX = "unknown: "
+
+
+def _uptime_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row one: tools.uptime_audit (the same read as limitless_uptime and the doctor)."""
+    from . import tools   # lazily: tools reads this module
+    from .state_reader import StateReader
+    a = tools.uptime_audit(StateReader(Path(state_dir)), now, env, home, tz, cfg=cfg)
+    why = tools.uptime_reason(a)
+    if why:
+        return UNKNOWN_PREFIX + why, "unknown", a
+    return a["label"]["label"], a["goal"], a
+
+
+def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row two: delivery_audit over kevin-push's log (config push_log), like
+    limitless_delivery and the week review's Pushes line."""
+    from . import delivery_audit as da, jobs_runner   # lazily: jobs_runner is heavy and reads tools
+    path = da.log_path(cfg, state_dir)
+    if path is None:
+        return da.NO_LOG, da.GOAL_UNKNOWN, None
+    got = da.read_log(path)
+    if got is None:
+        return UNKNOWN_PREFIX + da.UNREADABLE_REASON, da.GOAL_UNKNOWN, None
+    rows, skipped = got
+    a = da.audit(rows, wake_days=jobs_runner.delivery_wake_days(state_dir, now, env, home, tz),
+                 today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=da.push_cap(cfg), skipped=skipped)
+    if not a["known_days"]:
+        return da.UNKNOWN_ROWS, da.GOAL_UNKNOWN, a
+    return a["label"]["label"], da.goal(a), a
+
+
+def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
+             env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[dict]:
+    """North-star rows one and two as code measured them: ``[{n, criterion_words, label, goal}]``.
+
+    Row one is the uptime audit of the state dir's runs.jsonl, row two the delivery audit of kevin-push's log
+    (config ``push_log``). ``label`` is the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is
+    met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
+    nothing is written or sent, and no hand status is changed.
+    """
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    out = []
+    for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
+                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured)):
+        try:
+            label, goal, _audit = read(state_dir, cfg, now, tz, env, home)
+        except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
+            label, goal = UNKNOWN_PREFIX + "the log could not be read", "unknown"
+        out.append({"n": n, "criterion_words": words, "label": label, "goal": goal})
+    return out

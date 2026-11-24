@@ -245,3 +245,23 @@ def _action_words(out: dict) -> str:
     if out["no_action"]:
         return ACTION_SOME
     return ACTION_KNOWN if out["action_unknown"] else ACTION_ALL
+
+
+GOAL_MET, GOAL_NOT_MET, GOAL_UNKNOWN = "met", "not met", "unknown"
+
+
+def goal(a: Optional[dict]) -> str:
+    """Whether an audit (``audit``'s dict, None for no log) meets north-star row two, judged from its own counts.
+
+    "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, or a delivered
+    push had no reply line. "met" only when every day of the window has rows, at least one wake day is known,
+    no wake day is unknown, and every delivered body is known to carry a reply line. Anything else ("unknown")
+    includes no log, a quiet week and unknown wake days: unknown is never met.
+    """
+    if not isinstance(a, dict) or not a.get("known_days"):
+        return GOAL_UNKNOWN
+    wake = a["wake"]
+    if a["over_cap_days"] or a["no_action"] or wake["brief_delivered"] < wake["wake_days"]:
+        return GOAL_NOT_MET
+    complete = a["known_days"] == len(a["days"]) and not a["action_unknown"]
+    return GOAL_MET if complete and wake["wake_days"] and not wake["unknown_wake_days"] else GOAL_UNKNOWN
