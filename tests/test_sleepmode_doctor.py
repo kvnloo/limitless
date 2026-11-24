@@ -174,5 +174,21 @@ class InTheReport(Case):
         self.assertEqual(sorted(p.name for p in self.st.iterdir()), before)
 
 
+class Docs(unittest.TestCase):
+    DOC = ROOT / "docs" / "doctor.md"
+
+    def test_the_sleep_mode_example_is_the_scripts_real_output(self):
+        import subprocess
+        from hermetic_env import child_env
+        r = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "sleep_mode_doctor_example.py")],
+                           capture_output=True, text=True, timeout=60, env=child_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        section = self.DOC.read_text().split("## Sleep mode row", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("```text\n" + r.stdout + "```", section)
+        for words in (LEFT_ON, STALE_ON, "on since", "unknown:", "NIGHT_H", "left_on", "LIMITLESS_SLEEPMODE"):
+            self.assertIn(words, section)
+        self.assertIsNone(DIGIT.search(r.stdout.replace("sleep_mode_doctor", "")), r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

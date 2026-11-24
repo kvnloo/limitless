@@ -44,6 +44,47 @@ doctor adds none. A tool row comes from calling that tool's plugin function with
 (`tools.labeled`, then `tier_audit.audit_result`). A tool that needs arguments (`limitless_capture`) says so in
 front of its reason. A tool that raises is `missing` with the exception's type only, never its message.
 
+## Sleep mode row
+
+kevin-push holds every non-critical push while the last row of `sleepmode.jsonl` says on and the poll
+heartbeat next to it (`sleepmode-poll.json`) is ok and fresh; a stale poll fails open and nothing is held. The
+poller that writes the file closes a phone Sleep rule left on far longer than a night once the owner is seen up,
+with an inferred off row `{"on": false, "inferred": "Sleep left on, owner up", "left_on": "<rule id>"}`, and
+ignores that rule after; newer on rows also carry `"rule"`. The `Sleep mode` row reads the same file
+(`LIMITLESS_SLEEPMODE`, else the state dir) and says which case holds, in words only (no clock time, no digit,
+never the rule id or a path):
+
+- `off`: the last row is a plain off row (old rows without `rule` or `left_on` read the same).
+- `on since <age in words>`: counted from the first on row of the current activation; plus "the Sleep mode poll
+  is not fresh, so pushes are not held" when kevin-push would fail open.
+- `left on, ignored since the owner was seen up` (stale): the last row is the poller's inferred off row with
+  `left_on`. Pushes go out; the phone rule is still on and no longer means sleep.
+- `stale: on far longer than a night; pushes are being held`: on for longer than `sleepmode.NIGHT_H` (sixteen
+  hours, the longest one night keeps Sleep mode on) with no `left_on` row yet. With a poll that is not fresh it
+  says pushes are not held instead.
+- `unknown: <reason>` (missing): no file, it cannot be read, no row with a time and an on or off, or the last
+  row is in the future.
+
+The delivery audit uses the same `left_on` rows to tell a brief held by a night from one held while Sleep mode
+was left on ([delivery-audit.md](delivery-audit.md#why-a-wake-brief-was-missed)).
+
+The real output of `python3 -I scripts/sleep_mode_doctor_example.py` (made-up files, a fixed clock, UTC):
+
+```text
+# a night that ended (old rows: no rule, no left_on)
+Sleep mode: live: off
+# on since a nap began, poll fresh
+Sleep mode: live: on since about three hours ago
+# the same, but the poll stopped
+Sleep mode: live: on since about three hours ago; the Sleep mode poll is not fresh, so pushes are not held
+# a rule left on, not closed yet
+Sleep mode: stale: stale: on far longer than a night; pushes are being held
+# the poller closed it once the owner was seen up
+Sleep mode: stale: left on, ignored since the owner was seen up
+# no sleepmode.jsonl at all
+Sleep mode: missing: unknown: no Sleep mode file in the state dir
+```
+
 ## What it never does
 
 - It never writes: not a state file, not a capture, not a card file (`limitless_card_view` is called with
