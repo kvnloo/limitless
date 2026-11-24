@@ -11,26 +11,30 @@ holds, from those files alone:
 
     no outage (none open, none closed within the recap's stale window)    live     NO_OUTAGE
     an outage open, no sender reply after it began                        missing  WAITING_REPLY
+    an outage open, the last reply after it began was refused             missing  REFUSED
     an outage open, the reply applied, its confirmation not delivered     stale    NOT_DELIVERED + why
     pushes back, the recap not sent or settled yet                         stale    BACK + the recap's mode
     pushes back, the recap sent / settled without one                      live     RECAP_SENT / SETTLED
 
-The outage is outage_recap.outage over the log rows (the same rule the recap and the state card use). No push log
-(``rows`` None) is missing with the reason, never a guess. Words only: never a digit, a path, a profile name, a
-host or a time stamp. Pure and read-only: it reads the small reply and mark files and writes nothing, sends
+A refused reply is the sender ingest mark's ``refused_at`` (sender_reply.refused_at: a reply naming a profile that
+does not exist, or one with no Telegram bot token or no chat); it counts when it came after the outage began and
+after the reply push-sender.json holds. The outage is outage_recap.outage over the log rows (the same rule the
+recap and the state card use). No push log (``rows`` None) is missing with the reason, never a guess. Words only:
+never a digit, a path, a profile name, a host or a time stamp. Pure and read-only: it reads the small reply and mark files and writes nothing, sends
 nothing and starts no process. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
 from typing import Iterable, Mapping, Optional
 
-from . import delivery_audit as _da, jobs, outage_recap as _rc, push_sender
+from . import delivery_audit as _da, jobs, outage_recap as _rc, push_sender, sender_reply as _sr
 from . import outage_recap_job as _recap, sender_confirm_job as _confirm
 
 LIVE, STALE, MISSING = "live", "stale", "missing"   # doctor's statuses
 UNKNOWN_PREFIX = "unknown: "
 NO_OUTAGE = "no outage: pushes are reaching you"
 WAITING_REPLY = "pushes are failing; waiting for a sender reply"
+REFUSED = "pushes are failing; your last reply named a profile that cannot reach Telegram"
 NOT_DELIVERED = "sender set from your reply; the confirmation has not been delivered yet"
 HELD = "held while Sleep mode was on"
 FAILED = "failed to send"
@@ -76,7 +80,12 @@ def stage(state_dir, rows: Optional[Iterable], cfg: Optional[Mapping], now: floa
         return LIVE, NO_OUTAGE
     if o["state"] == _rc.OPEN:
         reply_at = push_sender.reply_at(state_dir)
-        if reply_at is None or reply_at < o["first_at"]:
+        if reply_at is not None and reply_at < o["first_at"]:
+            reply_at = None
+        refused = _sr.refused_at(state_dir)
+        if refused is not None and refused >= o["first_at"] and (reply_at is None or refused > reply_at):
+            return MISSING, REFUSED
+        if reply_at is None:
             return MISSING, WAITING_REPLY
         return STALE, f"{NOT_DELIVERED} ({_confirmation(state_dir, rows, cfg, reply_at)})"
     if now - o["closed_at"] > jobs.OUTAGE_RECAP_STALE_S:

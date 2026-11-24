@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from limitless import apps_reply, doctor, jobs, jobs_runner, schedule_cards, sender_reply  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
 from hermes_db_fixture import make_db  # noqa: E402
+from hermes_profile_fixture import ready_profile  # noqa: E402
 
 UTC = timezone.utc
 H = 3600.0
@@ -80,7 +81,7 @@ class Base(unittest.TestCase):
         self.st.mkdir()
         self.hermes = self.dir / "hermes"
         for name in (GOOD, OLD):
-            (self.hermes / "profiles" / name).mkdir(parents=True)
+            ready_profile(self.hermes / "profiles" / name)   # each can reach Telegram (the ingest asks readiness)
         self.ledger = self.dir / "ranked.jsonl"
         self.ledger.write_text("".join(json.dumps({"id": i, "status": "open", "by": "agent", "evidence": ""}) + "\n"
                                        for i in (ITEM, OTHER)))

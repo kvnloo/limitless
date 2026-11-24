@@ -8,7 +8,8 @@
 
 kevin-push runs ``hermes -p <profile> send --to <target>``. The profile is ``$KEVIN_PUSH_PROFILE``, else the
 owner's ``push via <name>`` reply (REPLY_FILE ``push-sender.json`` in the state dir, written by
-sender_reply.ingest only for a profile that exists), else config ``push_profile``, else PROFILE_DEFAULT; the
+sender_reply.ingest only for a profile that exists and that readiness does not call NO_TOKEN or NO_CHAT), else
+config ``push_profile``, else PROFILE_DEFAULT; the
 target is ``$KEVIN_PUSH_TO``, else config ``push_to``, else TARGET_DEFAULT. A blank or non-string value is
 skipped, and so is a reply file that is missing, broken or names no profile Hermes could resolve. When the profile is removed every send fails with a
 non-zero rc that is only logged, so ``check`` says, from files alone, whether ``-p <profile>`` can resolve: the

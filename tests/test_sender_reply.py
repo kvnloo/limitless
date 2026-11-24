@@ -19,7 +19,9 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+sys.path.insert(0, os.path.dirname(__file__))
 from limitless import push_sender as ps, sender_reply as sr  # noqa: E402
+from hermes_profile_fixture import ready_profile  # noqa: E402
 
 UTC = timezone.utc
 H = 3600
@@ -67,8 +69,8 @@ class Base(unittest.TestCase):
         self.st = self.dir / "state"
         self.st.mkdir()
         self.hermes = self.dir / "hermes"
-        (self.hermes / "profiles" / GOOD).mkdir(parents=True)
-        (self.hermes / "profiles" / OTHER).mkdir(parents=True)
+        for home in (self.hermes, self.hermes / "profiles" / GOOD, self.hermes / "profiles" / OTHER):
+            ready_profile(home)   # each can reach Telegram (sender_reply asks readiness after check)
         self.env = {"HERMES_HOME": str(self.hermes), "LIMITLESS_STATE": str(self.st)}
         self.reply = self.st / sr.SENDER_FILE
         patcher = mock.patch.object(subprocess, "Popen", side_effect=no_process)

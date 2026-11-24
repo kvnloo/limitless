@@ -7,8 +7,9 @@ confirmation (sender_confirm_job) and the once-per-outage recap (outage_recap_jo
     outage -> pass 0 (nothing to do yet) -> owner reply -> pass 1 (sender set, confirmation sent, recap waits)
     -> pass 2 (recap sent once) -> pass 3 + a new sync row (nothing more) -> the card no longer says the outage
 
-Plus: a reply naming a profile that does not exist changes nothing and sends nothing, and Sleep mode on holds the
-confirmation while the recap still waits.
+Plus: a reply naming a profile that does not exist changes nothing and sends nothing; a reply naming a profile
+that exists but has no Telegram bot is refused the same way, and a good reply after it still completes the
+recovery; and Sleep mode on holds the confirmation while the recap still waits.
 
 Synthetic state dir, config, Hermes session DB (tests/hermes_db_fixture.py) and Hermes profile tree (made-up
 profile names, a token placeholder) in a temp dir. kevin-push is a fake on PATH: it appends its argv to a file
@@ -43,13 +44,14 @@ H = 3600
 GOOD = "sender-synth"          # the profile the owner's reply names; it exists in the fake Hermes home
 GONE = "sender-gone"           # config push_profile: removed, so every push fails before it reaches hermes
 NOWHERE = "sender-nowhere"     # a reply naming a profile that does not exist
+BOTLESS = "sender-botless"     # a reply naming a profile that exists but has no Telegram bot token
 PUSH_LOG = "push-log.jsonl"
 OUTAGE_LINE = push_reach.PREFIX + push_reach.SENDER_MISSING
 RECAP_WAITS = f"Outage recap: hold: {recap_job.EVENT}; waits for the next pass: {confirm_job.RECAP_WAITS}"
 RECAP_OPEN = f"Outage recap: {jobs.NOT_TRIGGERED}: {recap_job.OPEN_REASON}"
 # Mark files and the epoch fields each may hold as numbers; every string in a mark is words (no digit), but the
 # outage recap's once key, which is "outage_recap:<epoch>" by design.
-MARKS = {sender_reply.MARK: {"row_at", "ran_at", "after"}, push_sender.REPLY_FILE: {"at"},
+MARKS = {sender_reply.MARK: {"row_at", "ran_at", "after", "refused_at"}, push_sender.REPLY_FILE: {"at"},
          confirm_job.MARK: {"reply_at", "ran_at"}, recap_job.MARK: {"at"}}
 
 # kevin-push stand-in: records argv (and KEVIN_PUSH_STRICT), then decides in kevin-push's own order: Sleep mode
@@ -108,7 +110,9 @@ class Recovery(unittest.TestCase):
         self.hermes = self.dir / "hermes"
         prof = self.hermes / "profiles" / GOOD
         prof.mkdir(parents=True)
-        (prof / ".env").write_text("TELEGRAM_BOT_TOKEN=placeholder-token-not-real\n")
+        (prof / ".env").write_text("TELEGRAM_BOT_TOKEN=placeholder-token-not-real\n"
+                                   "TELEGRAM_HOME_CHANNEL=placeholder-chat\n")
+        (self.hermes / "profiles" / BOTLESS).mkdir()
         self.db = self.st / "hermes.db"
         make_db(self.db, [], started=self.t0 - 6 * H)
         self.bin = self.dir / "bin"
@@ -118,7 +122,7 @@ class Recovery(unittest.TestCase):
         kp.chmod(0o755)
         self.calls = self.dir / "calls.jsonl"
         self.cfg_path = self.dir / "config.json"
-        self.cfg = {"hermes_db": "hermes.db", "push_profile": GONE, "push_log": PUSH_LOG,
+        self.cfg = {"hermes_db": "hermes.db", "push_profile": GONE, "push_to": "telegram", "push_log": PUSH_LOG,
                     "sender_ingest": "write", "sender_confirm": "write", "outage_recap": "write"}
         self.cfg_path.write_text(json.dumps(self.cfg))
         self.env = {"HOME": str(self.dir), "LIMITLESS_CONFIG": str(self.cfg_path), "LIMITLESS_STATE": str(self.st),
@@ -306,6 +310,43 @@ class Recovery(unittest.TestCase):
         lines, calls, changed, rows = self.run_pass()   # and the next pass does not pick it up again
         self.assertEqual((calls, changed, rows), ([], [], []))
         self.assertOutageShown(True)
+
+    def test_a_reply_naming_a_botless_profile_is_refused_then_a_good_reply_recovers(self):
+        refused = "pushes are failing; your last reply named a profile that cannot reach Telegram"
+        self.run_pass()
+        self.owner_says(f"push via {BOTLESS}", self.t0 - 300)
+        self.sync(self.t0 - 280)
+
+        # the refused pass: nothing applied, nothing sent, the outage goes on and both doctor rows say why
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual((calls, changed, rows), ([], [sender_reply.MARK], []))
+        self.assertEqual(self.mark(sender_reply.MARK)["action"], sender_reply.NO_BOT)
+        self.assertIsNone(self.mark(push_sender.REPLY_FILE))
+        self.assertEqual(lines["Sender ingest"], "Sender ingest: run: a sync ran; your reply named a profile with "
+                                                 "no Telegram bot, so it was not applied")
+        self.assertEqual(lines["Sender confirm"], f"Sender confirm: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
+        self.assertEqual(lines["Outage recap"], RECAP_OPEN)
+        self.assertOutageShown(True)
+        self.assertEqual(self.recovery(), (doctor.MISSING, refused))
+        ingest_row = doctor.sender_ingest_row(StateReader(self.st), self.cfg, time.time(), env=self.env)
+        self.assertTrue(ingest_row["reason"].endswith("; " + refused), ingest_row)
+        self.assertNotIn(BOTLESS, ingest_row["reason"])
+
+        # a good reply: the sender is set, the confirmation goes out, then the recap, and the outage is over
+        self.owner_says(f"push via {GOOD}", self.t0 - 150)
+        self.sync(self.t0 - 120)
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual([c["argv"][1] for c in calls], [confirm_job.TITLE_SENT])
+        self.assertEqual(self.mark(push_sender.REPLY_FILE), {"profile": GOOD, "at": self.t0 - 150})
+        self.assertNotIn("refused_at", self.mark(sender_reply.MARK))
+        self.assertEqual(lines["Sender ingest"],
+                         "Sender ingest: run: a sync ran; set the sender profile from your reply")
+        self.assertEqual(self.recovery(), (doctor.STALE, "pushes are back; the recap waits for the next pass"))
+        self.assertOutageShown(False)
+        lines, calls, changed, rows = self.run_pass()
+        self.assertEqual([c["argv"][1] for c in calls], [outage_recap.TITLE])
+        self.assertEqual(self.recovery(), (doctor.LIVE, "pushes are back; recap sent"))
+        self.assertEqual([c["argv"][1] for c in self.calls_made()], [confirm_job.TITLE_SENT, outage_recap.TITLE])
 
     def test_sleep_mode_holds_the_confirmation_and_the_recap_still_waits(self):
         confirm_key = f"sender_confirm:{int(self.t0 - 150)}"

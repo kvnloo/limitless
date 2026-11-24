@@ -244,8 +244,8 @@ def ranked_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], no
 
 # The sender ingest sends nothing: it reads the owner's whole "push via <profile>" reply from the Hermes session DB
 # and runs sender_reply.ingest (write mode writes push-sender.json, which kevin-push's sender resolution reads, only
-# for a profile that exists). Like the apps ingest it is not in SPECS, no window holds it, and it wakes on any new
-# sync row, never on a clock time.
+# for a profile that exists and is not known to lack a Telegram bot or chat). Like the apps ingest it is not in
+# SPECS, no window holds it, and it wakes on any new sync row, never on a clock time.
 SENDER_INGEST = JobSpec("sender_ingest", "sync", "anytime", "Sender ingest", 1, "sync")
 SENDER_CONFIG = "sender_ingest"
 SENDER_OFF, SENDER_DRY_RUN, SENDER_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
