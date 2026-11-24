@@ -7,9 +7,11 @@ reads them, and a cloud model sees the T1 words only (`limitless/rides.py`).
 
 - **Where**: config.json key `rides_file` (a relative path is in the state dir). None by default. Rows:
   `{"start": "ISO-8601 with offset", "duration_s": number, "kind": "...", "source": "..."}`. Only kinds in
-  `ride_kinds` (config, default `["biking_stationary", "rehit"]`) are rides. A row without a start with an
-  offset, a duration over zero and a source, a start whose date is after today, or a second row with the
-  same start and source, is skipped (`StateReader.ride_rows()`); the reader never raises and never writes.
+  `ride_kinds` (config, default `["biking_stationary", "rehit", "ride"]`) are rides. A row without a start
+  with an offset, a duration over zero and a source, a start whose date is after today, or a second row with
+  the same start and source, is skipped (`StateReader.ride_rows()`); the reader never raises and never writes.
+- **CAROL rides**: `bin/limitless-import-fit` appends one `ride` row per CAROL FIT export to this same file
+  ([carol-fit-import.md](carol-fit-import.md)).
 - **Week**: today and the six days before against the seven days before that; a ride's day is its start's
   date in its own offset. Words: `rides this week: none | one | two | a few`, then `same as last week`,
   `more than last week` or `fewer than last week`. No target, no score, no streak: a week with no ride is

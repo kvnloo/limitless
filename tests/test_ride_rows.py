@@ -1,7 +1,7 @@
 """StateReader.ride_rows: bike rides from an exercise-session export (config ``rides_file``), read-only.
 
 Synthetic rows only. One row per exercise session: {"start": ISO-8601 with offset, "duration_s", "kind",
-"source"}. Only kinds in config ``ride_kinds`` (default biking_stationary, rehit) are kept. No file
+"source"}. Only kinds in config ``ride_kinds`` (default biking_stationary, rehit, ride) are kept. No file
 configured is no rows; malformed rows, future starts and duplicates (same start and source) are skipped;
 nothing raises.
 """
@@ -50,7 +50,7 @@ class RideRows(unittest.TestCase):
     def test_the_config_keys_and_default_kinds(self):
         self.assertEqual(RIDES_CONFIG, "rides_file")
         self.assertEqual(RIDE_KINDS_CONFIG, "ride_kinds")
-        self.assertEqual(list(RIDE_KINDS), ["biking_stationary", "rehit"])
+        self.assertEqual(list(RIDE_KINDS), ["biking_stationary", "rehit", "ride"])
 
     def test_no_file_configured_is_none_and_no_rows(self):
         self.assertIsNone(self.reader.rides_file(self.env, self.root))
