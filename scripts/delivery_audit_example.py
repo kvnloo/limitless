@@ -3,17 +3,19 @@
 A week of synthetic push-log rows in the shape bin/kevin-push writes ({at, tag, cls, title, body, how}) and three
 synthetic wake events, in a temporary state dir, at a fixed clock in UTC. Reads no real state, writes nothing
 outside that dir, sends nothing. It runs the limitless_delivery tool (without and with the raw opt-in) and the
-week review line.
+week review line, then the complaints: unknown with no Hermes DB set, then from a synthetic session DB and a
+synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row).
 """
 import json
+import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from limitless import jobs_runner, tools  # noqa: E402
+from limitless import doctor, jobs_runner, quiet, scorecard, tools  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
 
 UTC = timezone.utc
@@ -75,5 +77,35 @@ with tempfile.TemporaryDirectory() as tmp:
 
     print("\n# week review line")
     print(jobs_runner.week_delivery(st, env, root, datetime.fromtimestamp(NOW, UTC).date(), UTC, NOW))
+
+    print("\n# complaints with no Hermes DB set: unknown, never none (the week review line leaves the clause out)")
+    print(json.dumps(v["complaints"]))
+
+    # A synthetic session DB (the schema the quiet ingest reads) and a synthetic quiet.json.
+    con = sqlite3.connect(str(st / "state.db"))
+    con.executescript("CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT NOT NULL, started_at REAL);"
+                      "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,"
+                      " role TEXT NOT NULL, content TEXT, timestamp REAL NOT NULL);")
+    con.execute("INSERT INTO sessions VALUES ('s1', 'telegram', ?)", (at(6, 6),))
+    for text, t in [("Stop.", at(1, 9) + 600),                              # ten minutes after the heads-up
+                    ("stop", at(4, 13)),                                    # hours after the last delivery
+                    ("I can't stop thinking about the build", at(1, 13)),   # stop inside a sentence
+                    ("thanks", at(4, 9) + 120)]:
+        con.execute("INSERT INTO messages (session_id, role, content, timestamp) VALUES ('s1', 'user', ?, ?)",
+                    (text, t))
+    con.commit()
+    con.close()
+    quiet.write(st, quiet.SNOOZED, at(3, 21))                               # the quiet ingest wrote a snooze
+    cfg.write_text(json.dumps({"push_log": "push-log.jsonl", "hermes_db": "state.db"}))
+
+    print("\n# hermes_db set: complaints from explicit signals only (counts with the raw opt-in)")
+    print(json.dumps(tools.delivery(reader, NOW, env=env, home=root, tz=UTC)["label"]["label"]))
+    print(json.dumps(tools.delivery(reader, NOW, raw=True, env=env, home=root, tz=UTC)["value"]["complaints"]))
+    for m in scorecard.measured(st, json.loads(cfg.read_text()), NOW, UTC, env=env, home=root):
+        if m["n"] == scorecard.DELIVERY_ROW:
+            print(scorecard.measured_lines([], [m])[0])
+            print(json.dumps({"goal": m["goal"]}))
+    r = doctor.delivery_row(reader, json.loads(cfg.read_text()), NOW, env, root, UTC)
+    print(f"{r['name']}: {r['status']}: {r['reason']}")
 
     print("\n# the log is unchanged:", (st / "push-log.jsonl").read_text().count("\n"), "lines")

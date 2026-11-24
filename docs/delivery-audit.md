@@ -1,8 +1,9 @@
 # Delivery audit: did the pushes stay useful?
 
 North-star row two: the brief reaches the person on nearly every wake day, at most a handful of pushes a day,
-and every push carries one action. `limitless/delivery_audit.py` measures that from kevin-push's own log, so
-nobody has to read the log by hand. It is read-only: it reads the log and never changes how it is written,
+every push carries one action, and no push draws a complaint. `limitless/delivery_audit.py` measures that
+from kevin-push's own log (and the complaints from the person's own quiet and stop replies), so nobody has to
+read the log by hand. It is read-only: it reads the log and never changes how it is written,
 sends nothing and starts nothing.
 
 ## The log and the fields relied on
@@ -40,6 +41,20 @@ A brief is matched to a wake day by its local date.
   the first line) is message_shape's reply line: a `Reply: A / B` choices line or a line with the word reply.
   A body that may have been cut by the log (2000 characters or more) is unknown, not "no reply line".
 - Bad lines (not JSON, not an object, no numeric `"at"`, no string `"how"`) are skipped and counted.
+- Complaints: only explicit signals the person sent, on a local day of the window. Nothing else is read into
+  a message: no model, no sentiment, no guess. Two kinds count:
+  - a quiet, quiet tonight or snooze command (`quiet.command`: the whole message, as the quiet ingest reads
+    it), either as a reply in the Hermes session DB or as the one `quiet.json` records (mode `off`,
+    `quiet_tonight` or `snoozed`, its `since` in the window); the same second counts once, and `on` never
+    counts;
+  - a reply whose first words are `stop` or `too much` (case-insensitive, trailing punctuation ignored, the
+    first-word style of the habit replies), sent within `REPLY_GAP_S` (one hour) after a delivered push.
+    "please stop", "I can't stop thinking" or a stop hours after the last delivery do not count.
+
+  The replies come from the Hermes session DB the quiet ingest reads (`LIMITLESS_HERMES_DB`, else config
+  `hermes_db`), opened read-only, Telegram sessions only. No DB set, a DB that cannot be read, an unreadable
+  `quiet.json` or a week with no row is unknown, not zero: never "no complaints". The message text is never
+  stored or printed; the audit keeps the counts only.
 
 The numbers are T0 and stay in the audit dict. The T1 label is words with no digit, joined with "; ":
 
@@ -48,7 +63,9 @@ The numbers are T0 and stay in the audit dict. The T1 label is words with no dig
 - brief: "brief reached you on every wake day", "... on most wake days" (more than half), "... on some wake
   days", "brief did not reach you on any wake day", "brief: unknown, no wake days known";
 - action: "every push had a reply line", "some pushes had no reply line", "every push with a known body had a
-  reply line" (nothing when nothing was delivered).
+  reply line" (nothing when nothing was delivered);
+- complaints: "no complaints this week", "some pushes drew a quiet or stop request", or "complaints: unknown,
+  <why>" (for example "no Hermes DB set (config hermes_db), so replies cannot be read").
 
 ## Where it shows
 
@@ -59,31 +76,37 @@ The numbers are T0 and stay in the audit dict. The T1 label is words with no dig
   push_log)" and the label "unknown: no push log set": unknown, not zero. A missing or unreadable log and a
   week with no row are `null` with a reason too. Reasons never echo the path.
 - `limitless-doctor` lists it like every tool: `tool limitless_delivery: off: no push log set (config
-  push_log)` until `push_log` is set.
+  push_log)` until `push_log` is set. Its own `delivery` row, right after the `uptime` row, is row two as the
+  scorecard measures it, complaints included: off with no push log, live when the goal is met, stale when it
+  is not, missing when it is unknown; the reason is the same words, never a count.
 - The week review (`jobs_runner.week_review_body`) carries one line, `Pushes: <words>.`, through
-  `tier_audit.gate` (hook `week_review:delivery`); an unknown brief clause is left out, and the line is empty
-  when the log is unset, unreadable or has no row in the week.
+  `tier_audit.gate` (hook `week_review:delivery`); an unknown brief clause and the complaints clause (no reply
+  source is read there) are left out, and the line is empty when the log is unset, unreadable or has no row
+  in the week.
 - The north-star scorecard cites it as row two. `delivery_audit.goal(audit)` judges the audit's own counts:
-  "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, or a delivered
-  push had no reply line; "met" only when every day of the week has rows, wake days are known (none unknown)
-  and every delivered body is known to carry a reply line; anything else is "unknown", and
-  unknown is never met. `scorecard.measured` gives `{n, criterion_words, label, goal}` from it (the label above, or the unknown
+  "not met" when a logged day went over the cap, a wake day with rows had no delivered brief, a delivered
+  push had no reply line, or a quiet or stop request is known; "met" only when every day of the week has rows,
+  wake days are known (none unknown), every delivered body is known to carry a reply line and complaints are
+  known to be none; anything else is "unknown" (unknown complaints included), and unknown is never met.
+  `scorecard.measured` gives `{n, criterion_words, label, goal}` from it (the label above, or the unknown
   words: "unknown: no push log set", "unknown: the push log could not be read", "unknown: no push rows this
   week"). The weekly block (`bin/limitless-scorecard`, when the state dir exists) ends with
   `Measured: delivery: <label>`, plus `Row <name> says green but the measurement says not met.` when the hand
   status of row two is green and the goal is not met; `limitless_scorecard` carries the same in `measured` (counts only
   with the raw opt-in). No status is ever changed by code.
 
-Config (both optional):
+Config (all optional):
 
-    {"push_log": "<kevin-push state dir>/log.jsonl", "push_cap": 6}
+    {"push_log": "<kevin-push state dir>/log.jsonl", "push_cap": 6, "hermes_db": "<Hermes session DB>"}
 
-A relative `push_log` is in the limitless state dir. There is no default path.
+A relative `push_log` or `hermes_db` is in the limitless state dir. There is no default path: with no
+`hermes_db` the complaints are unknown, so row two can never be met.
 
 ## A real synthetic run
 
 `python3 -I scripts/delivery_audit_example.py` (synthetic rows in kevin-push's shape, three synthetic wake
-events, a fixed clock, UTC, a temporary state dir; nothing sent):
+events, then a synthetic session DB and a synthetic `quiet.json`, a fixed clock, UTC, a temporary state dir;
+nothing sent):
 
 ```text
 # no push log set
@@ -91,7 +114,7 @@ events, a fixed clock, UTC, a temporary state dir; nothing sent):
 {"label": "unknown: no push log set", "tier": "T1", "modality": "measured"}
 
 # push_log set (relative: in the state dir); limitless_delivery, no raw opt-in
-{"value": {"label": "within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line"}, "modality": "measured", "age_h": 33.0, "evidence_tier": "stale"}
+{"value": {"label": "within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read"}, "modality": "measured", "age_h": 33.0, "evidence_tier": "stale"}
 
 # the same with the raw opt-in: T0 counts per day (None = no row that day: unknown)
 {"day": "2033-05-12", "rows": 0, "delivered": null, "over_cap": null, "wake_day": false, "brief": null, "no_action": 0, "action_unknown": 0}
@@ -107,8 +130,23 @@ events, a fixed clock, UTC, a temporary state dir; nothing sent):
 # week review line
 Pushes: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line.
 
+# complaints with no Hermes DB set: unknown, never none (the week review line leaves the clause out)
+{"known": false, "quiet": null, "stop": null, "total": null, "why": "no Hermes DB set (config hermes_db), so replies cannot be read"}
+
+# hermes_db set: complaints from explicit signals only (counts with the raw opt-in)
+"within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request"
+{"known": true, "quiet": 1, "stop": 1, "total": 2, "why": null}
+Measured: delivery: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request
+{"goal": "not met"}
+delivery: stale: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line; some pushes drew a quiet or stop request
+
 # the log is unchanged: 9 lines
 ```
 
 On the fifteenth the brief was held by Sleep mode, so that wake day counts as not reached: two of three wake
 days, "most". On the seventeenth the brief and the heads-up went out without a reply line.
+
+The complaints: "Stop." ten minutes after the heads-up on the seventeenth counts, and so does the snooze
+`quiet.json` records on the fifteenth. The "stop" on the fourteenth came hours after that day's last delivery,
+and "I can't stop thinking about the build" has stop inside a sentence: neither counts. No reply text appears
+in any output.
