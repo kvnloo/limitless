@@ -150,7 +150,7 @@ def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -
     return Path(p) if isinstance(p, str) and p else None
 
 
-# --- measured rows: north-star rows one and two as the audits measured them -----------------------------------
+# --- measured rows: north-star rows one, two, three, four and seven as code measured them ---------------------
 
 UPTIME_ROW, DELIVERY_ROW = 1, 2
 UPTIME_WORDS, DELIVERY_WORDS = "loop uptime", "delivery"
@@ -325,10 +325,13 @@ def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[
 
 def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[dict]:
-    """North-star rows one and two as code measured them: ``[{n, criterion_words, label, goal}]``.
+    """North-star rows one, two, three, four and seven as code measured them: ``[{n, criterion_words, label,
+    goal}]``.
 
     Row one is the uptime audit of the state dir's runs.jsonl, row two the delivery audit of kevin-push's log
-    (config ``push_log``). ``label`` is the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is
+    (config ``push_log``), row three the habit loop (the stop rule's loop rows in predictions.jsonl and the habit
+    files), row four the evidence loop (the locks and receipts in predictions.jsonl) and row seven privacy
+    (tier_audit.check over the audit log for the last seven days). ``label`` is the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is
     met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
     nothing is written or sent, and no hand status is changed.
     """
@@ -337,6 +340,8 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
 
 MEASURED_LINE = "Measured: {}: {}"
 DISAGREE_LINE = "Row {} says green but the measurement says not met."
+MORE_LINE = "More measured rows in limitless_scorecard."
+MEASURED_ROWS = (UPTIME_ROW, DELIVERY_ROW, HABIT_ROW, EVIDENCE_ROW, PRIVACY_ROW)
 
 
 def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
@@ -349,18 +354,30 @@ def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
 
 
 def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
-    """The weekly block's measured lines, digit-free: "Measured: loop uptime: <label>" and "Measured: delivery:
-    <label>" (at most one each, in that order), each followed by "Row <name> says green but the measurement says
-    not met." when the hand-kept row with that number is green and the audit's goal is not met. Only words:
-    no status is changed here, and code never marks a row green."""
-    out, seen = [], set()
+    """The weekly block's measured lines, digit-free and at most MAX_LINES: "Measured: <row words>: <label>" for
+    rows one, two, three, four and seven (at most one each, in that order whatever the input order), each
+    followed by "Row <name> says green but the measurement says not met." when the hand-kept row with that
+    number is green and the goal is not met. When they would pass five lines, whole rows (a row with its note)
+    are kept in that order and the rest fold into one line, "More measured rows in limitless_scorecard." Only
+    words: no status is changed here, and code never marks a row green."""
+    first = {}
     for m in measured_rows or ():
         n = m.get("n") if isinstance(m, dict) else None
-        if n not in (UPTIME_ROW, DELIVERY_ROW) or n in seen:
-            continue
-        seen.add(n)
-        out.append(_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label"))))
-        note = disagreement(rows, m)
-        if note:
-            out.append(note)
-    return out
+        if n in MEASURED_ROWS and n not in first:
+            first[n] = m
+    groups = []
+    for n in MEASURED_ROWS:
+        if n in first:
+            m = first[n]
+            note = disagreement(rows, m)
+            groups.append([_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label")))]
+                          + ([note] if note else []))
+    out = [ln for g in groups for ln in g]
+    if len(out) <= MAX_LINES:
+        return out
+    out = []
+    for g in groups:
+        if len(out) + len(g) > MAX_LINES - 1:
+            break
+        out += g
+    return out + [MORE_LINE]

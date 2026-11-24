@@ -166,9 +166,15 @@ class Measured(Fixture):
 
 
 class Block(Fixture):
+    """The summary and the measured lines of rows one and two (rows three, four and seven are in
+    test_scorecard_measured_loops, where five measured lines leave no room for the summary)."""
+
+    def first_two(self):
+        return [m for m in self.measured() if m["n"] in (sc.UPTIME_ROW, sc.DELIVERY_ROW)]
+
     def block(self, md, measured=None):
         rows = sc.parse(md)
-        m = self.measured() if measured is None else measured
+        m = self.first_two() if measured is None else measured
         return sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, m))
 
     def test_measured_lines_follow_the_summary_and_keep_the_cap(self):
@@ -183,7 +189,7 @@ class Block(Fixture):
     def test_measured_lines_replace_the_lowest_priority_summary_lines(self):
         summary = sc.summary(sc.parse(table()))
         self.assertEqual(len(summary), 4)
-        block = sc.weekly_block(summary, sc.measured_lines(sc.parse(table()), self.measured()))
+        block = sc.weekly_block(summary, sc.measured_lines(sc.parse(table()), self.first_two()))
         self.assertNotIn("Capture triage", block)     # the fourth summary line gave way
         self.assertIn("Review held: red", block)
 
@@ -228,7 +234,7 @@ class Block(Fixture):
         for setup in (lambda: None, lambda: self.runs(stale_days=7), lambda: self.pushes(briefs=False)):
             setup()
             rows = sc.parse(table())
-            for ln in sc.measured_lines(rows, self.measured()):
+            for ln in sc.measured_lines(rows, self.first_two()):
                 self.assertIsNone(DIGIT.search(ln), ln)
 
     def test_a_criterion_name_with_digits_is_masked_in_the_note(self):
@@ -241,12 +247,12 @@ class Block(Fixture):
         self.runs(stale_days=7)
         rows = sc.parse(table())
         before = [dict(r) for r in rows]
-        sc.measured_lines(rows, self.measured())
+        sc.measured_lines(rows, self.first_two())
         self.assertEqual(rows, before)
         self.runs()
         self.pushes()
         rows = sc.parse(table(uptime="red", delivery="amber"))
-        self.assertIn("- Loop uptime: red", sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.measured())))
+        self.assertIn("- Loop uptime: red", sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.first_two())))
 
     def test_without_measured_lines_the_block_is_unchanged(self):
         summary = sc.summary(sc.parse(table()))
@@ -254,7 +260,7 @@ class Block(Fixture):
         self.assertEqual(sc.weekly_block([], []), "")
 
     def test_measured_lines_alone_still_make_a_block(self):
-        block = sc.weekly_block([], sc.measured_lines([], self.measured()))
+        block = sc.weekly_block([], sc.measured_lines([], self.first_two()))
         self.assertEqual(block.splitlines()[0], sc.WEEKLY_TITLE)
         self.assertEqual(len(block.splitlines()), 3)
 

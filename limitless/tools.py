@@ -582,7 +582,7 @@ def scorecard(path: Optional[Path], now: float, state_dir=None, cfg: Optional[Ma
     """The weekly review's scorecard block: at most 5 plain-word lines (counts, the stop rule, the criteria
     furthest from green). Self-reported, aged by the file's mtime. Reasons never echo the path.
 
-    ``measured`` beside the envelope (scorecard_measured) says what the audits measured for rows one and two,
+    ``measured`` beside the envelope (scorecard_measured) says what code measured for rows one, two, three, four and seven,
     from ``state_dir`` (default the configured one) and ``cfg`` (default the host config); it never changes a
     status. The value and the envelope's shape are the same with or without it."""
     if state_dir is None:

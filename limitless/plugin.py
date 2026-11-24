@@ -348,8 +348,9 @@ score, no streak. Read-only; nothing is written or sent."), _experiment, "🧪")
         "and red counts, whether every criterion has been green for 4 weeks, and the three criteria furthest "
         "from green. Counts only: it never says the north star is met. Read from the hand-kept scorecard "
         "table (self-reported). `measured` beside it says what code measured for row one (loop uptime, the "
-        "uptime audit) and row two (delivery, the delivery audit) in words with a goal of met, not met or "
-        "unknown, and a `note` when the hand status is green but the measurement says not met. It never "
+        "uptime audit), row two (delivery, the delivery audit), row three (habit loop, the weekly Keep or Drop "
+        "loop rows), row four (evidence loop, locked predictions with a judged receipt) and row seven (privacy, "
+        "the tier audit log) in words with a goal of met, not met or unknown, and a `note` when the hand status is green but the measurement says not met. It never "
         "changes a status."), _scorecard, "🎯"),
     "limitless_capture": (_schema(
         "limitless_capture",

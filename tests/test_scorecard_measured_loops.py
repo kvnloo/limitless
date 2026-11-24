@@ -289,5 +289,175 @@ class Privacy(Fixture):
             self.assertIsNone(DIGIT.search(self.row(7)["label"]))
 
 
+MORE = "More measured rows in limitless_scorecard."
+NOTE = "says green but the measurement says not met."
+
+
+class Lines(Fixture):
+    def measured(self):
+        return [row for row, _a in sc.measured_audits(self.st, self.cfg, NOW, UTC, env=self.env, home=self.root)]
+
+    def not_met_everywhere(self):
+        self.week(1, "Keep")                    # fewer than four cycles
+        self.lock(1)                            # a lock, nothing judged
+        self.audit_log("allowed", "leaked")     # one leak
+
+    def block(self, md):
+        rows = sc.parse(md)
+        return sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.measured()))
+
+    def test_five_measured_rows_in_order_fill_the_block(self):
+        lines = sc.measured_lines(sc.parse(table()), self.measured())
+        self.assertEqual([ln.split(":")[1].strip() for ln in lines],
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+        block = self.block(table()).splitlines()
+        self.assertEqual(block[0], sc.WEEKLY_TITLE)
+        self.assertEqual(block[1:], ["- " + ln for ln in lines])   # the summary lines gave way first
+
+    def test_rows_keep_the_order_one_two_three_four_seven_whatever_the_input(self):
+        m = list(reversed(self.measured()))
+        lines = sc.measured_lines([], m)
+        self.assertEqual([ln.split(":")[1].strip() for ln in lines],
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+
+    def test_measured_lines_over_five_fold_the_rest_into_one_line(self):
+        self.not_met_everywhere()
+        lines = sc.measured_lines(sc.parse(table()), self.measured())
+        self.assertLessEqual(len(lines), sc.MAX_LINES)
+        self.assertEqual(lines[-1], MORE)
+        self.assertEqual(lines[0], "Measured: loop uptime: " + self.measured()[0]["label"])
+        self.assertTrue(lines[2].startswith("Measured: habit loop: "))
+        self.assertEqual(lines[3], "Row Habit loop: # weekly cycles " + NOTE)    # a row keeps its note
+        self.assertNotIn("privacy", " ".join(lines))
+
+    def test_the_block_never_has_more_than_five_bullets(self):
+        for status in ({}, {3: "amber"}, {1: "red", 2: "red", 3: "red", 4: "red", 7: "red"}):
+            for setup in (lambda: None, self.not_met_everywhere):
+                setup()
+                bullets = [ln for ln in self.block(table(status)).splitlines() if ln.startswith("- ")]
+                self.assertLessEqual(len(bullets), sc.MAX_LINES)
+
+    def test_a_note_for_each_new_row_when_green_and_not_met(self):
+        self.not_met_everywhere()
+        m = {r["n"]: r for r in self.measured()}
+        rows = sc.parse(table())
+        for n, name in ((3, "Habit loop: # weekly cycles"), (4, "Evidence loop: >=# locked N-of-# experiments with "
+                                                                "outcome receipts"), (7, "Privacy: no raw health data "
+                                                                                         "above T#, # leaks")):
+            self.assertEqual(sc.disagreement(rows, m[n]), f"Row {name} {NOTE}")
+            self.assertIsNone(DIGIT.search(sc.disagreement(rows, m[n])))
+
+    def test_no_note_unless_green_and_not_met(self):
+        rows_green = sc.parse(table())
+        for m in self.measured():                                 # all unknown
+            self.assertIsNone(sc.disagreement(rows_green, m))
+        self.not_met_everywhere()
+        amber = sc.parse(table({3: "amber", 4: "red", 7: "amber"}))
+        for m in self.measured():
+            if m["n"] in (3, 4, 7):
+                self.assertIsNone(sc.disagreement(amber, m))
+        for k, d in ((4, "Keep"), (3, "Keep"), (2, "Drop")):
+            self.week(k, d)
+        self.lock(2, "supports")
+        self.lock(3, "contradicts")
+        self.audit_log("allowed", "blocked")
+        got = {m["n"]: m for m in self.measured()}
+        self.assertEqual([got[n]["goal"] for n in (3, 4, 7)], ["met"] * 3)
+        for n in (3, 4, 7):
+            self.assertIsNone(sc.disagreement(rows_green, got[n]))
+
+    def test_unknown_is_never_met(self):
+        for m in self.measured():
+            self.assertTrue(m["label"].startswith("unknown: "), m)
+            self.assertEqual(m["goal"], "unknown")
+
+    def test_no_digit_in_any_measured_line(self):
+        for setup in (lambda: None, self.not_met_everywhere):
+            setup()
+            for ln in sc.measured_lines(sc.parse(table()), self.measured()):
+                self.assertIsNone(DIGIT.search(ln), ln)
+
+    def test_statuses_are_never_changed_and_never_marked_green(self):
+        self.not_met_everywhere()
+        rows = sc.parse(table({3: "red", 4: "amber", 7: "red"}))
+        before = [dict(r) for r in rows]
+        lines = sc.measured_lines(rows, self.measured())
+        sc.weekly_block(sc.summary(rows), lines)
+        self.assertEqual(rows, before)
+        self.assertNotIn("green", " ".join(lines).replace("says green", ""))
+
+
+class Tool(Fixture):
+    def tool(self, raw=False):
+        p = self.root / "scorecard.md"
+        p.write_text(table())
+        return tools.scorecard(p, NOW, state_dir=self.st, cfg=self.cfg, tz=UTC, raw=raw, env=self.env,
+                               home=self.root)
+
+    def known(self):
+        for k in (4, 3, 2, 1):
+            self.week(k, "Keep")
+        self.lock(2, "supports")
+        self.lock(1)
+        self.audit_log("allowed", "blocked", "leaked")
+
+    def test_measured_lists_all_five_rows(self):
+        out = self.tool()
+        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 7])
+        self.assertEqual([m["criterion_words"] for m in out["measured"]],
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
+        for m in out["measured"]:
+            self.assertEqual(set(m["label"]), {"label", "tier", "modality"})
+            self.assertEqual(m["label"]["tier"], "T1")
+
+    def test_notes_for_green_rows_not_met(self):
+        self.known()
+        m = {x["n"]: x for x in self.tool()["measured"]}
+        self.assertEqual((m[3]["goal"], m[4]["goal"], m[7]["goal"]), ("met", "not met", "not met"))
+        self.assertNotIn("note", m[3])
+        self.assertEqual(m[4]["note"], "Row Evidence loop: >=# locked N-of-# experiments with outcome receipts "
+                         + NOTE)
+        self.assertIn("note", m[7])
+
+    def test_counts_only_with_the_raw_opt_in(self):
+        self.known()
+        plain = {x["n"]: x for x in self.tool()["measured"]}
+        for n in (3, 4, 7):
+            self.assertNotIn("counts", plain[n])
+        m = {x["n"]: x for x in self.tool(raw=True)["measured"]}
+        self.assertEqual(set(m[3]["counts"]), set(sc.HABIT_RAW_KEYS))
+        self.assertEqual(m[3]["counts"]["recent_closed"], 4)
+        self.assertEqual(m[4]["counts"], {"locked": 2, "judged": 1, "not_judged": 1, "needed": 2})
+        self.assertEqual(set(m[7]["counts"]), set(sc.PRIVACY_RAW_KEYS))
+        self.assertEqual(m[7]["counts"]["t0_without_opt_in"], 1)
+
+    def test_raw_with_nothing_to_measure_has_no_counts(self):
+        for m in self.tool(raw=True)["measured"]:
+            self.assertNotIn("counts", m)
+
+    def test_no_digit_outside_the_raw_opt_in(self):
+        self.known()
+        got = self.tool()["measured"]
+        text = json.dumps([[m["label"]["label"], m["criterion_words"], m["goal"], m.get("note", "")] for m in got])
+        self.assertIsNone(DIGIT.search(text), text)
+
+    def test_passes_tier_audit(self):
+        self.known()
+        out = self.tool()
+        audit = self.root / "tool-audit.jsonl"
+        got = tier_audit.audit_result("tool:limitless_scorecard", out, False, env={"LIMITLESS_AUDIT": str(audit)},
+                                      home=self.root, now=NOW)
+        self.assertEqual(got, out)
+        (line,) = [json.loads(ln) for ln in audit.read_text().splitlines()]
+        self.assertEqual((line["tier"], line["blocked"], line["digits"]), ("T1", False, 0))
+
+    def test_reads_only(self):
+        self.known()
+        before = sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in self.root.rglob("*"))
+        self.tool(raw=True)
+        after = sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in self.root.rglob("*"))
+        self.assertEqual([a for a in after if a[0] != "scorecard.md"], [b for b in before if b[0] != "scorecard.md"])
+
+
 if __name__ == "__main__":
     unittest.main()
