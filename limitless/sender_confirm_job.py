@@ -47,6 +47,7 @@ TOLD, FAILED, HELD, DROPPED = "told", "failed", "held", "dropped"
 OUTCOMES = (TOLD, FAILED, HELD, DROPPED)
 SETTLED = (TOLD, DROPPED)
 ENV_WINS = f"{push_sender.PROFILE_ENV} is set and still wins"
+RECAP_WAITS = "the sender confirmation went out in this pass"   # outage_recap_job's wait words (run_once)
 NOT_REACHED = "the new sender did not reach you"
 _FAILED = (("no sender profile", "the sender profile does not exist"), ("telegram rc=", "the send failed"),
            ("did not run", "the send failed"), ("push failed", "the send failed"),

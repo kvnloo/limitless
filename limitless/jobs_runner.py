@@ -60,6 +60,12 @@ owner's whole "push via <profile>" reply from the Hermes session DB and runs sen
 push-sender.json, only for a profile push_sender.check says exists), then writes ``push-sender-ingest.json`` in
 words only. No Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing read.
 
+Sender confirmation: with config ``sender_confirm`` dry_run or write, one more row right after the sender ingest's
+(sender_confirm_job.run_pass). When push-sender.json records a sender change newer than the last one the mark
+``sender-confirm.json`` settled, a pass that is not a dry run pushes one plain confirmation ("Pushes") through
+``push`` with ``once`` ``sender_confirm:<reply time>``; its delivery result is the proof the new sender works.
+When it pushed in a pass, the outage recap waits for the next pass. Off (the default): no row, nothing read.
+
 Outage recap: with config ``outage_recap`` dry_run or write, one more row, last (outage_recap_job.run). After a push
 kevin-push delivered closed an outage in its log (config ``push_log``; outage_recap.outage), a pass that is not a
 dry run pushes one plain recap of what the outage swallowed through ``push`` with ``once``
@@ -1266,5 +1272,6 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
     from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
-    recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz)   # None when off
+    recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz,   # None when off
+                       wait=_confirm.RECAP_WAITS if _confirmed else None)   # never two pushes in one pass
     return rows + [r for r in (noop, apps, ranked, sender, confirm, voice, recap) if r is not None]

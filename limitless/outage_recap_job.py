@@ -15,7 +15,9 @@ carries the same key and kevin-push lets at most one recap out. The mark ``outag
 the once key, an outcome word and an epoch; never a title, a kind or any message text) is written TOLD only on a
 real delivery (push reports ``telegram``, kevin-push's rc 0). A push kevin-push drops because the key was
 already claimed or quiet holds is DROPPED: settled, never told, never retried. Any other result (a failed send,
-the daily cap, a Sleep-mode hold) holds and the next pass tries again. An outage still open, no outage, or one
+the daily cap, a Sleep-mode hold) holds and the next pass tries again. When the sender confirmation
+(sender_confirm_job) pushed in the same pass, run_once passes ``wait``: the recap holds, unsent and unmarked, so
+the two never go out in one pass; the next pass sends it. An outage still open, no outage, or one
 that closed more than jobs.OUTAGE_RECAP_STALE_S ago sends nothing. Reasons are words only. Starts no process
 itself; never restarts anything. Stdlib only, Python 3.9+.
 """
@@ -88,19 +90,22 @@ def _row(action: str, reason: str) -> dict:
 
 
 def run(state_dir, now: float, push: Optional[Callable] = None, dry_run: bool = True,
-        env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None, tz=None) -> Optional[dict]:
-    """The outage recap's ``{job, action, reason}`` row; None when config ``outage_recap`` is off. Never raises."""
+        env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None, tz=None,
+        wait: Optional[str] = None) -> Optional[dict]:
+    """The outage recap's ``{job, action, reason}`` row; None when config ``outage_recap`` is off. Never raises.
+    ``wait`` (words): another push already went out in this pass (the sender confirmation), so a recap that would
+    send now holds instead, unsent and unmarked, and the next pass sends it."""
     cfg = config(env, home)
     m = mode(cfg)
     if m == OFF:
         return None
     try:
-        return _run(state_dir, now, push, dry_run or m == DRY_RUN or push is None, m, cfg, tz)
+        return _run(state_dir, now, push, dry_run or m == DRY_RUN or push is None, m, cfg, tz, wait)
     except Exception as e:  # noqa: BLE001 - a broken log or state is one row, never a traceback
         return _row(jobs.HOLD, f"could not read the push log or the mark ({type(e).__name__}); nothing sent")
 
 
-def _run(state_dir, now: float, push, dry: bool, m: str, cfg, tz) -> dict:
+def _run(state_dir, now: float, push, dry: bool, m: str, cfg, tz, wait: Optional[str] = None) -> dict:
     rows, why = _rows(state_dir, cfg)
     if rows is None:
         return _row(jobs.NOT_TRIGGERED, why)
@@ -123,6 +128,8 @@ def _run(state_dir, now: float, push, dry: bool, m: str, cfg, tz) -> dict:
     if dry:
         hint = f'config {CONFIG_KEY} "{WRITE}" sends it' if m == DRY_RUN else "dry run of limitless-jobs"
         return _row(jobs.DELIVER, f"{EVENT}; would send the recap ({hint}): nothing sent")
+    if wait:
+        return _row(jobs.HOLD, f"{EVENT}; waits for the next pass: {wait}")
     from . import jobs_runner   # jobs_runner imports this module inside run_once
     ok, how = jobs_runner._push(push, r["title"], r["body"], r["key"], why=WHY)
     if ok:
