@@ -1,0 +1,96 @@
+{
+ "glide": {
+  "repo": "https://github.com/kvnloo/glide",
+  "file": "glide/attention.py",
+  "sha": "051b98ca74985194b8afde99b9dc0db81667be5e"
+ },
+ "anchor": 1894708800.0,
+ "states": {
+  "missing_load": {
+   "block": null,
+   "queue": [],
+   "resume": null,
+   "nudged": ""
+  },
+  "after_start_block": {
+   "block": {
+    "start": 1894708800.0,
+    "end": 1894711800.0,
+    "minutes": 50
+   },
+   "queue": [],
+   "resume": null,
+   "nudged": ""
+  },
+  "after_route_held": {
+   "block": {
+    "start": 1894708800.0,
+    "end": 1894711800.0,
+    "minutes": 50
+   },
+   "queue": [
+    {
+     "title": "Synthetic report",
+     "body": "held during the block",
+     "cls": "report",
+     "at": 1894709400.0
+    }
+   ],
+   "resume": null,
+   "nudged": ""
+  },
+  "expired_before_next_event": {
+   "block": {
+    "start": 1894708800.0,
+    "end": 1894711800.0,
+    "minutes": 50
+   },
+   "queue": [
+    {
+     "title": "Synthetic report",
+     "body": "held during the block",
+     "cls": "report",
+     "at": 1894709400.0
+    }
+   ],
+   "resume": null,
+   "nudged": ""
+  },
+  "after_route_post_expiry": {
+   "block": null,
+   "queue": [],
+   "resume": null,
+   "nudged": ""
+  },
+  "after_stop_block": {
+   "block": null,
+   "queue": [],
+   "resume": null,
+   "nudged": ""
+  },
+  "after_wind_down": {
+   "block": null,
+   "queue": [],
+   "resume": {
+    "saved": 1894708800.0,
+    "night": "2030-01-15",
+    "title": "",
+    "last_asks": [],
+    "queued": 0
+   },
+   "nudged": "2030-01-15"
+  },
+  "after_take_resume": {
+   "block": null,
+   "queue": [],
+   "resume": null,
+   "nudged": "2030-01-15"
+  }
+ },
+ "malformed_load": {
+  "block": null,
+  "queue": [],
+  "resume": null,
+  "nudged": ""
+ }
+}

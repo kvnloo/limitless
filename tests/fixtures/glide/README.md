@@ -17,3 +17,5 @@ about); tests shift the whole file to place that event at any hour.
 - `wind-down.json`: the wind-down nudge fired at the anchor (`resume.saved`), no block.
 - `idle.json`: Glide's empty state: no block, no wind-down.
 - `malformed.json`: truncated JSON.
+- `contract.json`: the file Glide's real writer left after each step, pinned to a Glide sha
+  (`tests/test_glide_contract.py`, [docs/glide-contract.md](../../../docs/glide-contract.md)).
