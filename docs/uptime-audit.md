@@ -72,7 +72,8 @@ grouped by phrase, best first, then the goal:
   `Row <name> says green but the measurement says not met.` These lines take the place of the lowest-priority summary lines, so the block
   keeps its five lines. `limitless_scorecard` carries the same in its `measured` field (the label as T1, the
   goal, the note; the counts only with the raw opt-in). The audit never marks the row green and never changes
-  a status: green still needs the goal met over the whole window, judged by the person.
+  a status: green still needs the goal met over the whole window, judged by the person. Rows three, four and
+  seven are measured the same way ([scorecard-measured.md](scorecard-measured.md)).
 
 ## Known gap
 

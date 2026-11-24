@@ -22,6 +22,21 @@ class Docs(unittest.TestCase):
         text = (ROOT / "README.md").read_text()
         self.assertIn("`measured`", text)
         self.assertIn("Measured: loop uptime", text)
+        for words in ("Measured: habit loop", "Measured: evidence loop", "Measured: privacy",
+                      "docs/scorecard-measured.md"):
+            self.assertIn(words, text)
+
+    def test_scorecard_doc_defines_rows_three_four_and_seven(self):
+        text = " ".join((ROOT / "docs" / "scorecard-measured.md").read_text().split())
+        for words in ("Habit loop: 4 weekly cycles", "confirmed start", "Keep or Drop", "last four habit weeks",
+                      "finished week", "no habit week was ever started", "Skipped and unanswered days never count",
+                      "Evidence loop: >=2 locked N-of-1 experiments with outcome receipts", "judged receipt",
+                      "supports, contradicts or inconclusive", "not pending", "unknown: no experiment locked",
+                      "unknown is never met", "Privacy: no raw health data above T1, 0 leaks", "tier_audit.check",
+                      "last seven days", "blocked rows are fine", "without the opt-in", "no audit log is set",
+                      "More measured rows in limitless_scorecard.", "says green but the measurement says not met",
+                      "never marks a row green"):
+            self.assertIn(words, text)
 
 
 if __name__ == "__main__":

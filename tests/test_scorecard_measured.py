@@ -81,10 +81,11 @@ class Fixture(unittest.TestCase):
 
 
 class Measured(Fixture):
-    def test_two_rows_in_order_with_the_brief_shape(self):
+    def test_measured_rows_in_order_with_the_brief_shape(self):
         got = self.measured()
-        self.assertEqual([m["n"] for m in got], [1, 2])
-        self.assertEqual([m["criterion_words"] for m in got], ["loop uptime", "delivery"])
+        self.assertEqual([m["n"] for m in got], [1, 2, 3, 4, 7])
+        self.assertEqual([m["criterion_words"] for m in got],
+                         ["loop uptime", "delivery", "habit loop", "evidence loop", "privacy"])
         for m in got:
             self.assertEqual(set(m), {"n", "criterion_words", "label", "goal"})
 
@@ -97,7 +98,7 @@ class Measured(Fixture):
 
     def test_missing_state_dir_is_unknown_not_an_error(self):
         got = sc.measured(self.root / "nowhere", None, NOW, UTC, env=self.env, home=self.root)
-        self.assertEqual([m["goal"] for m in got], ["unknown", "unknown"])
+        self.assertEqual([m["goal"] for m in got], ["unknown"] * 5)
 
     def test_unreadable_push_log_and_a_quiet_week_are_unknown(self):
         self.cfg["push_log"] = "absent.jsonl"
@@ -165,9 +166,15 @@ class Measured(Fixture):
 
 
 class Block(Fixture):
+    """The summary and the measured lines of rows one and two (rows three, four and seven are in
+    test_scorecard_measured_loops, where five measured lines leave no room for the summary)."""
+
+    def first_two(self):
+        return [m for m in self.measured() if m["n"] in (sc.UPTIME_ROW, sc.DELIVERY_ROW)]
+
     def block(self, md, measured=None):
         rows = sc.parse(md)
-        m = self.measured() if measured is None else measured
+        m = self.first_two() if measured is None else measured
         return sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, m))
 
     def test_measured_lines_follow_the_summary_and_keep_the_cap(self):
@@ -182,7 +189,7 @@ class Block(Fixture):
     def test_measured_lines_replace_the_lowest_priority_summary_lines(self):
         summary = sc.summary(sc.parse(table()))
         self.assertEqual(len(summary), 4)
-        block = sc.weekly_block(summary, sc.measured_lines(sc.parse(table()), self.measured()))
+        block = sc.weekly_block(summary, sc.measured_lines(sc.parse(table()), self.first_two()))
         self.assertNotIn("Capture triage", block)     # the fourth summary line gave way
         self.assertIn("Review held: red", block)
 
@@ -227,7 +234,7 @@ class Block(Fixture):
         for setup in (lambda: None, lambda: self.runs(stale_days=7), lambda: self.pushes(briefs=False)):
             setup()
             rows = sc.parse(table())
-            for ln in sc.measured_lines(rows, self.measured()):
+            for ln in sc.measured_lines(rows, self.first_two()):
                 self.assertIsNone(DIGIT.search(ln), ln)
 
     def test_a_criterion_name_with_digits_is_masked_in_the_note(self):
@@ -240,12 +247,13 @@ class Block(Fixture):
         self.runs(stale_days=7)
         rows = sc.parse(table())
         before = [dict(r) for r in rows]
-        sc.measured_lines(rows, self.measured())
+        sc.measured_lines(rows, self.first_two())
         self.assertEqual(rows, before)
         self.runs()
         self.pushes()
         rows = sc.parse(table(uptime="red", delivery="amber"))
-        self.assertIn("- Loop uptime: red", sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.measured())))
+        self.assertIn("- Loop uptime: red",
+                      sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.first_two())))
 
     def test_without_measured_lines_the_block_is_unchanged(self):
         summary = sc.summary(sc.parse(table()))
@@ -253,7 +261,7 @@ class Block(Fixture):
         self.assertEqual(sc.weekly_block([], []), "")
 
     def test_measured_lines_alone_still_make_a_block(self):
-        block = sc.weekly_block([], sc.measured_lines([], self.measured()))
+        block = sc.weekly_block([], sc.measured_lines([], self.first_two()))
         self.assertEqual(block.splitlines()[0], sc.WEEKLY_TITLE)
         self.assertEqual(len(block.splitlines()), 3)
 
@@ -272,7 +280,7 @@ class ToolField(Fixture):
     def test_measured_field_carries_t1_labels_and_goals(self):
         self.runs(stale_days=7)
         out = self.tool()
-        self.assertEqual([m["n"] for m in out["measured"]], [1, 2])
+        self.assertEqual([m["n"] for m in out["measured"]], [1, 2, 3, 4, 7])
         want = {m["n"]: m for m in self.measured()}
         for m in out["measured"]:
             self.assertEqual(m["label"], {"label": want[m["n"]]["label"], "tier": "T1", "modality": "measured"})

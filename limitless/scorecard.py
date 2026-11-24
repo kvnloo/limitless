@@ -6,9 +6,10 @@ is never read into a row: it may hold private detail and has no place in a summa
 """
 from __future__ import annotations
 
+import json
 import os
 import re
-from datetime import datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import List, Mapping, Optional
 
@@ -149,7 +150,7 @@ def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -
     return Path(p) if isinstance(p, str) and p else None
 
 
-# --- measured rows: north-star rows one and two as the audits measured them -----------------------------------
+# --- measured rows: north-star rows one, two, three, four and seven as code measured them ---------------------
 
 UPTIME_ROW, DELIVERY_ROW = 1, 2
 UPTIME_WORDS, DELIVERY_WORDS = "loop uptime", "delivery"
@@ -185,14 +186,135 @@ def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tu
     return a["label"]["label"], da.goal(a), a
 
 
+HABIT_ROW, EVIDENCE_ROW, PRIVACY_ROW = 3, 4, 7
+HABIT_WORDS, EVIDENCE_WORDS, PRIVACY_WORDS = "habit loop", "evidence loop", "privacy"
+
+CYCLES = 4                    # row three: the last four habit weeks each closed with a Keep or Drop
+HABIT_MET = "the last four habit weeks each closed with a Keep or Drop decision"
+HABIT_OPEN = "a finished habit week has no Keep or Drop decision"
+HABIT_FEW = "fewer than four habit weeks closed with a decision so far"
+HABIT_RAW_KEYS = ("weeks_started", "weeks_decided", "recent_closed", "recent_open", "cycles")
+
+
+def _week_of(v) -> Optional[date]:
+    try:
+        return date.fromisoformat(v) if isinstance(v, str) else None
+    except ValueError:
+        return None
+
+
+def _habit_weeks(state_dir) -> set:
+    """The start dates of every confirmed habit week: habit.json and each kept habit-<week_of>.json that names a
+    habit and a week_of (habit_start writes them only after the person said yes). An unreadable file is skipped."""
+    from . import jobs
+    from .habit_replies import HABIT_FILE
+    st = Path(state_dir)
+    weeks = set()
+    for p in [st / HABIT_FILE] + sorted(st.glob("habit-*.json")):
+        try:
+            h = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        start = jobs._week_start(h if isinstance(h, dict) else None)
+        if start is not None:
+            weeks.add(start)
+    return weeks
+
+
+def _habit_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row three from the stop rule's loop rows (predictions.jsonl) and the habit files.
+
+    A cycle is a started habit week with a Keep or Drop loop row (stop_rule.record_loop writes one only for a
+    started week, so a loop row's week counts as started too). The weeks judged are the last four that are
+    decided or finished (day eight on): the running, undecided week is still open and never counts against the
+    goal. Day answers are not read, so a skipped or unanswered day never counts against a cycle."""
+    from . import jobs, stop_rule
+    loops = stop_rule.loop_rows(state_dir)
+    decided = {_week_of(r.get("week_of")) for r in loops if r.get("decision") in jobs.DECISIONS} - {None}
+    started = _habit_weeks(state_dir) | ({_week_of(r.get("week_of")) for r in loops} - {None})
+    if not started:
+        return UNKNOWN_PREFIX + jobs.NO_WEEK, "unknown", None
+    today = datetime.fromtimestamp(now, tz).date()
+    judged = sorted(w for w in started
+                    if w in decided or today >= w + timedelta(days=jobs.HABIT_WEEK_DAYS))[-CYCLES:]
+    open_ = [w for w in judged if w not in decided]
+    if open_:
+        label, goal = HABIT_OPEN, "not met"
+    elif len(judged) >= CYCLES:
+        label, goal = HABIT_MET, "met"
+    else:
+        label, goal = HABIT_FEW, "not met"
+    audit = {"weeks_started": len(started), "weeks_decided": len(decided), "recent_closed": len(judged) - len(open_),
+             "recent_open": len(open_), "cycles": CYCLES, "label": {"label": label}}
+    return label, goal, audit
+
+
+EVIDENCE_NEEDED = 2           # row four: at least two locked experiments judged by an outcome receipt
+JUDGED = ("supports", "contradicts", "inconclusive")   # prediction's receipt verdicts; pending is not judged
+EVIDENCE_MET = "two or more locked experiments have a judged outcome receipt"
+EVIDENCE_FEW = "fewer than two locked experiments have a judged outcome receipt"
+NO_LOCK = "no experiment locked"
+EVIDENCE_RAW_KEYS = ("locked", "judged", "not_judged", "needed")
+
+
+def _evidence_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row four from the locks and receipts in predictions.jsonl: each week's locked
+    prediction (prediction.locked: the first lock of a week) and its receipt (prediction.receipt_for: the one
+    written for that lock). Judged is a receipt whose verdict is supports, contradicts or inconclusive."""
+    from . import prediction
+    weeks = []
+    for r in prediction.rows(state_dir):
+        w = r.get("week_of")
+        if r.get("kind") == "prediction" and isinstance(w, str) and w not in weeks:
+            weeks.append(w)
+    if not weeks:
+        return UNKNOWN_PREFIX + NO_LOCK, "unknown", None
+    judged = 0
+    for w in weeks:
+        receipt = prediction.receipt_for(state_dir, w)
+        judged += isinstance(receipt, dict) and receipt.get("verdict") in JUDGED
+    label, goal = (EVIDENCE_MET, "met") if judged >= EVIDENCE_NEEDED else (EVIDENCE_FEW, "not met")
+    audit = {"locked": len(weeks), "judged": judged, "not_judged": len(weeks) - judged, "needed": EVIDENCE_NEEDED,
+             "label": {"label": label}}
+    return label, goal, audit
+
+
+PRIVACY_WINDOW_DAYS = 7       # row seven: the tier audit log over the last seven days
+PRIVACY_MET = "nothing with raw numbers went out without the opt-in this week"
+PRIVACY_LEAK = "something with raw numbers went out without the opt-in this week"
+NO_AUDIT_LOG = "no audit log set"
+NO_AUDIT_ROWS = "no audit rows this week"
+PRIVACY_RAW_KEYS = ("injections", "t0_with_opt_in", "t0_without_opt_in", "blocked", "window_days")
+
+
+def _privacy_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tuple:
+    """(label, goal, audit) of row seven: tier_audit.check over the audit log ($LIMITLESS_AUDIT, else config
+    ``audit_path``, as tier_audit.audit_path reads it) for the last seven days. A blocked row was stopped and is
+    fine; a digit-bearing row that went out without the opt-in is a leak."""
+    from . import tier_audit
+    env = os.environ if env is None else env
+    v = env.get(tier_audit.ENV_KEY) or cfg.get(tier_audit.CONFIG_KEY)
+    if not isinstance(v, str) or not v.strip():
+        return UNKNOWN_PREFIX + NO_AUDIT_LOG, "unknown", None
+    counts = tier_audit.check(Path(v).expanduser(), since=now - PRIVACY_WINDOW_DAYS * 86400)
+    if not counts["injections"] + counts["blocked"]:
+        return UNKNOWN_PREFIX + NO_AUDIT_ROWS, "unknown", None
+    label, goal = (PRIVACY_LEAK, "not met") if counts["t0_without_opt_in"] else (PRIVACY_MET, "met")
+    return label, goal, dict(counts, window_days=PRIVACY_WINDOW_DAYS, label={"label": label})
+
+
 def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
                     env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[tuple]:
-    """``[(row, audit)]`` for rows one and two: ``row`` as measured() gives it, ``audit`` the audit's own dict
-    (its T0 counts) or None when there was no log to audit."""
+    """``[(row, audit)]`` for rows one, two, three, four and seven, in that order: ``row`` as measured() gives
+    it, ``audit`` the audit's own dict (its T0 counts, and its ``label``) or None when there was nothing to
+    audit."""
     cfg = cfg if isinstance(cfg, Mapping) else {}
     out = []
     for n, words, read in ((UPTIME_ROW, UPTIME_WORDS, _uptime_measured),
-                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured)):
+                           (DELIVERY_ROW, DELIVERY_WORDS, _delivery_measured),
+                           (HABIT_ROW, HABIT_WORDS, _habit_measured),
+                           (EVIDENCE_ROW, EVIDENCE_WORDS, _evidence_measured),
+                           (PRIVACY_ROW, PRIVACY_WORDS, _privacy_measured)):
         try:
             label, goal, audit = read(state_dir, cfg, now, tz, env, home)
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
@@ -203,10 +325,14 @@ def measured_audits(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[
 
 def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo] = None, *,
              env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> List[dict]:
-    """North-star rows one and two as code measured them: ``[{n, criterion_words, label, goal}]``.
+    """North-star rows one, two, three, four and seven as code measured them: ``[{n, criterion_words, label,
+    goal}]``.
 
     Row one is the uptime audit of the state dir's runs.jsonl, row two the delivery audit of kevin-push's log
-    (config ``push_log``). ``label`` is the audit's own T1 words (no digit) or ``unknown: <why>``; ``goal`` is
+    (config ``push_log``), row three the habit loop (the stop rule's loop rows in predictions.jsonl and the habit
+    files), row four the evidence loop (the locks and receipts in predictions.jsonl) and row seven privacy
+    (tier_audit.check over the audit log for the last seven days). ``label`` is the audit's own T1 words (no
+    digit) or ``unknown: <why>``; ``goal`` is
     met, not met or unknown. A missing or unreadable log is unknown, never an error and never met. Read-only:
     nothing is written or sent, and no hand status is changed.
     """
@@ -215,6 +341,8 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
 
 MEASURED_LINE = "Measured: {}: {}"
 DISAGREE_LINE = "Row {} says green but the measurement says not met."
+MORE_LINE = "More measured rows in limitless_scorecard."
+MEASURED_ROWS = (UPTIME_ROW, DELIVERY_ROW, HABIT_ROW, EVIDENCE_ROW, PRIVACY_ROW)
 
 
 def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
@@ -227,18 +355,30 @@ def disagreement(rows: List[dict], m: Mapping) -> Optional[str]:
 
 
 def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
-    """The weekly block's measured lines, digit-free: "Measured: loop uptime: <label>" and "Measured: delivery:
-    <label>" (at most one each, in that order), each followed by "Row <name> says green but the measurement says
-    not met." when the hand-kept row with that number is green and the audit's goal is not met. Only words:
-    no status is changed here, and code never marks a row green."""
-    out, seen = [], set()
+    """The weekly block's measured lines, digit-free and at most MAX_LINES: "Measured: <row words>: <label>" for
+    rows one, two, three, four and seven (at most one each, in that order whatever the input order), each
+    followed by "Row <name> says green but the measurement says not met." when the hand-kept row with that
+    number is green and the goal is not met. When they would pass five lines, whole rows (a row with its note)
+    are kept in that order and the rest fold into one line, "More measured rows in limitless_scorecard." Only
+    words: no status is changed here, and code never marks a row green."""
+    first = {}
     for m in measured_rows or ():
         n = m.get("n") if isinstance(m, dict) else None
-        if n not in (UPTIME_ROW, DELIVERY_ROW) or n in seen:
-            continue
-        seen.add(n)
-        out.append(_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label"))))
-        note = disagreement(rows, m)
-        if note:
-            out.append(note)
-    return out
+        if n in MEASURED_ROWS and n not in first:
+            first[n] = m
+    groups = []
+    for n in MEASURED_ROWS:
+        if n in first:
+            m = first[n]
+            note = disagreement(rows, m)
+            groups.append([_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label")))]
+                          + ([note] if note else []))
+    out = [ln for g in groups for ln in g]
+    if len(out) <= MAX_LINES:
+        return out
+    out = []
+    for g in groups:
+        if len(out) + len(g) > MAX_LINES - 1:
+            break
+        out += g
+    return out + [MORE_LINE]
