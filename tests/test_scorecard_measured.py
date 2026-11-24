@@ -163,5 +163,99 @@ class Measured(Fixture):
                          before)
 
 
+class Block(Fixture):
+    def block(self, md, measured=None):
+        rows = sc.parse(md)
+        m = self.measured() if measured is None else measured
+        return sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, m))
+
+    def test_measured_lines_follow_the_summary_and_keep_the_cap(self):
+        self.runs()
+        lines = self.block(table()).splitlines()
+        self.assertEqual(lines[0], sc.WEEKLY_TITLE)
+        self.assertEqual(len(lines), 1 + sc.MAX_LINES)
+        self.assertEqual(lines[1:4], ["- 2 green, 1 amber, 1 red of 4", "- not all green yet", "- Review held: red"])
+        self.assertEqual(lines[4], "- Measured: loop uptime: " + self.by_n()[1]["label"])
+        self.assertEqual(lines[5], "- Measured: delivery: " + delivery_audit.NO_LOG)
+
+    def test_measured_lines_replace_the_lowest_priority_summary_lines(self):
+        summary = sc.summary(sc.parse(table()))
+        self.assertEqual(len(summary), 4)
+        block = sc.weekly_block(summary, sc.measured_lines(sc.parse(table()), self.measured()))
+        self.assertNotIn("Capture triage", block)     # the fourth summary line gave way
+        self.assertIn("Review held: red", block)
+
+    def test_missing_logs_read_unknown_in_words(self):
+        block = self.block(table())
+        self.assertIn("- Measured: loop uptime: unknown: " + uptime_audit.NO_LOG_REASON, block)
+        self.assertIn("- Measured: delivery: unknown: no push log set", block)
+
+    def test_measured_words_keep_met_and_not_met(self):
+        self.runs(stale_days=7)
+        self.pushes()
+        block = self.block(table(uptime="amber", delivery="amber"))
+        self.assertIn("uptime goal not met", block)
+        self.assertNotIn("says green", block)
+
+    def test_green_hand_status_with_a_not_met_measurement_adds_one_note(self):
+        self.runs(stale_days=7)
+        block = self.block(table(uptime="green"))
+        note = "- Row Loop uptime says green but the measurement says not met."
+        self.assertEqual(block.splitlines().count(note), 1)
+        self.assertEqual(block.count("says green"), 1)
+        self.assertEqual(block.splitlines()[-2:], [note, "- Measured: delivery: " + delivery_audit.NO_LOG])
+
+    def test_both_rows_green_and_not_met_give_one_note_each(self):
+        self.runs(stale_days=7)
+        self.pushes(briefs=False)
+        lines = self.block(table()).splitlines()
+        self.assertEqual(len(lines), 1 + sc.MAX_LINES)
+        self.assertEqual(sum("says green but the measurement says not met." in ln for ln in lines), 2)
+        self.assertIn("- Row Delivery says green but the measurement says not met.", lines)
+        self.assertEqual(lines[1], "- 2 green, 1 amber, 1 red of 4")
+
+    def test_no_note_when_unknown_or_met_or_not_green(self):
+        self.assertNotIn("says green", self.block(table()))                       # unknown
+        self.runs()
+        self.pushes()
+        self.assertNotIn("says green", self.block(table()))                       # met
+        self.runs(stale_days=7)
+        self.assertNotIn("says green", self.block(table(uptime="red")))           # not met, hand red
+
+    def test_no_digit_in_any_added_line(self):
+        for setup in (lambda: None, lambda: self.runs(stale_days=7), lambda: self.pushes(briefs=False)):
+            setup()
+            rows = sc.parse(table())
+            for ln in sc.measured_lines(rows, self.measured()):
+                self.assertIsNone(DIGIT.search(ln), ln)
+
+    def test_a_criterion_name_with_digits_is_masked_in_the_note(self):
+        md = HEADER + "| 1 | Loop uptime 95 (of 28 days) | green | synthetic | 1 |\n"
+        m = [{"n": 1, "criterion_words": "loop uptime", "label": "uptime goal not met", "goal": "not met"}]
+        lines = sc.measured_lines(sc.parse(md), m)
+        self.assertEqual(lines[1], "Row Loop uptime # says green but the measurement says not met.")
+
+    def test_statuses_are_never_changed(self):
+        self.runs(stale_days=7)
+        rows = sc.parse(table())
+        before = [dict(r) for r in rows]
+        sc.measured_lines(rows, self.measured())
+        self.assertEqual(rows, before)
+        self.runs()
+        self.pushes()
+        rows = sc.parse(table(uptime="red", delivery="amber"))
+        self.assertIn("- Loop uptime: red", sc.weekly_block(sc.summary(rows), sc.measured_lines(rows, self.measured())))
+
+    def test_without_measured_lines_the_block_is_unchanged(self):
+        summary = sc.summary(sc.parse(table()))
+        self.assertEqual(sc.weekly_block(summary), sc.weekly_block(summary, []))
+        self.assertEqual(sc.weekly_block([], []), "")
+
+    def test_measured_lines_alone_still_make_a_block(self):
+        block = sc.weekly_block([], sc.measured_lines([], self.measured()))
+        self.assertEqual(block.splitlines()[0], sc.WEEKLY_TITLE)
+        self.assertEqual(len(block.splitlines()), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

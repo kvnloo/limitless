@@ -119,17 +119,25 @@ WEEKLY_TITLE = "North star (self-reported)"
 _CLAIM = re.compile(r"(?i)\b(met|achieved)\b")
 
 
-def weekly_block(lines: List[str]) -> str:
-    """The weekly review's titled block: the title, then up to five lines as ``- `` bullets (six lines in
-    all). Self-reported counts are not proof, so the words "met" and "achieved" are struck from every
-    line. Blank lines are skipped; no lines left gives ""."""
-    bullets = []
-    for ln in lines:
-        ln = re.sub(r"\s+", " ", _CLAIM.sub("", ln or ""))
+def _bullets(lines: List[str], strike: bool) -> List[str]:
+    out = []
+    for ln in lines or ():
+        ln = re.sub(r"\s+", " ", _CLAIM.sub("", ln or "") if strike else (ln or ""))
         ln = re.sub(r" ([:,.])", r"\1", ln).strip()
         if ln and ln != ":":
-            bullets.append(f"- {ln}")
-    return "\n".join([WEEKLY_TITLE] + bullets[:MAX_LINES]) if bullets else ""
+            out.append(f"- {ln}")
+    return out
+
+
+def weekly_block(lines: List[str], measured_lines: Optional[List[str]] = None) -> str:
+    """The weekly review's titled block: the title, then up to five lines as ``- `` bullets (six lines in
+    all). Self-reported counts are not proof, so the words "met" and "achieved" are struck from every
+    summary line. ``measured_lines`` (measured_lines(): what the audits measured, and any disagreement note)
+    follow the summary and keep their words; they stay inside the five lines by replacing the lowest-priority
+    summary lines (the last ones). Blank lines are skipped; no lines left gives ""."""
+    extra = _bullets(measured_lines or [], strike=False)[:MAX_LINES]
+    bullets = _bullets(lines, strike=True)[:MAX_LINES - len(extra)] + extra
+    return "\n".join([WEEKLY_TITLE] + bullets) if bullets else ""
 
 
 def path(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> Optional[Path]:
@@ -195,4 +203,27 @@ def measured(state_dir, cfg: Optional[Mapping], now: float, tz: Optional[tzinfo]
         except Exception:  # noqa: BLE001 - a broken log is unknown, never a traceback in the review
             label, goal = UNKNOWN_PREFIX + "the log could not be read", "unknown"
         out.append({"n": n, "criterion_words": words, "label": label, "goal": goal})
+    return out
+
+
+MEASURED_LINE = "Measured: {}: {}"
+DISAGREE_LINE = "Row {} says green but the measurement says not met."
+
+
+def measured_lines(rows: List[dict], measured_rows: List[dict]) -> List[str]:
+    """The weekly block's measured lines, digit-free: "Measured: loop uptime: <label>" and "Measured: delivery:
+    <label>" (at most one each, in that order), each followed by "Row <name> says green but the measurement says
+    not met." when the hand-kept row with that number is green and the audit's goal is not met. Only words:
+    no status is changed here, and code never marks a row green."""
+    hand = {r["n"]: r for r in rows or () if isinstance(r, dict)}
+    out, seen = [], set()
+    for m in measured_rows or ():
+        n = m.get("n") if isinstance(m, dict) else None
+        if n not in (UPTIME_ROW, DELIVERY_ROW) or n in seen:
+            continue
+        seen.add(n)
+        out.append(_DIGITS.sub("#", MEASURED_LINE.format(m.get("criterion_words"), m.get("label"))))
+        row = hand.get(n)
+        if row is not None and row["status"] == "green" and m.get("goal") == "not met":
+            out.append(DISAGREE_LINE.format(_name(row["criterion"])))
     return out
