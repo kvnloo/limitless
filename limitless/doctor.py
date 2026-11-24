@@ -32,7 +32,10 @@ the phone proxy: live when the wearable goal was met, stale when not, missing wh
 file; words only) and, before that, the context packet's row (config context_packet_path: off, live
 when written within STALE_H, else stale; read from the packet's own generated_at), with the voice MIQ's row
 (config voice_miq, its mark voice-miq.json) and the outage recap job's row just before it. Right after the tool rows comes the NOOP MCP row
-(config noop_mcp and t0_tools; the server is never started), then the desktop ActivityWatch's row (config
+(config noop_mcp and t0_tools; the server is never started), then the cron window provider row (config
+window_provider and hermes_agent_dir: off, missing when that Hermes checkout's plugin API has no
+register_window_provider, else live with the window Hermes' cron gate reads now, in words; one file is searched
+as text, Hermes is never imported), then the desktop ActivityWatch's row (config
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
 live, or unknown as status missing; words only, never its value), then the apps lists row (off, or each list
@@ -732,6 +735,69 @@ def noop_mcp_row(cfg: Mapping) -> dict:
     return _row(NOOP_MCP_ROW, "mcp", status, reason)
 
 
+CRON_WINDOW_ROW = "cron window provider"
+HERMES_DIR_KEY = "hermes_agent_dir"   # optional: the Hermes source checkout whose plugin API the row checks
+HOST_FILE = ("hermes_cli", "plugins_context.py")   # where Hermes defines the plugin ctx's methods
+CRON_OFF = "window_provider is off in config"
+CRON_NO_HOOK = "this Hermes has no cron window provider hook"
+CRON_NOT_CHECKED = f"host support not checked (set {HERMES_DIR_KEY})"
+CRON_HOLD = "none, so windowed jobs hold"
+
+
+def _host_has_hook(cfg: Mapping) -> Optional[bool]:
+    """Whether config ``hermes_agent_dir``'s hermes_cli/plugins_context.py defines window_provider.HOST_METHOD: a
+    text search of that one file (a ``def`` at the start of a line), never an import. None when the key is unset
+    or not a string, or the file cannot be read (the dir is missing, not a dir, or holds no such file)."""
+    from . import window_provider as wp
+    d = cfg.get(HERMES_DIR_KEY)
+    if not isinstance(d, str) or not d.strip():
+        return None
+    try:
+        with open(os.path.join(os.path.expanduser(d.strip()), *HOST_FILE), "r", encoding="utf-8",
+                  errors="replace") as f:
+            src = f.read()
+    except (OSError, ValueError):
+        return None
+    return re.search(r"^[ \t]*def[ \t]+" + re.escape(wp.HOST_METHOD) + r"[ \t]*\(", src, re.M) is not None
+
+
+def cron_window_provider_row(cfg: Mapping, now: float, read=None) -> dict:
+    """Whether Hermes' cron gate gets the plugin's window (window_provider.register) and what it reads now: off
+    when window_provider.enabled(cfg) is false; with config ``hermes_agent_dir`` set and its
+    hermes_cli/plugins_context.py readable, missing when that file has no ``def register_window_provider`` (this
+    Hermes cannot take the provider, so register offers nothing), else live with ``the window now is <class>``
+    (window_provider.TO_CRON of the plugin's window word, ``none, so windowed jobs hold`` when it maps to None);
+    with the key unset or unreadable, live with ``host support not checked (set hermes_agent_dir); the window now
+    is <class>``. ``read(now)`` is the window word (default: the window the asks plan reads, from this config's
+    state dir; an error is unknown). Read-only: one file is searched as text, Hermes is never imported or run.
+    Never raises. Words only: never a digit or a path. Kind ``source``: --strict does not count it."""
+    from . import decision_window, window_provider as wp
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    try:
+        on = wp.enabled(dict(cfg))
+    except Exception:  # noqa: BLE001 - config is best effort; the default is on, as register's
+        on = True
+    if not on:
+        return _row(CRON_WINDOW_ROW, "source", OFF, CRON_OFF)
+    hook = _host_has_hook(cfg)
+    if hook is False:
+        return _row(CRON_WINDOW_ROW, "source", MISSING, CRON_NO_HOOK)
+    try:
+        word = read(now) if read is not None else _window_word(cfg, now)
+    except Exception:  # noqa: BLE001 - a failing reader is the unknown window, as WindowProvider.current's
+        word = decision_window.UNKNOWN
+    cls = wp.TO_CRON.get(word) if isinstance(word, str) else None
+    said = f"the window now is {cls if cls is not None else CRON_HOLD}"
+    return _row(CRON_WINDOW_ROW, "source", LIVE, said if hook else f"{CRON_NOT_CHECKED}; {said}")
+
+
+def _window_word(cfg: Mapping, now: float) -> str:
+    """window_provider.read_word over this config's state dir and window bands (the doctor's cfg, not a reload)."""
+    from . import window_provider as wp
+    bands = cfg.get("window_bands")
+    return wp.word(tools.window_state(StateReader(state_path(cfg)), now, bands if isinstance(bands, dict) else None))
+
+
 VOICE_MIQ_ROW = "job voice MIQ"
 _VOICE_MODE_WORDS = {"dry_run": "dry run mode (nothing written)", "write": "write mode"}
 
@@ -1048,8 +1114,9 @@ def report(cfg: Mapping, now: float) -> list:
     (rides_source_row), the local labeler
     (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
-    (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
-    desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
+    (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then whether
+    Hermes' cron gate gets the plugin's window (cron_window_provider_row), then the desktop's ActivityWatch
+    (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
     then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the sender
     ingest job's (sender_ingest_row), then the FIT import's (fit_import_row), then the sender confirmation's (sender_confirm_row), then the voice MIQ's row (voice_miq_row), then the outage recap job's (outage_recap_row) just before the context
@@ -1070,7 +1137,7 @@ def report(cfg: Mapping, now: float) -> list:
              rides_source_row(reader, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
-    rows += [noop_mcp_row(cfg)]
+    rows += [noop_mcp_row(cfg), cron_window_provider_row(cfg, now)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
              sender_ingest_row(reader, cfg, now), fit_import_row(reader, cfg, now), sender_confirm_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
