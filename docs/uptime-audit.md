@@ -49,6 +49,27 @@ grouped by phrase, best first, then the goal:
 - "no input was reported stale" when no input is named at all;
 - goal: "uptime goal met", "uptime goal not met", "uptime goal unknown: too many days without input words".
 
+## Loop gaps: when the loop itself was down
+
+The day-by-day rules above judge whether the inputs were fresh; they do not say whether the sync ran at all.
+When the host goes down (out of memory, a reboot) the runs simply stop. The audit also reads the run times
+themselves, from the rows' own `"at"`:
+
+- The usual spacing is the median spacing between consecutive runs in the window (rows with or without
+  `inputs` alike; a torn line is skipped and counted as above).
+- A gap is two consecutive runs further apart than the limit: config `loop_gap_limit_s` (seconds, above zero),
+  else three times that median spacing. A gap is one "loop down" stretch. No clock time: only the runs'
+  spacing is read, never a time of day.
+- An open gap: the newest run up to now is older than the limit (runs stamped after now are left out).
+- In words, only when the label is known (too few rows keep the `unknown` words unchanged):
+  - an open gap comes first: "the loop has not run for under an hour" / "for hours" / "for over a day";
+  - closed gaps that ended in the last seven local days add one clause before the goal: "the loop stopped once
+    this week for hours", or "the loop stopped a few times this week, the longest for over a day" ("for under
+    an hour", "for hours", "for over a day" is the longest one);
+  - no gap: no clause. No count, no time stamp and no host name is ever said.
+- The gap times and lengths are T0 and stay in the audit dict (`loop`). The words never set a status: the
+  doctor row still follows the uptime goal alone, and the scorecard never sets a status either.
+
 ## Where it shows
 
 - Tool `limitless_uptime`, read-only: `{value: {label}, modality: "measured", age_h, evidence_tier}` with the T1
@@ -86,7 +107,7 @@ then the goal reads unknown or not met rather than met: it errs low, never high.
 
 `python3 -I scripts/uptime_audit_example.py`: four weeks of synthetic rows (six older rows with no `inputs`
 key, a wearable stale for a week, a desktop source stale on and off, a day stale early and fresh later, and two
-days with no run at all), at a fixed clock in UTC. Real output:
+days with no run at all), then hourly runs with a loop that stopped, at a fixed clock in UTC. Real output:
 
 ```text
 # limitless_uptime, no raw opt-in (default window: four weeks, target nineteen days in twenty)
@@ -120,6 +141,11 @@ phone apps, phone unlocks and wearable fresh every day; uptime goal met
 
 # only older rows (no inputs key): unknown, never fresh
 {"value": null, "modality": "measured", "age_h": null, "evidence_tier": "none", "reason": "fewer than a week of sync runs name their stale inputs"}
+
+# a loop that stopped: hourly runs, none for eight hours three days ago and none in the last five hours
+the loop has not run for hours; phone apps, phone unlocks, wearable and desktop AW fresh every day; the loop stopped once this week for hours; uptime goal met
+# the same with config loop_gap_limit_s: eight hours (neither stretch is over it)
+phone apps, phone unlocks, wearable and desktop AW fresh every day; uptime goal met
 
 # runs.jsonl is unchanged: 28 lines
 ```

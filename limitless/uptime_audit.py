@@ -23,7 +23,12 @@ no judged input is stale that day.
 Config: ``uptime_days`` (the window, a whole number of days, default DAYS) and ``uptime_target`` (the share of
 window days that must be every-input-fresh, above zero and at most one, default TARGET). The share is over the
 whole window, so an unknown day counts against the goal, never for it.
-Pure: no clock, no file except read_log, no send. Stdlib only, Python 3.9+.
+Loop gaps (loop_gaps): from the rows' own ``at`` times, a gap is two consecutive runs further apart than config
+``loop_gap_limit_s`` (seconds), else GAP_SPACINGS times the median spacing of the window's runs; it is open when
+the caller's ``now`` is that far past the newest run. The words say an open gap first ("the loop has not run for
+hours") and the closed gaps of the last seven days before the goal ("the loop stopped once this week for
+hours"); never a digit, a time stamp or a host, and never a status.
+Pure: no clock (``now`` is the caller's), no file except read_log, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
