@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from limitless import card, jobs, outage_recap, push_reach, push_sender, sender_reply, tools  # noqa: E402
+from limitless import card, doctor, jobs, outage_recap, push_reach, push_sender, sender_reply, tools  # noqa: E402
 from limitless import outage_recap_job as recap_job  # noqa: E402
 from limitless import sender_confirm_job as confirm_job  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
@@ -344,6 +344,47 @@ class Recovery(unittest.TestCase):
         lines, calls, changed, rows = self.run_pass()
         self.assertEqual((calls, changed, rows), ([], [], []))
         self.assertOutageShown(False)
+
+    # -- limitless-doctor's "push recovery" row at each pass -----------------------------------------------------
+
+    def recovery(self):
+        """The doctor's push recovery row as (status, reason), read-only: the state dir is unchanged by it."""
+        before = {p.name: p.read_bytes() for p in self.st.iterdir() if p.is_file()}
+        r = doctor.push_recovery_row(StateReader(self.st), self.cfg, time.time())
+        self.assertEqual({p.name: p.read_bytes() for p in self.st.iterdir() if p.is_file()}, before)
+        self.assertEqual((r["name"], r["kind"]), (doctor.PUSH_RECOVERY_ROW, "source"))
+        self.assertIsNone(re.search(r"\d", r["reason"]), r)
+        self.assertNotIn(GOOD, r["reason"])
+        return r["status"], r["reason"]
+
+    def test_the_doctor_row_names_the_stage_at_each_pass(self):
+        waiting = (doctor.MISSING, "pushes are failing; waiting for a sender reply")
+        self.assertEqual(self.recovery(), waiting)
+        self.run_pass()                                  # pass 0: no reply yet
+        self.assertEqual(self.recovery(), waiting)
+        self.owner_says(f"push via {GOOD}", self.t0 - 150)
+        self.sync(self.t0 - 120)
+        self.assertEqual(self.recovery(), waiting)       # the reply is in, not applied yet
+        self.run_pass()                                  # pass 1: sender set, confirmation delivered, recap waits
+        self.assertEqual(self.recovery(), (doctor.STALE, "pushes are back; the recap waits for the next pass"))
+        self.run_pass()                                  # pass 2: the recap goes out
+        self.assertEqual(self.recovery(), (doctor.LIVE, "pushes are back; recap sent"))
+        self.sync(self.t0 - 60)
+        self.run_pass()                                  # pass 3: nothing more
+        self.assertEqual(self.recovery(), (doctor.LIVE, "pushes are back; recap sent"))
+
+    def test_the_doctor_row_says_sleep_mode_held_the_confirmation(self):
+        self.sleep_mode(True, self.t0 - 4 * H)
+        self.owner_says(f"push via {GOOD}", self.t0 - 150)
+        self.sync(self.t0 - 120)
+        self.run_pass()                                  # held
+        self.assertEqual(self.recovery(), (doctor.STALE, "sender set from your reply; the confirmation has not been "
+                                                         "delivered yet (held while Sleep mode was on)"))
+        self.sleep_mode(False, self.t0 - 30)
+        self.run_pass()                                  # delivered; the recap waits a pass
+        self.assertEqual(self.recovery(), (doctor.STALE, "pushes are back; the recap waits for the next pass"))
+        self.run_pass()
+        self.assertEqual(self.recovery(), (doctor.LIVE, "pushes are back; recap sent"))
 
 
 if __name__ == "__main__":

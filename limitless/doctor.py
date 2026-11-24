@@ -11,7 +11,10 @@ never setting the status), the delivery row
 stale when not, missing when unknown; kind source, words only), the push sender row (whether kevin-push's
 Hermes profile can reach Telegram, push_sender.readiness: live when ready, missing when the profile does not
 exist, has no Telegram bot token or no chat, or it cannot be told; hermes is never run and no secret value is
-read; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
+read; kind source, words only), the push recovery row (push_recovery.from_state: where a push-outage recovery
+stands, from kevin-push's log, push-sender.json and the sender confirm and outage recap marks: no outage, waiting
+for a sender reply, the confirmation not delivered yet, the recap waiting, or recap sent / settled; missing with
+no push log; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
 kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
 or unknown; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
@@ -206,6 +209,22 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
     words = push_sender.readiness(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
                                   hermes_home)
     return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.READY else MISSING, words)
+
+
+PUSH_RECOVERY_ROW = "push recovery"
+
+
+def push_recovery_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
+    """Where a push-outage recovery stands (push_recovery.from_state over kevin-push's log, config ``push_log``,
+    push-sender.json, sender-confirm.json and outage-recap.json): live with no outage, or once the recap was sent
+    or settled; missing while pushes fail and no sender reply came, or with no push log (``unknown: ...``); stale
+    while the reply's confirmation is not delivered yet (held while Sleep mode was on, failed to send, not sent
+    yet) or pushes are back and the recap waits (or is off, or in dry run mode). Words only: never a digit, a
+    path or the profile name. Read-only: writes nothing, sends nothing. Kind ``source``: --strict does not count
+    it."""
+    from . import push_recovery
+    status, words = push_recovery.from_state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now)
+    return _row(PUSH_RECOVERY_ROW, "source", status, words)
 
 
 SLEEP_MODE_ROW = "Sleep mode"
@@ -827,7 +846,8 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), north-star row
-    two (delivery_row), kevin-push's sender profile (push_sender_row), phone Sleep mode as kevin-push's hold
+    two (delivery_row), kevin-push's sender profile (push_sender_row), where a push-outage recovery stands
+    (push_recovery_row), phone Sleep mode as kevin-push's hold
     reads it (sleep_mode_row), the local labeler (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
@@ -847,7 +867,7 @@ def report(cfg: Mapping, now: float) -> list:
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
-             sleep_mode_row(cfg, now), local_labeler_row(cfg)]
+             push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
