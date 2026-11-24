@@ -16,6 +16,9 @@ only, atomic, 0600), whose ``refused_at`` keeps the newest refused reply until a
 push outage is open, ``refusal_words`` says so for the doctor's row (push_recovery.REFUSED), and whose
 ``applied_unknown`` (a boolean, kept only while true) records that the applied reply's readiness was an unknown:
 if its confirmation then fails to send, push_recovery.UNKNOWN_FAILED says the profile may have no Telegram bot.
+The same messages go to restore_reply.ingest: a whole ``restore <name>`` naming the current sender while Hermes
+has it deleted (push_sender.tombstoned) is recorded in ``restore-request.json`` in write mode (dry run: nothing is
+written) and the row says so; the restore itself is the operator's, never the job's.
 
 Reasons are words only: never the profile name, a message or a digit. When ``$KEVIN_PUSH_PROFILE`` is set in the
 env the job sees, the row says that it still wins (push_sender.profile's order). Nothing is pushed or logged as
@@ -27,7 +30,7 @@ import os
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import habit_replies as _habit_replies, jobs, push_sender, sender_reply as _sr
+from . import habit_replies as _habit_replies, jobs, push_sender, restore_reply as _rr, sender_reply as _sr
 from .state_reader import StateReader, config
 
 TITLE = jobs.SENDER_INGEST.send_title           # "Sender ingest": the job's row name in limitless-jobs
@@ -56,8 +59,12 @@ def run_ingest(state_dir, db, row_at: Optional[float], now: float, mode: str,
     word, ``after`` (moved only by a write pass that read messages; else kept), ``refused_at`` (set by a
     refusal, cleared by an applied reply, else kept) and ``applied_unknown`` (set by a write of a reply whose
     readiness was unknown, cleared by any other write, else kept). Returns (mark, ingest result). Sends nothing."""
-    replies = _habit_replies.replies_from_hermes_db(db, _sr.read_after(state_dir, now))
+    read_after = _sr.read_after(state_dir, now)
+    replies = list(_habit_replies.replies_from_hermes_db(db, read_after) or ())
     got = _sr.ingest(state_dir, replies, now, write=mode == jobs.SENDER_WRITE, env=env, cfg=cfg)
+    # the same owner messages: a whole "restore <name>" for the deleted sender is only recorded (restore_reply)
+    got["restore"] = _rr.ingest(state_dir, replies, now, read_after, write=mode == jobs.SENDER_WRITE,
+                                cfg=cfg, env=env)["action"]
     after = got["after"] if got["after"] is not None else _sr.load_mark(state_dir).get("after")
     if got["action"] in _sr.REFUSALS:
         refused = got["refused_at"]
@@ -95,6 +102,8 @@ def run(state_dir, now: float, dry_run: bool = True, env: Optional[Mapping[str, 
         return {"job": TITLE, "action": jobs.HOLD,
                 "reason": f"{v.reason}; a file was not written ({type(e).__name__}); the next run tries again"}
     reason = f"{v.reason}; {said(mark['action'])}" if got["action"] != _sr.UNKNOWN else f"{v.reason}; {got['reason']}"
+    if got.get("restore") in _rr.SAID:
+        reason += f"; {_rr.SAID[got['restore']]}"
     if env_wins(env):
         reason += f"; {ENV_WINS}"
     return {"job": TITLE, "action": v.action, "reason": reason}

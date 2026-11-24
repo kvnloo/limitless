@@ -296,8 +296,10 @@ def push_recovery_row(reader: StateReader, cfg: Mapping, now: float, env: Option
     path; while pushes fail and the owner's last reply named a profile that cannot reach Telegram
     (sender_reply.refused_at), missing with push_recovery.REFUSED. Those two reply stages end with the profiles
     the owner can name (push_sender.candidates over ``env``, default os.environ, or ``hermes_home``), the only
-    names this row holds. Read-only: writes nothing, sends nothing. Kind ``source``: --strict does not count
-    it."""
+    names this row holds. While the sender Hermes deleted is still tombstoned and the owner's ``restore <name>``
+    for it is on file since the outage began (push_recovery.restore_asked), the waiting words end with
+    push_recovery.RESTORE_ASKED ("; a restore was asked") instead. Read-only: writes nothing, sends nothing.
+    Kind ``source``: --strict does not count it."""
     from . import push_recovery
     status, words = push_recovery.from_state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now,
                                              env=env, hermes_home=hermes_home)

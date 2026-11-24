@@ -30,7 +30,10 @@ names several, and REPLY_ANY asks for a profile with a Telegram bot when none is
 ``unknown: ...``, is never offered as sure). The sender that is failing is never offered, and neither is a name
 with a digit (only owner-chosen profile names that Hermes resolves, PROFILE_ID: no path, no host). When the sender
 was deleted (push_sender.tombstoned) the hint first asks to restore it: RESTORE_ONE with its name, RESTORE_ANY when
-the name holds a digit, then OR_ONE / OR_SOME with any ready profile.
+the name holds a digit, then OR_ONE / OR_SOME with any ready profile. Once the owner replied ``restore <name>`` and
+the sender ingest recorded it (restore_reply: ``restore-request.json`` at or after the outage began, the sender still
+tombstoned) the hint is RESTORE_ASKED alone: the restore is the operator's, the plugin never does it. When the
+profile is live again the request is stale and every word is as before.
 """
 from __future__ import annotations
 
@@ -57,7 +60,9 @@ REPLY_ANY = "Reply with a profile that has a Telegram bot."
 RESTORE_ONE = "Reply restore {} to bring it back."             # the deleted sender's name holds no digit
 RESTORE_ANY = "Restore the deleted sender profile to bring it back."
 OR_ONE, OR_SOME = " or reply push via {}.", " or reply push via one of: {}."   # a ready profile after restore
-_MARKS = (_sender.REPLY_FILE, "push-sender-ingest.json", "sender-confirm.json")   # what push_recovery reads
+RESTORE_ASKED = "Restore asked; it will be done by the operator."   # the owner's restore reply is on file
+# what push_recovery reads (restore-request.json: restore_reply.REQUEST_FILE)
+_MARKS = (_sender.REPLY_FILE, "push-sender-ingest.json", "sender-confirm.json", "restore-request.json")
 
 
 def _cfg(cfg) -> Mapping:
@@ -109,12 +114,19 @@ def _reply_due(state_dir, rows, cfg: Mapping) -> bool:
         or words.startswith((push_recovery.WAITING_REPLY, push_recovery.REFUSED)))
 
 
+def _restore_asked(state_dir, rows, cfg: Mapping, env, hermes_home) -> bool:
+    """push_recovery.restore_asked over these log rows: the owner's restore reply for the deleted sender is on file."""
+    from . import push_recovery     # late, as in _no_bot
+    return push_recovery.restore_asked(state_dir, rows, cfg, env, hermes_home)
+
+
 def hint(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = None,
          hermes_home=None) -> Optional[str]:
     """The reply that fixes an open push outage while the owner's reply is due (``_reply_due``): REPLY_ONE with
     the one ready profile, REPLY_SOME with several, else REPLY_ANY; None when no reply is due or nothing can be
     told. When push_sender.tombstoned (Hermes deleted the sender) RESTORE_ONE with its name comes first (RESTORE_ANY
-    for a name with a digit), and a ready profile is still offered after it (OR_ONE / OR_SOME). Ready is
+    for a name with a digit), and a ready profile is still offered after it (OR_ONE / OR_SOME); once the owner's
+    ``restore <name>`` is on file for this outage (push_recovery.restore_asked) only RESTORE_ASKED. Ready is
     push_sender.candidates' READY over the Hermes home of ``env`` (or ``hermes_home``); the current
     sender and any name with a digit are left out. Read-only; never raises."""
     cfg = _cfg(cfg)
@@ -133,6 +145,8 @@ def hint(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = N
     except Exception:  # noqa: BLE001
         ready = []
     if current is not None and _sender.tombstoned(cfg, env, hermes_home):
+        if _restore_asked(state_dir, got[0], cfg, env, hermes_home):
+            return RESTORE_ASKED
         restore = RESTORE_ANY if re.search(r"\d", current) else RESTORE_ONE.format(current)
         if not ready:
             return restore
@@ -167,9 +181,9 @@ def _mtime(path) -> Optional[int]:
 def key(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = None) -> tuple:
     """What ``reason`` depends on, from stats alone: push_sender.check's words (directory checks only), the
     push log's mtime and the mtimes of the reply and mark files push_recovery reads (push-sender.json, the sender
-    ingest and sender confirm marks), and the mtime of the Hermes home's ``profiles`` dir (a profile added or
-    removed changes ``hint``) and of its ``profiles/.deleted`` dir (a tombstone added or restored changes ``reason``
-    and ``hint``). The card caches its line under this (and the day), so a turn opens no extra file."""
+    ingest and sender confirm marks, restore-request.json), and the mtime of the Hermes home's ``profiles`` dir
+    (a profile added or removed changes ``hint``) and of its ``profiles/.deleted`` dir (a tombstone added or
+    restored changes ``reason`` and ``hint``). The card caches its line under this (and the day), so a turn opens no extra file."""
     cfg = _cfg(cfg)
     try:
         words = _sender.check(cfg, env)
