@@ -42,7 +42,8 @@ def misses(rows, wake_days, **kw):
 
 class FixedList(unittest.TestCase):
     def test_the_reasons_are_the_fixed_list(self):
-        self.assertEqual(da.MISS_REASONS, (SLEEP, da.MISS_LEFT_ON, QUIET, REPEAT, GATE, LOGGED, NONE, UNKNOWN))
+        self.assertEqual(da.MISS_REASONS, (SLEEP, da.MISS_LEFT_ON, QUIET, REPEAT, GATE, da.MISS_NO_SENDER, LOGGED,
+                                           NONE, UNKNOWN))
 
     def test_no_reason_has_a_digit(self):
         for r in da.MISS_REASONS:
@@ -177,13 +178,14 @@ class Words(unittest.TestCase):
 
     def test_labels_never_hold_a_digit_a_date_or_a_clock_time(self):
         rows = [brief(n, h) for n, h in enumerate(["held (sleep mode)", "log (quiet: on)", "log (duplicate)",
-                                                   "log (daily cap)", "log (telegram rc=2)", "odd"])] + [row(6)]
-        rows.append(brief(7, "held (sleep mode)"))      # held in an activation the poller closed as left on
-        on, off = brief(7, hour=1)["at"], brief(7, hour=9)["at"]
+                                                   "log (daily cap)", "log (telegram rc=2)", "odd",
+                                                   "log (no sender profile)"])] + [row(7)]
+        rows.append(brief(8, "held (sleep mode)"))      # held in an activation the poller closed as left on
+        on, off = brief(8, hour=1)["at"], brief(8, hour=9)["at"]
         sleep = [(on, {"at": on, "on": True, "rule": "rule-a"}),
                  (off, {"at": off, "on": False, "inferred": "Sleep left on, owner up", "left_on": "rule-a"})]
-        out = misses(rows, wake(*range(8)), sleep=sleep)
-        self.assertEqual(out["missed"], 8)
+        out = misses(rows, wake(*range(9)), sleep=sleep)
+        self.assertEqual(out["missed"], 9)
         for label in (out["label"], da.MISSES_NONE, da.MISSES_UNKNOWN):
             self.assertFalse(any(c.isdigit() for c in label), label)
             self.assertNotIn(":0", label)

@@ -11,7 +11,8 @@ The log is the one bin/kevin-push appends, one row per call, and this module nev
 - ``at``: the local day of the row (``tz``; default this machine's zone, like jobs_runner).
 - ``how``: ``"telegram"`` only when the transport returned 0 (a real delivery; jobs_runner.DELIVERED is the
   same word). Every other value ("log", "folded (brief line)", "held (sleep mode)", "log (duplicate)",
-  "log (daily cap)", "log (dropped)", "log (quiet: ...)", "log (telegram rc=N)") is not a delivery.
+  "log (daily cap)", "log (dropped)", "log (quiet: ...)", "log (telegram rc=N)", "log (no sender profile)") is
+  not a delivery.
 - ``title``: the wake brief is the row titled jobs.WAKE_BRIEF.send_title (the title bin/limitless-brief and
   limitless-jobs send it under).
 - ``body``: for a delivery, the text as it went out (after message_shape.fit), cut to LOG_BODY_CHARS.
@@ -44,10 +45,12 @@ Missed briefs (``brief_misses``, the audit's ``misses``): for each known wake da
 brief, one reason from MISS_REASONS, decided only from that day's brief rows (precedence MISS_ORDER; no brief
 row is MISS_NONE). A Sleep hold is MISS_LEFT_ON when sleepmode.jsonl (``sleep_rows``) shows the poller later
 closed that activation as left on. Counts per reason are T0; the label is words only; ``miss_clause`` words the
-most common reason for the tool and the doctor when the goal is not met.
+most common reason for the tool and the doctor when the goal is not met. A brief kevin-push did not start
+hermes for because its sender profile does not exist (``log (no sender profile)``) is MISS_NO_SENDER.
 Send failures (the audit's ``send_failures``, T0): SEND_FAIL_RUN or more transport failures (``how`` starting
-``log (telegram rc=``) in a row as the window's last transport attempts are worded SEND_FAILING ("the last
-pushes failed to send", no count) and make the goal not met. See docs/delivery-audit.md.
+``log (telegram rc=``, or ``log (no sender profile)``) in a row as the window's last transport attempts are
+worded SEND_FAILING ("the last pushes failed to send", no count) and make the goal not met. See
+docs/delivery-audit.md.
 Pure: no clock, no file except read_log, sleep_rows and signals, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -60,7 +63,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
-from . import jobs, message_shape, quiet, send_gate
+from . import jobs, message_shape, push_sender, quiet, send_gate
 
 DELIVERED = "telegram"           # bin/kevin-push's ``how`` for a real delivery (rc 0); jobs_runner.DELIVERED
 WAKE_TITLE = jobs.WAKE_BRIEF.send_title
@@ -254,26 +257,34 @@ def stop_request(text) -> bool:
 MISS_SLEEP, MISS_QUIET = "held while Sleep mode was on", "held by the quiet setting"
 MISS_LEFT_ON = "held while Sleep mode was left on"   # a Sleep hold in an activation later closed as left on
 MISS_REPEAT, MISS_GATE = "stopped as a repeat", "refused by the send gate"
+MISS_NO_SENDER = "not sent: the sender profile is missing"   # kevin-push started no hermes (push_sender BROKEN)
 MISS_LOGGED, MISS_NONE, MISS_UNKNOWN = "logged but not sent", "no brief attempt on that day", "unknown"
-MISS_REASONS = (MISS_SLEEP, MISS_LEFT_ON, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_NONE, MISS_UNKNOWN)
+MISS_REASONS = (MISS_SLEEP, MISS_LEFT_ON, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_NO_SENDER, MISS_LOGGED, MISS_NONE,
+                MISS_UNKNOWN)
 # Precedence when a day has several brief rows and none delivered: the first of these that any of them has.
 # The cause that stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the event for a
 # retry that the gate then stops as a repeat, refuses (cap) or only logs, so those come after it. A day with
 # no brief row at all is MISS_NONE; a brief row whose ``how`` is none of the known words is MISS_UNKNOWN.
 # A Sleep hold is MISS_LEFT_ON only when sleepmode.jsonl shows its activation closed by a ``left_on`` row; a day
 # with a hold in a real night as well keeps MISS_SLEEP.
-MISS_ORDER = (MISS_SLEEP, MISS_LEFT_ON, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_UNKNOWN)
+# MISS_NO_SENDER sits right before MISS_LOGGED: both are send verdicts that did not reach the phone, so the causes
+# that stopped an attempt before the transport still come first; of the two it is the one with a known cause (the
+# sender profile is gone), while MISS_LOGGED also holds a bare ``telegram rc=N`` whose cause the log does not say,
+# and a retry of a brief whose sender is missing can only fail the same way.
+MISS_ORDER = (MISS_SLEEP, MISS_LEFT_ON, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_NO_SENDER, MISS_LOGGED, MISS_UNKNOWN)
 MISSES_PREFIX, MISSES_NONE = "missed wake briefs: ", "no wake brief was missed"
 MISSES_UNKNOWN = MISSES_PREFIX + "unknown"
 MISS_CLAUSE = "most common miss: {}"
 _MISS_EXACT = {"held (sleep mode)": MISS_SLEEP, "log (duplicate)": MISS_REPEAT,
                f"log ({send_gate.ONCE_DROP})": MISS_REPEAT, "log (daily cap)": MISS_GATE,
-               "log (dropped)": MISS_GATE, "log": MISS_LOGGED, "folded (brief line)": MISS_LOGGED}
+               "log (dropped)": MISS_GATE, "log": MISS_LOGGED, "folded (brief line)": MISS_LOGGED,
+               push_sender.NO_SENDER_HOW: MISS_NO_SENDER}
 
 
 def miss_reason(how) -> str:
     """The MISS_REASONS word for one undelivered brief row's ``how`` (bin/kevin-push's HOW, the quiet drop
-    ``log (quiet: ...)`` and a failed transport ``log (telegram rc=N)``); MISS_UNKNOWN for anything else."""
+    ``log (quiet: ...)``, a failed transport ``log (telegram rc=N)`` and ``log (no sender profile)``);
+    MISS_UNKNOWN for anything else."""
     if not isinstance(how, str):
         return MISS_UNKNOWN
     if how in _MISS_EXACT:
@@ -373,18 +384,21 @@ def miss_clause(a: Optional[dict]) -> str:
 
 MUTING = (quiet.OFF, quiet.TONIGHT, quiet.SNOOZED)
 
-# A transport failure is kevin-push's ``log (telegram rc=N)``: hermes ran and returned non-zero (a removed sender
-# profile fails every send this way). SEND_FAIL_RUN or more of them in a row as the last transport attempts of
-# the window (rows that never reached the transport are skipped) is worded SEND_FAILING and is never met.
+# A transport failure is kevin-push's ``log (telegram rc=N)`` (hermes ran and returned non-zero) or its
+# ``log (no sender profile)`` (a send verdict for which it started no hermes: push_sender.check said the sender
+# profile does not exist). SEND_FAIL_RUN or more of them in a row as the last transport attempts of the window
+# (rows that never reached the transport are skipped) is worded SEND_FAILING and is never met.
 SEND_FAIL_PREFIX = "log (telegram rc="
+NO_SENDER = push_sender.NO_SENDER_HOW
 SEND_FAIL_RUN = 2
 SEND_FAILING = "the last pushes failed to send"
 
 
 def send_failed(r: dict) -> bool:
-    """True for a row whose send reached hermes and failed (``how`` starts ``log (telegram rc=``)."""
+    """True for a row whose send failed: it reached hermes and failed (``how`` starts ``log (telegram rc=``), or
+    kevin-push started no hermes because the sender profile is missing (``log (no sender profile)``)."""
     how = r.get("how")
-    return isinstance(how, str) and how.startswith(SEND_FAIL_PREFIX)
+    return isinstance(how, str) and (how.startswith(SEND_FAIL_PREFIX) or how == NO_SENDER)
 
 
 def _send_failures(rows: list) -> dict:

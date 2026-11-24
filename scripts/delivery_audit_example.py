@@ -7,7 +7,9 @@ week review line, then the complaints: unknown with no Hermes DB set, then from 
 synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row). Then why the wake briefs of a
 second synthetic week were missed (delivery_audit.brief_misses), one reason a missed wake day, and the same
 week again with a synthetic sleepmode.jsonl whose last activation the poller closed as left on. Last, the
-first week followed by two failed sends ("log (telegram rc=1)"): "the last pushes failed to send".
+first week followed by two failed sends ("log (telegram rc=1)"): "the last pushes failed to send". Then the first
+week followed by a day on which kevin-push's sender profile was gone, so it started no hermes and logged
+"log (no sender profile)": "not sent: the sender profile is missing".
 """
 import json
 import sqlite3
@@ -169,5 +171,30 @@ with tempfile.TemporaryDirectory() as tmp:
     print("\n# the last pushes failed to send: words only, the counts with the raw opt-in")
     print(json.dumps(tools.delivery(reader, NOW, env=env, home=root, tz=UTC)["label"]["label"]))
     print(json.dumps(tools.delivery(reader, NOW, raw=True, env=env, home=root, tz=UTC)["value"]["send_failures"]))
+    r = doctor.delivery_row(reader, json.loads(cfg.read_text()), NOW, env, root, UTC)
+    print(f"{r['name']}: {r['status']}: {r['reason']}")
+
+# A fourth synthetic log: the first week, then a wake day on which kevin-push's Hermes sender profile was gone, so
+# push_sender.check said it cannot exist and kevin-push started no hermes: each send is "log (no sender profile)".
+NO_SENDER = "log (no sender profile)"
+GONE = ROWS + [push(0, 7, BRIEF, f"Good morning.\n{WHY}", how=NO_SENDER, tag="limitless", cls="report"),
+               push(0, 9, "Pick one", "Keep the loop?\nReply: Yes / No", how=NO_SENDER)]
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    st = root / "state"
+    st.mkdir()
+    (st / "push-log.jsonl").write_text("".join(json.dumps(r) + "\n" for r in GONE))
+    (st / "events.jsonl").write_text("".join(json.dumps({"event": "wake", "at": w}) + "\n"
+                                             for w in WAKES + [at(0, 6)]))
+    cfg = root / "config.json"
+    cfg.write_text(json.dumps({"push_log": "push-log.jsonl"}))
+    env = {"LIMITLESS_CONFIG": str(cfg)}
+    reader = StateReader(st)
+    print("\n# the sender profile was missing: no hermes was started, the brief is its own miss reason")
+    print(json.dumps(tools.delivery(reader, NOW, env=env, home=root, tz=UTC)["label"]["label"]))
+    v = tools.delivery(reader, NOW, raw=True, env=env, home=root, tz=UTC)["value"]
+    print(v["misses"]["label"])
+    print(json.dumps(v["misses"]["days"]))
+    print(json.dumps(v["send_failures"]))
     r = doctor.delivery_row(reader, json.loads(cfg.read_text()), NOW, env, root, UTC)
     print(f"{r['name']}: {r['status']}: {r['reason']}")

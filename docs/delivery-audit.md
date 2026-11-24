@@ -16,7 +16,9 @@ sends nothing and starts nothing.
 - `"how"`: `"telegram"` only when the transport returned success: a real delivery (`jobs_runner.DELIVERED`
   is the same word). Every other value is not a delivery and never counts: `"log"` (report only),
   `"folded (brief line)"`, `"held (sleep mode)"`, `"log (duplicate)"`, `"log (daily cap)"`,
-  `"log (dropped)"`, `"log (already sent for this event)"`, `"log (quiet: ...)"`, `"log (telegram rc=N)"`.
+  `"log (dropped)"`, `"log (already sent for this event)"`, `"log (quiet: ...)"`, `"log (telegram rc=N)"`,
+  `"log (no sender profile)"` (kevin-push started no hermes: `push_sender.check` said its sender profile does
+  not exist).
 - `"title"`: the wake brief is the row titled `Wake-up brief` (`jobs.WAKE_BRIEF.send_title`, the title both
   `bin/limitless-brief` and `limitless-jobs` send it under).
 - `"body"`: for a delivery, the text as it went out (after `message_shape.fit`), cut to its first 2000
@@ -41,9 +43,10 @@ A brief is matched to a wake day by its local date.
   the first line) is message_shape's reply line: a `Reply: A / B` choices line or a line with the word reply.
   A body that may have been cut by the log (2000 characters or more) is unknown, not "no reply line".
 - Bad lines (not JSON, not an object, no numeric `"at"`, no string `"how"`) are skipped and counted.
-- Send failures: a row whose `"how"` starts `"log (telegram rc="` reached hermes and failed (every send fails
-  this way once kevin-push's Hermes profile is gone; `limitless-doctor`'s `push sender` row says so before a
-  send). Taken in time order over the window, only the rows that reached the transport (delivered or failed),
+- Send failures: a row whose `"how"` starts `"log (telegram rc="` reached hermes and failed, and a row whose
+  `"how"` is `"log (no sender profile)"` is a send kevin-push did not start because its Hermes sender profile
+  does not exist (it checks with `push_sender.check`, files only, before each send; `limitless-doctor`'s `push
+  sender` row says the same). Both are transport failures here. Taken in time order over the window, only the rows that reached the transport (delivered or failed),
   `SEND_FAIL_RUN` (two) or more failures in a row as the last of them mean the last pushes failed to send. One
   failure followed by a delivery, or a single trailing failure, does not. The counts (`send_failures`:
   `failed`, `trailing`, `failing`) are T0.
@@ -88,6 +91,7 @@ is guessed from another day.
 | held by the quiet setting | `"log (quiet: ...)"` |
 | stopped as a repeat | `"log (duplicate)"`, `"log (already sent for this event)"` |
 | refused by the send gate | `"log (daily cap)"`, `"log (dropped)"` |
+| not sent: the sender profile is missing | `"log (no sender profile)"` (kevin-push started no hermes: its sender profile does not exist) |
 | logged but not sent | `"log"`, `"folded (brief line)"`, `"log (telegram rc=N)"` (the transport failed) |
 | no brief attempt on that day | the day has rows, but none titled `Wake-up brief` |
 | unknown | a brief row whose `"how"` is none of the words above |
@@ -107,8 +111,12 @@ is guessed from another day.
   line carries no reason, so it does not.
 - Order of precedence (`MISS_ORDER`) when a day has several brief rows and none was delivered: held while
   Sleep mode was on, held while Sleep mode was left on, held by the quiet setting, stopped as a repeat, refused
-  by the send gate, logged but not sent, unknown. The cause that stopped the first attempt comes first: a Sleep
-  hold or a quiet drop leaves the event to a retry that the gate then stops as a repeat, refuses or only logs.
+  by the send gate, not sent: the sender profile is missing, logged but not sent, unknown. The cause that
+  stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the event to a retry that the gate
+  then stops as a repeat, refuses or only logs. A missing sender profile comes right before logged but not
+  sent: both are sends that did not reach the phone, so the causes that stopped an attempt earlier still win,
+  but it names its cause while `"log (telegram rc=N)"` does not, and every retry of that day fails the same
+  way until the owner sets a sender (kevin-push never picks another profile).
   A day with a hold in a real night and another in a Sleep mode left on keeps the first. Row order does not
   matter.
 - A wake day with no row at all is unknown, not zero, and never counted as missed (`unknown_wake_days`), as
@@ -166,7 +174,8 @@ A relative `push_log` or `hermes_db` is in the limitless state dir. There is no 
 `python3 -I scripts/delivery_audit_example.py` (synthetic rows in kevin-push's shape, three synthetic wake
 events, then a synthetic session DB and a synthetic `quiet.json`, a fixed clock, UTC, a temporary state dir;
 then a second synthetic week for `brief_misses`, and that week again with a synthetic `sleepmode.jsonl` whose
-last activation the poller closed as left on; last the first week plus two failed sends; nothing sent):
+last activation the poller closed as left on; then the first week plus two failed sends; last the first week
+plus a wake day on which the sender profile was missing; nothing sent):
 
 ```text
 # no push log set
@@ -186,7 +195,7 @@ last activation the poller closed as left on; last the first week plus two faile
 {"day": "2033-05-18", "rows": 0, "delivered": null, "over_cap": null, "wake_day": false, "brief": null, "no_action": 0, "action_unknown": 0}
 {"delivered": 4, "known_days": 3, "cap": 6, "over_cap_days": [], "no_action": 2, "action_unknown": 0, "skipped": 1}
 {"wake_days": 3, "brief_delivered": 2, "unknown_wake_days": 0, "brief_share": 0.6666666666666666}
-{"known": true, "missed": 1, "reasons": {"held while Sleep mode was on": 1, "held while Sleep mode was left on": 0, "held by the quiet setting": 0, "stopped as a repeat": 0, "refused by the send gate": 0, "logged but not sent": 0, "no brief attempt on that day": 0, "unknown": 0}, "days": {"2033-05-15": "held while Sleep mode was on"}, "unknown_wake_days": 0, "top": "held while Sleep mode was on", "label": "missed wake briefs: held while Sleep mode was on (all)"}
+{"known": true, "missed": 1, "reasons": {"held while Sleep mode was on": 1, "held while Sleep mode was left on": 0, "held by the quiet setting": 0, "stopped as a repeat": 0, "refused by the send gate": 0, "not sent: the sender profile is missing": 0, "logged but not sent": 0, "no brief attempt on that day": 0, "unknown": 0}, "days": {"2033-05-15": "held while Sleep mode was on"}, "unknown_wake_days": 0, "top": "held while Sleep mode was on", "label": "missed wake briefs: held while Sleep mode was on (all)"}
 
 # week review line
 Pushes: within the push limit on every logged day; brief reached you on most wake days; some pushes had no reply line.
@@ -218,6 +227,13 @@ missed wake briefs: held while Sleep mode was on (some), held while Sleep mode w
 "within the push limit on every logged day; the last pushes failed to send; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on"
 {"failed": 2, "trailing": 2, "failing": true}
 delivery: stale: within the push limit on every logged day; the last pushes failed to send; brief reached you on most wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on
+
+# the sender profile was missing: no hermes was started, the brief is its own miss reason
+"within the push limit on every logged day; the last pushes failed to send; brief reached you on some wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on"
+missed wake briefs: held while Sleep mode was on (some), not sent: the sender profile is missing (some)
+{"2033-05-15": "held while Sleep mode was on", "2033-05-18": "not sent: the sender profile is missing"}
+{"failed": 2, "trailing": 2, "failing": true}
+delivery: stale: within the push limit on every logged day; the last pushes failed to send; brief reached you on some wake days; some pushes had no reply line; complaints: unknown, no Hermes DB set (config hermes_db), so replies cannot be read; most common miss: held while Sleep mode was on
 ```
 
 On the fifteenth the brief was held by Sleep mode, so that wake day counts as not reached: two of three wake
@@ -239,3 +255,10 @@ In the third log, the first week's rows are followed on the eighteenth by two pu
 (`log (telegram rc=1)`), with a report-only `log` row between them that never reached the transport. The last
 two transport attempts failed, so the label says "the last pushes failed to send" (no count; the counts are
 under `send_failures` with the raw opt-in) and the doctor's row is stale.
+
+In the fourth log, the first week's rows are followed on the eighteenth, a wake day, by the brief and a "Pick
+one" push that kevin-push logged `log (no sender profile)`: its Hermes sender profile did not exist, so it
+started no hermes. The brief's miss is "not sent: the sender profile is missing" (not "logged but not sent"),
+and the two rows are the last transport attempts, so the label says "the last pushes failed to send" as for
+a failed transport. The most common miss is a tie with the Sleep hold on the fifteenth, which goes to the
+reason higher in the list.
