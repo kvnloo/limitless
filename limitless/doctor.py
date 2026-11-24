@@ -162,17 +162,19 @@ def delivery_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Ma
     """North-star row two as the scorecard measures it (scorecard._delivery_measured: the delivery audit of
     kevin-push's log, config push_log, with the complaints from the Hermes DB, config hermes_db, and
     quiet.json): off when no push log is set; live when the goal is met, stale when it is not, missing when it is
-    unknown (complaints unknown included). The reason is the audit's T1 words, never a count or a reply. Kind
-    ``source``: --strict does not count it. Read-only."""
+    unknown (complaints unknown included). The reason is the audit's T1 words, never a count or a reply; when
+    the goal is not met and a wake brief was missed it ends with the most common miss reason
+    (delivery_audit.miss_clause). Kind ``source``: --strict does not count it. Read-only."""
     from . import delivery_audit as da, scorecard
     try:
-        label, goal, _ = scorecard._delivery_measured(reader.path, cfg if isinstance(cfg, Mapping) else {}, now,
+        label, goal, a = scorecard._delivery_measured(reader.path, cfg if isinstance(cfg, Mapping) else {}, now,
                                                       tz, env, home)
     except Exception as exc:  # noqa: BLE001 - a failing audit is a row, never a traceback (its message stays out)
         return _row(DELIVERY_ROW, "source", MISSING, f"the delivery audit failed with {type(exc).__name__}")
     if label == da.NO_LOG:
         return _row(DELIVERY_ROW, "source", OFF, da.NO_LOG_REASON)
-    return _row(DELIVERY_ROW, "source", _DELIVERY_STATUS.get(goal, MISSING), label)
+    clause = da.miss_clause(a) if goal == da.GOAL_NOT_MET else ""
+    return _row(DELIVERY_ROW, "source", _DELIVERY_STATUS.get(goal, MISSING), f"{label}; {clause}" if clause else label)
 
 
 LOCAL_LABELER_ROW = "local labeler"

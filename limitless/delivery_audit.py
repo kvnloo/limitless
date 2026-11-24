@@ -3,6 +3,7 @@
     rows, skipped = parse_lines(text)          # log.jsonl text -> valid rows, count of bad lines
     got = read_log(path)                       # (rows, skipped), or None when the file cannot be read
     audit(rows, days=7, wake_days=None, ...)   # -> dict: T0 counts per day plus one T1 label in words
+    brief_misses(rows, wake_days, tz)          # -> dict: why each known wake day had no delivered brief
 
 The log is the one bin/kevin-push appends, one row per call, and this module never changes how it is written:
 ``{"at": whole epoch seconds, "tag", "cls", "title", "body", "how"}``. The fields relied on:
@@ -39,6 +40,10 @@ Nothing else is read into it: no model, no sentiment. ``replies`` None (no Herme
 read) or a week with no row is unknown with a reason, never "no complaints". ``complaints`` keeps only the
 counts (T0); the text is never stored. Label: "no complaints this week" / "some pushes drew a quiet or stop
 request" / "complaints: unknown, <why>".
+Missed briefs (``brief_misses``, the audit's ``misses``): for each known wake day with rows and no delivered
+brief, one reason from MISS_REASONS, decided only from that day's brief rows (precedence MISS_ORDER; no brief
+row is MISS_NONE). Counts per reason are T0; the label is words only; ``miss_clause`` words the most common
+reason for the tool and the doctor when the goal is not met. See docs/delivery-audit.md.
 Pure: no clock, no file except read_log and signals, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations

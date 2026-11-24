@@ -4,7 +4,8 @@ A week of synthetic push-log rows in the shape bin/kevin-push writes ({at, tag, 
 synthetic wake events, in a temporary state dir, at a fixed clock in UTC. Reads no real state, writes nothing
 outside that dir, sends nothing. It runs the limitless_delivery tool (without and with the raw opt-in) and the
 week review line, then the complaints: unknown with no Hermes DB set, then from a synthetic session DB and a
-synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row).
+synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row). Last, why the wake briefs of a
+second synthetic week were missed (delivery_audit.brief_misses), one reason a missed wake day.
 """
 import json
 import sqlite3
@@ -15,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from limitless import doctor, jobs_runner, quiet, scorecard, tools  # noqa: E402
+from limitless import delivery_audit, doctor, jobs_runner, quiet, scorecard, tools  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
 
 UTC = timezone.utc
@@ -74,6 +75,7 @@ with tempfile.TemporaryDirectory() as tmp:
     print(json.dumps({k: v[k] for k in ("delivered", "known_days", "cap", "over_cap_days", "no_action",
                                         "action_unknown", "skipped")}))
     print(json.dumps(v["wake"]))
+    print(json.dumps(v["misses"]))
 
     print("\n# week review line")
     print(jobs_runner.week_delivery(st, env, root, datetime.fromtimestamp(NOW, UTC).date(), UTC, NOW))
@@ -109,3 +111,22 @@ with tempfile.TemporaryDirectory() as tmp:
     print(f"{r['name']}: {r['status']}: {r['reason']}")
 
     print("\n# the log is unchanged:", (st / "push-log.jsonl").read_text().count("\n"), "lines")
+
+# A second synthetic week: why each wake day's brief was missed, decided only from that day's brief rows.
+WEEK = [
+    push(6, 6, BRIEF, "Good morning.", how="held (sleep mode)", tag="limitless", cls="report"),
+    push(6, 8, BRIEF, "Good morning.", how="log (duplicate)", tag="limitless", cls="report"),   # Sleep wins
+    push(5, 7, BRIEF, "Good morning.", how="held (sleep mode)", tag="limitless", cls="report"),
+    push(4, 7, BRIEF, "Good morning.", how="log (quiet: snoozed)", tag="limitless", cls="report"),
+    push(3, 6, BRIEF, "Good morning.", how="held (sleep mode)", tag="limitless", cls="report"),
+    push(3, 8, BRIEF, f"Good morning.\n{WHY}", tag="limitless", cls="report"),                 # delivered: no miss
+    push(2, 9, "Pick one", "Keep the loop?\nReply: Yes / No", how="held (sleep mode)"),     # not a brief row
+    push(1, 7, BRIEF, "Good morning.", how="held (sleep mode)", tag="limitless", cls="report"),
+]
+WEEK_WAKES = [datetime.fromtimestamp(at(n, 6), UTC).date() for n in (6, 5, 4, 3, 2, 1, 0)]   # today: no row
+m = delivery_audit.brief_misses(WEEK, WEEK_WAKES, UTC)
+print("\n# why the wake briefs of a second synthetic week were missed (brief_misses)")
+print(m["label"])
+print(json.dumps(m["days"]))
+print(json.dumps({k: m[k] for k in ("missed", "unknown_wake_days", "top")}))
+print(json.dumps({r: c for r, c in m["reasons"].items() if c}))

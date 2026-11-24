@@ -217,5 +217,18 @@ class InTheAudit(unittest.TestCase):
             self.assertEqual(da.miss_clause(a), "")
 
 
+class Docs(unittest.TestCase):
+    def test_the_doc_has_the_section_with_every_reason_and_the_precedence(self):
+        text = (ROOT / "docs" / "delivery-audit.md").read_text()
+        self.assertIn("## Why a wake brief was missed", text)
+        section = text.split("## Why a wake brief was missed", 1)[1].split("\n## ", 1)[0]
+        for word in da.MISS_REASONS + ("precedence", "most common miss", "brief_misses", "miss_clause",
+                                       '"held (sleep mode)"', '"log (quiet: ...)"', "unknown, not zero"):
+            self.assertIn(word, section)
+        self.assertIn('"misses"', text)
+        for word in ("missed wake briefs:", "most common miss: held while Sleep mode was on"):
+            self.assertIn(word, text.split("## A real synthetic run", 1)[1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1356,7 +1356,7 @@ def phase(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = No
 
 
 DELIVERY_RAW_KEYS = ("days", "delivered", "known_days", "cap", "over_cap_days", "wake", "no_action",
-                     "action_unknown", "skipped", "complaints")
+                     "action_unknown", "skipped", "complaints", "misses")
 
 
 def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[Mapping[str, str]] = None,
@@ -1369,7 +1369,10 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
     stop request: delivery_audit.signals, unknown with no Hermes DB set) with the T1 label beside it;
     modality measured (the log is kevin-push's own record), aged by the newest row in the window. The counts
     (per-day deliveries, days over the cap, wake days and briefs, pushes with no reply line, skipped lines) are
-    T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). Config ``push_log`` unset, an unreadable log or a
+    T0 and appear only with ``raw`` (LIMITLESS_RAW_IN_PROMPT). When the goal (delivery_audit.goal) is not met
+    and a wake brief was missed, the label ends with the most common miss reason (delivery_audit.miss_clause:
+    "most common miss: held while Sleep mode was on"); the counts per reason are under ``misses`` with ``raw``.
+    Config ``push_log`` unset, an unreadable log or a
     week with no row is value None with a reason (unknown, not zero); reasons never echo the path. The cap is
     config ``push_cap``, else the send gate's own. Nothing is written or sent.
     """
@@ -1396,12 +1399,16 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
     days = {d["day"] for d in a["days"]}
     ats = [float(r["at"]) for r in rows if datetime.fromtimestamp(float(r["at"]), tz).date().isoformat() in days
            and float(r["at"]) <= now]
-    value = {"label": a["label"]["label"]}
+    label = dict(a["label"])
+    clause = _delivery.miss_clause(a)
+    if clause:
+        label["label"] = f"{label['label']}; {clause}"
+    value = {"label": label["label"]}
     if raw:
         for k in DELIVERY_RAW_KEYS:
             value[k] = a[k]
     out = envelope(value, _delivery.MODALITY, (now - max(ats)) / 3600 if ats else None)
-    out["label"] = a["label"]
+    out["label"] = label
     return out
 
 
