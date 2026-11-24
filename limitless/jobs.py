@@ -27,9 +27,11 @@ from .window import MAX_AWAKE_H
 # focus block in the activity data that ran as long as the person's usual long block (blocks.long_block_events).
 # noop_copy is a sync run whose runs.jsonl row says it copied the NOOP database (noop_copied); only the NOOP export
 # job (NOOP_EXPORT) wakes on it. sync is any sync run's runs.jsonl row that did not fail (sync_ran); only the apps
-# ingest job (APPS_INGEST) and the ranked ingest job (RANKED_INGEST) wake on it.
+# ingest job (APPS_INGEST) and the ranked ingest job (RANKED_INGEST) wake on it. push_back is a push kevin-push
+# delivered after an outage (outage_recap.outage: SEND_FAIL_RUN or more failed sends in a row); only the outage
+# recap (OUTAGE_RECAP) wakes on it.
 EVENTS = ("wake", "sleep_mode_on", "sleep_mode_off", "wind_down", "habit_cue", "focus_end", "long_block", "noop_copy",
-          "sync")
+          "sync", "push_back")
 TRIGGER_AFTER = ("", "short_on")
 NAP_MAX_S = 3 * 3600        # a Sleep-mode on shorter than this, then off, is a nap; longer is a night
 SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake_proxy) carries less
@@ -40,7 +42,7 @@ ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED, RUN)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
 _WORDS = {"wake": "wake", "sleep_mode_on": "Sleep-mode on", "sleep_mode_off": "Sleep-mode off",
           "wind_down": "wind-down", "habit_cue": "habit cue", "focus_end": "focus-end", "nap": "nap",
-          "long_block": "long focus block", "noop_copy": "NOOP copy", "sync": "sync"}
+          "long_block": "long focus block", "noop_copy": "NOOP copy", "sync": "sync", "push_back": "pushes back"}
 
 
 @dataclass(frozen=True)
@@ -229,6 +231,27 @@ def ranked_ingest_verdict(mode: str, last_run: Any, mark_at: Optional[float], no
     if not ledger_set:
         return Verdict(NOT_TRIGGERED, RANKED_NO_LEDGER)
     return apps_ingest_verdict(mode, last_run, mark_at, now, db_set=db_set)
+
+
+# The outage recap: one plain message after phone pushes start reaching the person again, naming in words what an
+# outage swallowed (outage_recap.recap). Its event is push_back (a delivery that closed an outage), never a clock.
+# It is not in SPECS: should_fire's windows do not hold it (the delivery that woke it shows the person can be
+# reached), but it still goes through kevin-push's send gate (--once, quiet, Sleep mode, daily cap).
+# outage_recap_job runs it; config ``outage_recap`` is off (default), dry_run or write.
+OUTAGE_RECAP_STALE_S = 12 * 3600   # pushes came back longer ago than this: a late recap is noise
+OUTAGE_RECAP = JobSpec("outage_recap", "push_back", "anytime", "Pushes are back", 1, "push_back",
+                       answers=("OK", "More"), stale_after_s=OUTAGE_RECAP_STALE_S)
+OUTAGE_RECAP_CONFIG = "outage_recap"
+OUTAGE_RECAP_OFF, OUTAGE_RECAP_DRY_RUN, OUTAGE_RECAP_WRITE = NOOP_OFF, NOOP_DRY_RUN, NOOP_WRITE
+OUTAGE_RECAP_MODES = (OUTAGE_RECAP_OFF, OUTAGE_RECAP_DRY_RUN, OUTAGE_RECAP_WRITE)
+
+
+def outage_recap_mode(cfg: Any) -> str:
+    """Config ``outage_recap``: off (the default, and for any value that is not one of OUTAGE_RECAP_MODES),
+    dry_run or write."""
+    v = cfg.get(OUTAGE_RECAP_CONFIG) if isinstance(cfg, Mapping) else None
+    v = v.strip().lower() if isinstance(v, str) else v
+    return v if v in OUTAGE_RECAP_MODES else OUTAGE_RECAP_OFF
 
 
 def wake_brief(decision: bool = False) -> JobSpec:
@@ -540,7 +563,8 @@ _SPEAKS = {"wake": "when you wake up", "sleep_mode_on": "when Sleep mode goes on
            "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
            "habit_cue": "at your habit's cue", "focus_end": "when a focus block ends",
            "long_block": "when a focus block runs long",
-           "noop_copy": "after a sync that copied the NOOP database", "sync": "after each sync run"}
+           "noop_copy": "after a sync that copied the NOOP database", "sync": "after each sync run",
+           "push_back": "when a push reaches you again after pushes failed"}
 _IN_WINDOW = {"peak": "in a peak window, at most one decision per window",
               "trough": "in a low-energy window, for a review or an easy read",
               "wind_down": "once your wind-down has started", "anytime": "any time you are awake"}
@@ -548,7 +572,8 @@ _ENDS = {"wake": "when you next wake up", "sleep_mode_on": "when Sleep mode goes
          "sleep_mode_off": "when Sleep mode goes off", "wind_down": "when your wind-down starts",
          "habit_cue": "at your habit's next cue", "focus_end": "when a focus block ends",
          "long_block": "when a focus block next runs long",
-         "noop_copy": "at the next sync that copies the NOOP database", "sync": "at the next sync run"}
+         "noop_copy": "at the next sync that copies the NOOP database", "sync": "at the next sync run",
+         "push_back": "when pushes next come back after an outage"}
 _NUM = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 

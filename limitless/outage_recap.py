@@ -44,17 +44,18 @@ from .send_gate import WHY_PREFIX
 SEND_FAIL_RUN = _da.SEND_FAIL_RUN
 OPEN, CLOSED = "open", "closed"
 KEY_PREFIX = "outage_recap"
-TITLE = "Pushes are back"
+TITLE = jobs.OUTAGE_RECAP.send_title   # "Pushes are back"
 FIRST_LINE = "Phone pushes are reaching you again."
 MISSED = "Missed {since}: {count} {noun} ({kinds})."
 NOT_RESENT = "They were not sent again: by now they are out of date."
-ANSWERS = ("OK", "More")          # More: a placeholder, nothing reads it yet
+ANSWERS = jobs.OUTAGE_RECAP.answers   # ("OK", "More"); More is a placeholder, nothing reads it yet
 MAX_KINDS = 4
 OTHER = "another push"
 OTHERS = "others"
 _KINDS = {jobs.WAKE_BRIEF.send_title: "wake brief", jobs.MIQ.send_title: "MIQ prompt",
           jobs.NAP.send_title: "back from nap", jobs.HABIT_CHECKIN.send_title: "habit check-in",
-          jobs.WEEK_REVIEW.send_title: "week review", jobs.BREAK_NUDGE.send_title: "break nudge"}
+          jobs.WEEK_REVIEW.send_title: "week review", jobs.BREAK_NUDGE.send_title: "break nudge",
+          jobs.OUTAGE_RECAP.send_title: "outage recap"}
 _TITLE_OK = re.compile(r"[A-Za-z][A-Za-z' -]*")
 _MAX_TITLE_WORDS = 5
 _NUM = ("zero", "one", "two", "three", "four", "five", "six")

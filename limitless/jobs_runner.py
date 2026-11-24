@@ -53,6 +53,12 @@ ingest's rule: once per new sync row in runs.jsonl, a pass that is not a dry run
 drop rows to the ranked ledger and moves ranked-drops.json), then writes ``ranked-ingest.json`` in words only. No
 ranked ledger or no Hermes DB set: skipped. Nothing is pushed or logged as sent. Off (the default): no row, nothing
 read.
+
+Outage recap: with config ``outage_recap`` dry_run or write, one more row, last (outage_recap_job.run). After a push
+kevin-push delivered closed an outage in its log (config ``push_log``; outage_recap.outage), a pass that is not a
+dry run pushes one plain recap of what the outage swallowed through ``push`` with ``once``
+``outage_recap:<first failed push time>``, and writes ``outage-recap.json`` only on a real delivery. It is not
+logged in the sent log. Off (the default): no row, nothing read.
 """
 from __future__ import annotations
 
@@ -1249,4 +1255,6 @@ def run_once(state_dir, now: float, push: Optional[Callable[[str, str], object]]
     ranked = ranked_ingest_row(state_dir, now, dry_run, env, home)    # sends nothing; None (no row) when off
     from . import voice_miq as _voice_miq   # voice_miq reads MIQ_QUESTION and SENT_LOG from here
     voice = _voice_miq.run(state_dir, now, env=env, home=home, dry_run=dry_run)   # None (no row) when off
-    return rows + [r for r in (noop, apps, ranked, voice) if r is not None]
+    from . import outage_recap_job as _recap   # outage_recap_job uses _push and _write_mark from here
+    recap = _recap.run(state_dir, now, push=push, dry_run=dry_run, env=env, home=home, tz=tz)   # None when off
+    return rows + [r for r in (noop, apps, ranked, voice, recap) if r is not None]

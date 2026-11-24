@@ -24,6 +24,11 @@ Apps ingest: with config "apps_ingest" set to "dry_run" or "write", one more lin
 runs.jsonl, --send reads the "work apps: ..." / "feed apps: ..." reply from the Hermes session DB (config
 "hermes_db"; none set: skipped), in write mode writes apps.json, and records the action in apps-ingest.json; it
 pushes nothing.
+
+Outage recap: with config "outage_recap" set to "dry_run" or "write", one more line. After a push that kevin-push
+delivered ended an outage in its log (config "push_log"), --send in write mode pushes one plain recap of what was
+missed ("Pushes are back") through the same kevin-push call, with --once outage_recap:<first failed push time>, and
+records it in outage-recap.json only when kevin-push reports a real delivery.
 """
 import json
 import os
