@@ -39,8 +39,12 @@ owner's reply named was set but could not send (push_recovery.UNKNOWN_FAILED), o
 per the delivery audit of config ``push_log``) the card says so in words on a line of its
 own, "Phone pushes are not reaching you: <reason>", after the MAX_LINES cap (so a full card never cuts it) and
 before the palace and explain-back offers; nothing when the sender is set and the last push was delivered, or
-when neither can be told. The hook caches it with the card: per turn only stats (the config file, the profile
-directory, the push log), and the log is read only when the card is rebuilt. items["delivery"] carries it.
+when neither can be told. While the owner's reply is what moves the outage on (push_recovery.stage missing with
+WAITING_REPLY, REFUSED or UNKNOWN_FAILED) the same line goes on with the reply that fixes it (push_reach.hint):
+"Reply push via <name> to fix it." for the one ready profile, "Reply push via one of: a, b." for several, else
+"Reply with a profile that has a Telegram bot." The hook caches it with the card: per turn only stats (the config
+file, the profile directory, the Hermes home's profiles dir, the push log), and the log is read only when the
+card is rebuilt. items["delivery"] carries the line without the hint.
 While today's wake brief is missed (missed_brief.find: built and logged today, no delivered brief by the delivery
 audit's rule, no older than the wake job's stale_after_s) the card says "Today's wake brief did not reach your
 phone; ask me for it." on a line of its own right after the push-reach line, outside MAX_LINES like it; the
@@ -290,6 +294,15 @@ def reach_reason(reader: StateReader, today: date, env: Optional[Mapping[str, st
         return None
 
 
+def reach_hint(reader: StateReader, env: Optional[Mapping[str, str]] = None,
+               cfg: Optional[Mapping] = None) -> Optional[str]:
+    """push_reach.hint for this card (config read when ``cfg`` is not given). Never raises."""
+    try:
+        return _push_reach.hint(_config(env) if cfg is None else cfg, reader.path, env)
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+
+
 def missed(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
            cfg: Optional[Mapping] = None) -> dict:
     """missed_brief.find for this card (config read when ``cfg`` is not given; local zone). Never raises."""
@@ -305,13 +318,14 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
           explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET,
           palace_offer: Optional[str] = None, debt: Any = _UNSET, reach: Any = _UNSET,
-          missed_brief: Any = _UNSET) -> dict:
+          missed_brief: Any = _UNSET, hint: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
     labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
     tools.owner_message envelope (read from ``env`` when not given). ``reach`` is a push_reach reason (or None),
-    worked out from ``env`` when not given; ``missed_brief`` is a missed_brief.find result, likewise."""
+    worked out from ``env`` when not given; ``missed_brief`` is a missed_brief.find result, likewise; ``hint`` is
+    a push_reach.hint (or None), worked out from ``env`` when not given and there is an outage line."""
     win = win or window(reader, now, bands)
     items, digest_age = _metric_items(reader, now, raw, labeler or _labeler.label)
     items["window"] = win
@@ -377,6 +391,8 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
     items["delivery"] = _push_reach.item(why)
     outage = _push_reach.line(why)
     if outage:
+        outage = _push_reach.line(why, reach_hint(reader, env) if hint is _UNSET else hint)
+    if outage:
         lines.append(outage)   # its own line, outside MAX_LINES: a full card never cuts it
     late = _missed_brief.line(missed(reader, now, env) if missed_brief is _UNSET else missed_brief)
     if late:
@@ -436,17 +452,19 @@ class CardCache:
         owed = debt_line(reader, now, today, env)   # the sleep file and the phone's nights change it: part of the key
         self.palace = (pal["line"], pal["wake"]) if pal["line"] else None
         cfg = self._config_for(env)
-        reach = _push_reach.key(cfg, reader.path, env)   # stats only: the profile dir and the push log's mtime
+        reach = _push_reach.key(cfg, reader.path, env)   # stats only: the profile dirs and the push log's mtime
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
                _desktop_tick(now, env), _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed,
                reach, _missed_brief.key(reader.path))   # stats only: the wake event files
         if key != self._key or (self._until is not None and now > self._until):
             late = missed(reader, now, env, cfg)
+            why = reach_reason(reader, today, env, cfg)
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
                                explain_offer=explain, palace_offer=pal["line"], debt=owed,
-                               reach=reach_reason(reader, today, env, cfg), missed_brief=late)["text"]
+                               reach=why, missed_brief=late,
+                               hint=reach_hint(reader, env, cfg) if why else None)["text"]
             self._until = late.get("until") if late.get("missed") else None
             self._key = key
             self.builds += 1

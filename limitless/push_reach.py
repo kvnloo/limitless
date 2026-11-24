@@ -1,7 +1,8 @@
 """Push reach: whether phone pushes can reach the person, in words, for the state card and limitless_status.
 
     r = reason(cfg, state_dir, today, env)   # SENDER_MISSING / SENDER_NO_BOT / SEND_FAILING / None, words only
-    line(r)                                  # "Phone pushes are not reaching you: <reason>", or None
+    hint(cfg, state_dir, env)                # "Reply push via <name> to fix it." while a reply is due, or None
+    line(r, h=None)                          # "Phone pushes are not reaching you: <reason>[. <hint>]", or None
     item(r)                                  # the envelope the card items, limitless_status and the packet carry
     key(cfg, state_dir, env)                 # the stat-only cache-key part (no file is opened)
 
@@ -20,10 +21,18 @@ The order is REASONS: a broken sender wins, then SENDER_NO_BOT, then SEND_FAILIN
 delivered, nor when neither can be told (push_sender unknown, no push log set, unreadable, or no row): unknown
 is silent, never alarming. The words never hold a digit, the profile name, the target or a path. It never runs
 hermes or any process and never sends. Stdlib only, Python 3.9+.
+
+The card's line (not the status or packet item) goes on with ``hint``: while push_recovery.stage over the same
+log is missing with WAITING_REPLY, REFUSED or UNKNOWN_FAILED (the owner's reply is what moves the outage on),
+the one reply that fixes it. REPLY_ONE names the single profile push_sender.candidates calls READY, REPLY_SOME
+names several, and REPLY_ANY asks for a profile with a Telegram bot when none is ready (a maybe, readiness
+``unknown: ...``, is never offered as sure). The sender that is failing is never offered, and neither is a name
+with a digit (only owner-chosen profile names that Hermes resolves, PROFILE_ID: no path, no host).
 """
 from __future__ import annotations
 
 from datetime import date, tzinfo
+import re
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -38,6 +47,9 @@ SEND_FAILING = _delivery.SEND_FAILING          # "the last pushes failed to send
 REASONS = (SENDER_MISSING, SENDER_NO_BOT, SEND_FAILING)   # the order is the precedence
 MODALITY = _delivery.MODALITY                  # kevin-push's own log and the profile dir: measured
 NONE_KNOWN = "no push outage is known"
+REPLY_ONE = "Reply push via {} to fix it."
+REPLY_SOME = "Reply push via one of: {}."
+REPLY_ANY = "Reply with a profile that has a Telegram bot."
 _MARKS = (_sender.REPLY_FILE, "push-sender-ingest.json", "sender-confirm.json")   # what push_recovery reads
 
 
@@ -79,9 +91,47 @@ def _no_bot(state_dir, rows, cfg: Mapping) -> bool:
         return False
 
 
-def line(r: Optional[str]) -> Optional[str]:
-    """The card line for a ``reason``; None for no reason (or anything that is not one of REASONS)."""
-    return PREFIX + r if r in REASONS else None
+def _reply_due(state_dir, rows, cfg: Mapping) -> bool:
+    """True when push_recovery.stage over these log rows is missing with WAITING_REPLY, REFUSED or UNKNOWN_FAILED.
+    Its env is empty on purpose: the stage's own profile list is skipped (``hint`` lists them once itself)."""
+    from . import push_recovery     # late, as in _no_bot
+    status, words = push_recovery.stage(state_dir, rows, cfg, 0.0, env={})
+    return status == push_recovery.MISSING and (
+        words == push_recovery.UNKNOWN_FAILED
+        or words.startswith((push_recovery.WAITING_REPLY, push_recovery.REFUSED)))
+
+
+def hint(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = None,
+         hermes_home=None) -> Optional[str]:
+    """The reply that fixes an open push outage while the owner's reply is due (``_reply_due``): REPLY_ONE with
+    the one ready profile, REPLY_SOME with several, else REPLY_ANY; None when no reply is due or nothing can be
+    told. Ready is push_sender.candidates' READY over the Hermes home of ``env`` (or ``hermes_home``); the current
+    sender and any name with a digit are left out. Read-only; never raises."""
+    cfg = _cfg(cfg)
+    try:
+        path = _delivery.log_path(cfg, state_dir)
+        got = _delivery.read_log(path) if path is not None else None
+        if not got or not _reply_due(state_dir, got[0], cfg):
+            return None
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return None
+    try:
+        current = _sender.profile(cfg, env, state_dir).lower()
+        cands = _sender.candidates(cfg, env, hermes_home) or ()
+        ready = [n for n, w in cands if w == _sender.READY and n != current and not re.search(r"\d", n)]
+    except Exception:  # noqa: BLE001
+        ready = []
+    if len(ready) == 1:
+        return REPLY_ONE.format(ready[0])
+    return REPLY_SOME.format(", ".join(ready)) if ready else REPLY_ANY
+
+
+def line(r: Optional[str], h: Optional[str] = None) -> Optional[str]:
+    """The card line for a ``reason``, with the ``hint`` words after it when given; None for no reason (or
+    anything that is not one of REASONS)."""
+    if r not in REASONS:
+        return None
+    return PREFIX + r + (f". {h}" if isinstance(h, str) and h else "")
 
 
 def item(r: Optional[str]) -> dict:
@@ -101,8 +151,8 @@ def _mtime(path) -> Optional[int]:
 def key(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = None) -> tuple:
     """What ``reason`` depends on, from stats alone: push_sender.check's words (directory checks only), the
     push log's mtime and the mtimes of the reply and mark files push_recovery reads (push-sender.json, the sender
-    ingest and sender confirm marks). The card caches its line under this (and the day), so a turn opens no extra
-    file."""
+    ingest and sender confirm marks), and the mtime of the Hermes home's ``profiles`` dir (a profile added or
+    removed changes ``hint``). The card caches its line under this (and the day), so a turn opens no extra file."""
     cfg = _cfg(cfg)
     try:
         words = _sender.check(cfg, env)
@@ -113,4 +163,9 @@ def key(cfg: Optional[Mapping], state_dir, env: Optional[Mapping[str, str]] = No
     except Exception:  # noqa: BLE001
         path = None
     marks = tuple(_mtime(Path(state_dir) / n) for n in _MARKS) if state_dir is not None else ()
-    return (words, None if path is None else str(path), _mtime(path), marks)
+    try:
+        root = _sender.hermes_root(env)
+    except Exception:  # noqa: BLE001
+        root = None
+    return (words, None if path is None else str(path), _mtime(path), marks,
+            _mtime(None if root is None else root / "profiles"))

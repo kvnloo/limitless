@@ -6,6 +6,10 @@ any Hermes chat instead, so it says so there, in words, on one line:
 
     Phone pushes are not reaching you: <reason>
 
+and, while the owner's reply is what moves the outage on, the reply that fixes it on the same line:
+
+    Phone pushes are not reaching you: <reason>. Reply push via <name> to fix it.
+
 `limitless/push_reach.py` decides the reason from three facts main already has:
 
 | Reason | When |
@@ -25,8 +29,30 @@ The rules:
 - On the card the line sits after the `MAX_LINES` cap, so a full card never cuts it, and before the memory
   palace and explain-back offers, which stay last. It goes through `tier_audit.gate` with the rest of the card.
 - Cached with the card (`card.CardCache`): each turn only stats the config file, the profile directory and the
-  push log, plus `push-sender.json` and the sender ingest and sender confirm marks (`push_reach.key`); the config
-  and the log are read only when the card is rebuilt.
+  push log, plus `push-sender.json`, the sender ingest and sender confirm marks and the Hermes home's `profiles`
+  dir (`push_reach.key`); the config and the log are read only when the card is rebuilt.
+
+## The reply hint (card only)
+
+While `push_recovery.stage` over the same log is missing with `WAITING_REPLY` (no reply since the outage began),
+`REFUSED` (the last reply named a profile that cannot reach Telegram) or `UNKNOWN_FAILED`, the card's line goes on
+after the reason with one sentence from `push_reach.hint`:
+
+| Ready profiles (`push_sender.candidates` says `ready`) | Words |
+|---|---|
+| exactly one | `Reply push via <name> to fix it.` |
+| several | `Reply push via one of: <a>, <b>.` |
+| none (only maybes, readiness `unknown: ...`, or none at all) | `Reply with a profile that has a Telegram bot.` |
+
+- A maybe is never offered as if it were sure; the sender that is failing is never offered; a name with a digit
+  is never printed (if that leaves none, the generic words). Names are Hermes profile ids (no path, no host).
+- Still one line, after the `MAX_LINES` cap, digit-masked with the card and through `tier_audit.gate`.
+- No hint for a pending, held or failed confirmation of a ready reply (the doctor's push recovery row says
+  which), when no outage is open, or when no push log can be read.
+- Cached by the same key as the line: a profile added or removed changes the `profiles` dir mtime and rebuilds
+  the card. A token added to an existing profile's files shows on the next rebuild (any other key change or the
+  next day). No new store and no new file.
+- `limitless_status`, `limitless_state`'s `delivery` item and the context packet keep the bare reason.
 
 ## limitless_status and the context packet
 
@@ -66,7 +92,21 @@ sleep short (proxy); readiness low (imported)
 habit this week: Lights down when wind-down starts; today Done
 not recording: anki, bike, scale
 asks waiting on you
-Phone pushes are not reaching you: the last pushes failed to send
+Phone pushes are not reaching you: the last pushes failed to send. Reply with a profile that has a Telegram bot.
+$ limitless_status: delivery
+{"value": "Phone pushes are not reaching you: the last pushes failed to send", "modality": "measured", "age_h": null, "evidence_tier": "stale"}
+$ limitless-context-packet: delivery row
+delivery: Phone pushes are not reaching you: the last pushes failed to send (measured, stale, age unknown)
+
+# the same, and profile helper has a Telegram bot token and chat
+$ pre_llm_call card
+[limitless] state card (coarse labels; limitless_state has detail)
+window: peak (proxy)
+sleep short (proxy); readiness low (imported)
+habit this week: Lights down when wind-down starts; today Done
+not recording: anki, bike, scale
+asks waiting on you
+Phone pushes are not reaching you: the last pushes failed to send. Reply push via helper to fix it.
 $ limitless_status: delivery
 {"value": "Phone pushes are not reaching you: the last pushes failed to send", "modality": "measured", "age_h": null, "evidence_tier": "stale"}
 $ limitless-context-packet: delivery row
