@@ -115,5 +115,64 @@ class Gaps(unittest.TestCase):
         self.assertEqual((a["skipped"], len(a["loop"]["gaps"])), (2, 1))
 
 
+TEN_MIN = every(10 * M)
+
+
+class Words(unittest.TestCase):
+    def test_regular_spacing_adds_no_clause(self):
+        self.assertEqual(words(audit(HOURLY)), "no input was reported stale; uptime goal met")
+
+    def test_one_short_gap_this_week(self):
+        times = without(TEN_MIN, END - 2 * D, END - 2 * D + 45 * M)     # limit: half an hour
+        self.assertEqual(words(audit(times)), "no input was reported stale; "
+                                              "the loop stopped once this week for under an hour; uptime goal met")
+
+    def test_one_gap_of_hours_this_week(self):
+        times = without(HOURLY, END - 2 * D, END - 2 * D + 8 * H)
+        self.assertEqual(words(audit(times)), "no input was reported stale; "
+                                              "the loop stopped once this week for hours; uptime goal met")
+
+    def test_a_gap_of_over_a_day(self):
+        times = without(HOURLY, END - 4 * D, END - 4 * D + 30 * H)
+        self.assertIn("; the loop stopped once this week for over a day; ", words(audit(times)))
+
+    def test_a_few_gaps_name_the_longest(self):
+        times = without(HOURLY, END - 2 * D, END - 2 * D + 8 * H)
+        times = without(times, END - 5 * D, END - 5 * D + 5 * H)
+        self.assertIn("; the loop stopped a few times this week, the longest for hours; ", words(audit(times)))
+        times = without(times, END - 6 * D, END - 6 * D + 26 * H)
+        self.assertIn("; the loop stopped a few times this week, the longest for over a day; ", words(audit(times)))
+
+    def test_a_gap_before_this_week_is_not_said(self):
+        times = without(HOURLY, END - 12 * D, END - 12 * D + 8 * H)
+        self.assertEqual(len(audit(times)["loop"]["gaps"]), 1)              # still counted in the dict
+        self.assertEqual(words(audit(times)), "no input was reported stale; uptime goal met")
+
+    def test_a_gap_ending_this_week_counts_for_this_week(self):
+        week_start = datetime(2030, 1, 9, tzinfo=UTC).timestamp()           # TODAY minus six days, local midnight
+        times = without(HOURLY, week_start - 10 * H, week_start + 2 * H)
+        self.assertIn("the loop stopped once this week for hours", words(audit(times)))
+
+    def test_too_few_rows_keep_the_unknown_words(self):
+        times = without(HOURLY, END - 2 * D, END - 2 * D + 8 * H)
+        rows = rows_at(times, inputs=None)                                   # no inputs key: unknown days
+        for r in rows:
+            del r["inputs"]
+        a = ua.audit(rows, days=28, today=TODAY, tz=UTC, now=END + 10 * M)
+        self.assertEqual(words(a), "unknown")
+        self.assertEqual(words(audit(times[-50:])), "unknown")             # only a few days of runs at all
+
+    def test_the_input_words_stay_first_and_the_goal_last(self):
+        times = without(HOURLY, END - 2 * D, END - 2 * D + 8 * H)
+        a = ua.audit(rows_at(times, "stale whoop"), inputs=["phoneApps", "whoop"], days=28, today=TODAY, tz=UTC,
+                     now=END + 10 * M)
+        self.assertEqual(words(a), "phone apps fresh every day; whoop stale all month; "
+                                   "the loop stopped once this week for hours; uptime goal not met")
+
+    def test_the_clause_never_changes_the_goal(self):
+        times = without(HOURLY, END - 2 * D, END - 2 * D + 8 * H)
+        self.assertEqual(audit(times)["goal"], audit(HOURLY)["goal"])
+
+
 if __name__ == "__main__":
     unittest.main()

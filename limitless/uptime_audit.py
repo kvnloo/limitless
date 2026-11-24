@@ -54,6 +54,10 @@ GOAL_MET, GOAL_NOT_MET, GOAL_UNKNOWN = "met", "not met", "unknown"
 NO_LOG_REASON = "no sync run log in the state dir (runs.jsonl)"
 NO_ROWS_REASON = "no sync run in the audit window"
 FEW_KNOWN_REASON = "fewer than a week of sync runs name their stale inputs"
+WEEK_DAYS = 7                    # "this week": the last seven local days of the window, today included
+LOOP_STOPPED_ONCE, LOOP_STOPPED_FEW = "the loop stopped once this week", "the loop stopped a few times this week"
+LOOP_NOT_RUN = "the loop has not run for"
+FOR_MINUTES, FOR_HOURS, FOR_DAYS = "under an hour", "hours", "over a day"
 GOAL_WORDS = {GOAL_MET: "uptime goal met", GOAL_NOT_MET: "uptime goal not met",
               GOAL_UNKNOWN: "uptime goal unknown: too many days without input words"}
 
@@ -215,7 +219,10 @@ def audit(rows: Iterable, inputs: Iterable = (), days: int = DAYS, *, today: Opt
             out["known_days"] += 1
             out["all_fresh_days"] += int(not stale)
     out["inputs"] = per
-    out["loop"] = loop_gaps([_at(r) for d in window for r in by_day[d]], gap_limit, now)
+    out["loop"] = loop = loop_gaps([_at(r) for d in window for r in by_day[d]], gap_limit, now)
+    week = today - timedelta(days=WEEK_DAYS - 1) if today is not None else None
+    this_week = [g["s"] for g in loop["gaps"] if week is not None and _day({"at": g["to"]}, tz) >= week]
+    loop["week_gaps"], loop["week_longest_s"] = len(this_week), max(this_week, default=None)
     out["target"] = target
     out["all_fresh_share"] = out["all_fresh_days"] / len(window) if window else None
     out["goal"] = _goal(out)
@@ -261,6 +268,21 @@ def phrase(c: Mapping, n_days: int) -> str:
     return STALE_MOST if s * 2 > k else FRESH_HALF
 
 
+def for_words(seconds: float) -> str:
+    """How long a loop-down stretch lasted, in words: under an hour, hours, over a day."""
+    return FOR_MINUTES if seconds < 3600 else FOR_HOURS if seconds <= 86400 else FOR_DAYS
+
+
+def loop_words(loop: Mapping) -> str:
+    """The closed gaps of the last seven days in one clause ("the loop stopped once this week for hours"); ""
+    when there was none. Words only: no count, no time, no host."""
+    n = loop.get("week_gaps") or 0
+    if not n:
+        return ""
+    how = for_words(loop["week_longest_s"])
+    return f"{LOOP_STOPPED_ONCE} for {how}" if n == 1 else f"{LOOP_STOPPED_FEW}, the longest for {how}"
+
+
 def _and(parts: list) -> str:
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
@@ -275,4 +297,5 @@ def _words(out: dict) -> str:
         groups.setdefault(phrase(c, n), []).append(name_words(name))
     order = PHRASES + tuple(p for p in groups if p not in PHRASES)
     parts = [f"{_and(groups[p])} {p}" for p in order if p in groups] or [NONE_NAMED]
-    return "; ".join(parts + [GOAL_WORDS[out["goal"]]])
+    stopped = loop_words(out.get("loop") or {})
+    return "; ".join(parts + ([stopped] if stopped else []) + [GOAL_WORDS[out["goal"]]])
