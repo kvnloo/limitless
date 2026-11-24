@@ -26,7 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from limitless import apps_reply, jobs, jobs_runner, sender_reply  # noqa: E402
+from limitless import apps_reply, doctor, jobs, jobs_runner, schedule_cards, sender_reply  # noqa: E402
+from limitless.state_reader import StateReader  # noqa: E402
 from hermes_db_fixture import make_db  # noqa: E402
 
 UTC = timezone.utc
@@ -309,6 +310,48 @@ class EveryJobDue(Fakes):
         rc, out = self.main("--send")
         self.assertEqual(rc, 0)
         self.assertNotEqual(self.calls_made(), [], out)
+
+
+
+class Runner(Base):
+    """The doctor rows and the schedule cards name --ingest (or --send) as what runs the three ingests."""
+    RUNS = "limitless-jobs --ingest or --send"
+
+    def rows(self):
+        cfg = json.loads(self.cfg_path.read_text())
+        r = StateReader(self.st)
+        return [doctor.apps_ingest_row(r, cfg, self.now, env=self.env),
+                doctor.ranked_ingest_row(r, cfg, self.now, env=self.env),
+                doctor.sender_ingest_row(r, cfg, self.now, env=self.env)]
+
+    def test_a_waiting_ingest_names_ingest_as_its_runner(self):
+        self.config("write")
+        for row in self.rows():
+            self.assertEqual(row["status"], doctor.STALE, row)
+            self.assertIn("has not run after it yet", row["reason"])
+            self.assertIn(f"({self.RUNS} runs it)", row["reason"])
+            self.assertNotIn("limitless-jobs --send runs it", row["reason"])
+
+    def test_after_an_ingest_pass_the_rows_are_live(self):
+        self.config("write")
+        jobs_runner.run_once(self.st, self.now, dry_run=True, ingest=True, env=self.env, home=self.dir, tz=UTC)
+        later = self.now + 60
+        self.now = later
+        for row in self.rows():
+            self.assertEqual(row["status"], doctor.LIVE, row)
+
+    def test_the_cards_say_ingest_runs_them(self):
+        for card in (schedule_cards.apps_ingest_card(), schedule_cards.ranked_ingest_card(),
+                     schedule_cards.sender_ingest_card()):
+            self.assertEqual(card["words"]["runs"], self.RUNS, card["id"])
+        self.assertEqual(schedule_cards.noop_export_card()["words"]["runs"], "limitless-jobs --send")
+
+    def test_the_doctor_doc_names_ingest_for_the_three_ingest_rows(self):
+        text = (ROOT / "docs" / "doctor.md").read_text(encoding="utf-8")
+        for name in ("job apps ingest", "job ranked ingest", "job sender ingest"):
+            line = [ln for ln in text.splitlines() if ln.startswith(f"| `{name}`")]
+            self.assertEqual(len(line), 1, name)
+            self.assertIn("`limitless-jobs --ingest` or `--send` runs it", line[0])
 
 
 if __name__ == "__main__":

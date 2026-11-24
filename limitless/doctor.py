@@ -369,7 +369,7 @@ def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional
         return _row(APPS_INGEST_ROW, "job", STALE, f"{on}, but {v.reason}")
     if v.action == jobs.RUN:
         return _row(APPS_INGEST_ROW, "job", STALE, "a sync ran and the apps ingest has not run after it yet "
-                                                   "(limitless-jobs --send runs it)")
+                                                   f"({jobs.INGEST_RUNS} runs it)")
     if mark.get("ran_at") is None:
         return _row(APPS_INGEST_ROW, "job", STALE, f"{on}, but it has not run yet: {v.reason}")
     ago = age_words(max(0.0, now - mark["ran_at"]) / 3600)
@@ -409,7 +409,7 @@ def ranked_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
                                                        "read")
     if v.action == jobs.RUN:
         return _row(RANKED_INGEST_ROW, "job", STALE, "a sync ran and the ranked ingest has not run after it yet "
-                                                     "(limitless-jobs --send runs it)")
+                                                     f"({jobs.INGEST_RUNS} runs it)")
     if mark.get("ran_at") is None:
         return _row(RANKED_INGEST_ROW, "job", STALE, f"{on}, but it has not run yet: {v.reason}")
     ago = age_words(max(0.0, now - mark["ran_at"]) / 3600)

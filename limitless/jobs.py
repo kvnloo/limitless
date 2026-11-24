@@ -40,6 +40,8 @@ SLEEP_MODE_CONFIDENCE = 0.9  # a wake from Sleep mode; a screen-event wake (wake
 HABIT_CUE_AFTER_S = 3600     # the feeds-free-first-hour check-in asks once the first hour after a wake has passed
 DELIVER, HOLD, DROP, NOT_TRIGGERED = "deliver", "hold", "drop", "not_triggered"
 RUN = "run"                  # a job that sends nothing (the NOOP export) is due and runs; never a message
+# What runs the three reply ingests (apps, ranked, sender) for real: the timer's --ingest pass, or a --send pass
+INGEST_RUNS = "limitless-jobs --ingest or --send"
 ACTIONS = (DELIVER, HOLD, DROP, NOT_TRIGGERED, RUN)
 _SLEEP = ("sleep_mode_on", "sleep_mode_off")
 _WORDS = {"wake": "wake", "sleep_mode_on": "Sleep-mode on", "sleep_mode_off": "Sleep-mode off",
