@@ -75,6 +75,14 @@ When config `ranked_ingest` is `dry_run` or `write`, `cards(ranked=True)` adds o
 the next sync run, sender `local`, budget zero, once-key `ranked_ingest:<sync run time>`. It sends nothing and never
 names an item ([ranked-ledger.md](ranked-ledger.md#as-an-event-job)).
 
+## The sender ingest's card
+
+When config `sender_ingest` is `dry_run` or `write`, `cards(sender=True)` adds one more card, after the ranked
+ingest's and before the outage recap's: `schedule_cards.sender_ingest_card()`, id `sender_ingest`, on the `sync`
+event ("after each sync run"), ending at the next sync run, sender `local`, budget zero, once-key
+`sender_ingest:<sync run time>`. It sends nothing and never names a profile
+([push-sender-reply.md](push-sender-reply.md)).
+
 ## The outage recap's card
 
 When config `outage_recap` is `dry_run` or `write`, `cards(recap=True)` adds one more card last:

@@ -10,7 +10,7 @@ any Hermes chat instead, so it says so there, in words, on one line:
 
 | Reason | When |
 |---|---|
-| `the sender profile is missing` | `push_sender.check` is broken: kevin-push's profile (`KEVIN_PUSH_PROFILE`, else config `push_profile`) is not `default` and `<Hermes home>/profiles/<profile>` is not a directory |
+| `the sender profile is missing` | `push_sender.check` is broken: kevin-push's profile (`KEVIN_PUSH_PROFILE`, else the owner's `push via <name>` reply in `push-sender.json`, else config `push_profile`) is not `default` and `<Hermes home>/profiles/<profile>` is not a directory |
 | `the last pushes failed to send` | the delivery audit of config `push_log` over the last seven local days has `send_failures` failing: the window's last transport attempts are `delivery_audit.SEND_FAIL_RUN` or more `log (telegram rc=N)` rows in a row (`delivery_audit.SEND_FAILING`) |
 
 The rules:
