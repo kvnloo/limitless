@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""limitless-t1-local: a CPU-only llama.cpp-style runner for LocalModelLabeler (LIMITLESS_T1_CMD or config
+t1_model_cmd). Reads the labeler's prompt on stdin; prints one allowed word, or nothing and exits 1 so the rule
+label is used. Never writes a file (no bytecode either). See limitless/t1_local.py and docs/privacy-tiers.md.
+"""
+import sys
+
+sys.dont_write_bytecode = True
+from pathlib import Path  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from limitless import t1_local  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(t1_local.main())
