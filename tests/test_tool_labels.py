@@ -83,7 +83,7 @@ class Handlers(unittest.TestCase):
                         "limitless_phase", "limitless_explain_back", "limitless_experiment",
                         "limitless_focus_safe", "limitless_skill_tree", "limitless_breathing",
                         "limitless_palace", "limitless_outages", "limitless_result_tier",
-                        "limitless_delivery", "limitless_uptime",
+                        "limitless_delivery", "limitless_uptime", "limitless_missed_brief",
                         "limitless_sleep_coverage"):  # own T1 words; the
                 continue                     # fixture has no body_file, work queue, rides, sleep or AW data;
                                              # quiet: on, off, ...; anki: no collection;
@@ -93,6 +93,7 @@ class Handlers(unittest.TestCase):
                                              # feed_reflex: no feed apps set (test_feed_reflex_tool)
                                              # app_candidates: no AW source (test_app_candidates_tool)
                                              # schedule: its card count (test_schedule_tool)
+                                             # missed_brief: no push log set (test_missed_brief)
                                              # habit_next: next habit: <name> (test_habit_next_tool)
                                              # card_view: a state card with <rows> (test_ui_card_tool)
                                              # phase: just woke, day, ... (test_phase_tool)

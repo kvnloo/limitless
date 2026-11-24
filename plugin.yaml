@@ -32,6 +32,7 @@ provides_tools:
   - limitless_app_candidates
   - limitless_ideas
   - limitless_delivery
+  - limitless_missed_brief
   - limitless_uptime
   - limitless_phase
   - limitless_explain_back

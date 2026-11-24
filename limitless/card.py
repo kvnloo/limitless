@@ -40,6 +40,11 @@ own, "Phone pushes are not reaching you: <reason>", after the MAX_LINES cap (so 
 before the palace and explain-back offers; nothing when the sender is set and the last push was delivered, or
 when neither can be told. The hook caches it with the card: per turn only stats (the config file, the profile
 directory, the push log), and the log is read only when the card is rebuilt. items["delivery"] carries it.
+While today's wake brief is missed (missed_brief.find: built and logged today, no delivered brief by the delivery
+audit's rule, no older than the wake job's stale_after_s) the card says "Today's wake brief did not reach your
+phone; ask me for it." on a line of its own right after the push-reach line, outside MAX_LINES like it; the
+hook caches it with the card (the push log's stat, the wake event files' stats) and rebuilds once the offer goes
+stale. limitless_missed_brief returns the brief itself.
 An attention mode (modes.py, ``mode.json``) adds its one digit-free line last, outside the cache and the
 MAX_LINES cap; no mode adds nothing.
 Each injection goes through tier_audit.gate: one content-free audit line, and a card with a digit but no
@@ -55,6 +60,7 @@ from typing import Any, Callable, Mapping, Optional
 
 from . import anki as _anki, bedtime, explain_back as _explain_back, flow_week, modes, peak as _peak, phase as _phase
 from . import aw_desktop
+from . import missed_brief as _missed_brief
 from . import palace as _palace
 from . import push_reach as _push_reach
 from . import labeler as _labeler
@@ -283,18 +289,28 @@ def reach_reason(reader: StateReader, today: date, env: Optional[Mapping[str, st
         return None
 
 
+def missed(reader: StateReader, now: float, env: Optional[Mapping[str, str]] = None,
+           cfg: Optional[Mapping] = None) -> dict:
+    """missed_brief.find for this card (config read when ``cfg`` is not given; local zone). Never raises."""
+    try:
+        return _missed_brief.find(_config(env) if cfg is None else cfg, reader.path, now, env)
+    except Exception:  # noqa: BLE001 - a broken input must not break the card
+        return {"missed": False, "until": None}
+
+
 def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
           win: Optional[dict] = None, bands: Optional[Mapping] = None,
           labeler: Optional[Callable] = None, env: Optional[Mapping[str, str]] = None,
           owner: Optional[dict] = None, peak: Any = _UNSET, anki_offer: Optional[str] = None,
           explain_offer: Optional[str] = None, mask: bool = True, light: Any = _UNSET,
-          palace_offer: Optional[str] = None, debt: Any = _UNSET, reach: Any = _UNSET) -> dict:
+          palace_offer: Optional[str] = None, debt: Any = _UNSET, reach: Any = _UNSET,
+          missed_brief: Any = _UNSET) -> dict:
     """{"text", "lines", "items", "age_h"} for the card; at most MAX_LINES lines.
     ``mask=False`` leaves a digit in place (never adds a raw value) so a caller that drops digit lines, as
     ui_card does through tier_audit.gate, sees it; the prompt card keeps the default.
     labeler(kind, value, modality) -> T1 dict; the rule labeler by default. ``owner`` is a ready
     tools.owner_message envelope (read from ``env`` when not given). ``reach`` is a push_reach reason (or None),
-    worked out from ``env`` when not given."""
+    worked out from ``env`` when not given; ``missed_brief`` is a missed_brief.find result, likewise."""
     win = win or window(reader, now, bands)
     items, digest_age = _metric_items(reader, now, raw, labeler or _labeler.label)
     items["window"] = win
@@ -361,6 +377,9 @@ def build(reader: StateReader, now: float, today: date, *, raw: bool = False,
     outage = _push_reach.line(why)
     if outage:
         lines.append(outage)   # its own line, outside MAX_LINES: a full card never cuts it
+    late = _missed_brief.line(missed(reader, now, env) if missed_brief is _UNSET else missed_brief)
+    if late:
+        lines.append(late)     # right after the push-reach line, outside MAX_LINES like it
     if palace_offer:
         lines.append(palace_offer)    # its own line, outside MAX_LINES: the link stays whole
     if explain_offer:
@@ -390,6 +409,7 @@ class CardCache:
         self.wake = None   # the wake event of the last get's explain-back offer, for the hook's mark
         self.palace = None   # (line, wake) of the last get's memory palace offer, for the hook's mark
         self._cfg_key, self._cfg = _UNSET, None   # the config, re-read only when its file's stat changes
+        self._until = None   # when the cached card's missed-brief line goes stale (None: no line)
 
     def _config_for(self, env: Optional[Mapping[str, str]]) -> dict:
         """The host config, cached under its path and mtime: a turn that changes nothing reads no file."""
@@ -419,12 +439,14 @@ class CardCache:
         key = (str(reader.path), win["value"], today, raw, tuple(reader.mtime(n) for n in CARD_FILES),
                tuple(getattr(labeler, "cmd", None) or ()), _owner_text(owner), _aw_mtime(reader, env),
                _desktop_tick(now, env), _passive_mtime(reader, env), word, offer, lit, explain, pal["line"], owed,
-               reach)
-        if key != self._key:
+               reach, _missed_brief.key(reader.path))   # stats only: the wake event files
+        if key != self._key or (self._until is not None and now > self._until):
+            late = missed(reader, now, env, cfg)
             self._text = build(reader, now, today, raw=raw, win=win, bands=bands, labeler=labeler,
                                owner=owner, env=env, peak=word, anki_offer=offer, light=lit,
                                explain_offer=explain, palace_offer=pal["line"], debt=owed,
-                               reach=reach_reason(reader, today, env, cfg))["text"]
+                               reach=reach_reason(reader, today, env, cfg), missed_brief=late)["text"]
+            self._until = late.get("until") if late.get("missed") else None
             self._key = key
             self.builds += 1
         return self._text

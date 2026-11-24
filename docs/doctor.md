@@ -255,6 +255,7 @@ tool limitless_feed_reflex: off: feed reflex unknown: no feed apps set (config f
 tool limitless_app_candidates: off: app candidates unknown: no ActivityWatch source set (aw_db, desktop_aw_url or desktop_aw_export)
 tool limitless_ideas: stale: answers, but its evidence is stale or of unknown age
 tool limitless_delivery: off: no push log set (config push_log)
+tool limitless_missed_brief: off: no push log set (config push_log), so a missed brief cannot be told
 tool limitless_uptime: missing: fewer than a week of sync runs name their stale inputs
 tool limitless_phase: live: answers from a proxy
 tool limitless_explain_back: stale: answers, but its evidence is stale or of unknown age

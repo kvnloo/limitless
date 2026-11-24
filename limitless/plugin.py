@@ -24,7 +24,7 @@ from datetime import date
 from typing import Callable
 
 from . import (bedtime, capture, card, card_view, catchup, coach_skill, explain_back, focus_safe, jobs,
-               jobs_runner,
+               jobs_runner, missed_brief,
                labeler, modes, prompt_rules, result_tier, schedule_cards, scorecard, stop_rule, tier_audit, tools)
 from .envelope import missing
 from .prediction import LAG_DAYS as _PREDICTION_LAGS
@@ -161,6 +161,10 @@ def _ideas(args, now):
 
 def _delivery(args, now):
     return tools.delivery(_reader(), now, raw=card.raw_in_prompt(os.environ))
+
+
+def _missed_brief(args, now):
+    return missed_brief.tool(_reader(), now, raw=card.raw_in_prompt(os.environ))
 
 
 def _uptime(args, now):
@@ -535,6 +539,16 @@ cap), whether the wake brief reached the person on the wake days, and whether ev
 line, in plain words. Only real Telegram deliveries count; held, folded, dropped and log-only rows never do, and \
 a day with no log row is unknown, not zero. The words only; the counts need the person's raw opt-in. No push \
 log set is no value with the reason. Read-only; nothing is written or sent."), _delivery, "📬"),
+    "limitless_missed_brief": (_schema(
+        "limitless_missed_brief",
+        "Today's wake brief when it never reached the person's phone (the state card then says Today's wake \
+brief did not reach your phone; ask me for it.): the brief text as kevin-push logged it (config push_log) and why \
+it was not delivered in words (held while Sleep mode was on, refused by the send gate, not sent: the sender \
+profile is missing, ...). Offered only when today is a wake day, no wake brief was delivered today (the delivery \
+audit's rule) and the brief is no older than the wake job's stale_after_s; a brief from an earlier day is never \
+offered. Every digit in the text is masked unless the person's raw opt-in is set. Value null with the reason in \
+words when nothing is missed. Show it when the person asks for it. Read-only: the brief is never marked sent \
+and nothing is sent."), _missed_brief, "📭"),
     "limitless_uptime": (_schema(
         "limitless_uptime",
         "Whether the inputs stayed fresh day by day over the last four weeks (config uptime_days), read from the \
