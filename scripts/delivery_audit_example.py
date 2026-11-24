@@ -5,8 +5,9 @@ synthetic wake events, in a temporary state dir, at a fixed clock in UTC. Reads 
 outside that dir, sends nothing. It runs the limitless_delivery tool (without and with the raw opt-in) and the
 week review line, then the complaints: unknown with no Hermes DB set, then from a synthetic session DB and a
 synthetic quiet.json (the tool, scorecard row two and the doctor's delivery row). Then why the wake briefs of a
-second synthetic week were missed (delivery_audit.brief_misses), one reason a missed wake day. Last, the first
-week followed by two failed sends ("log (telegram rc=1)"): "the last pushes failed to send".
+second synthetic week were missed (delivery_audit.brief_misses), one reason a missed wake day, and the same
+week again with a synthetic sleepmode.jsonl whose last activation the poller closed as left on. Last, the
+first week followed by two failed sends ("log (telegram rc=1)"): "the last pushes failed to send".
 """
 import json
 import sqlite3
@@ -130,6 +131,24 @@ print("\n# why the wake briefs of a second synthetic week were missed (brief_mis
 print(m["label"])
 print(json.dumps(m["days"]))
 print(json.dumps({k: m[k] for k in ("missed", "unknown_wake_days", "top")}))
+print(json.dumps({r: c for r, c in m["reasons"].items() if c}))
+
+# The same week with the poller's sleepmode.jsonl: three real nights in old rows (no rule, no left_on), then a
+# Sleep rule left on from the night before last that the poller closed this morning, once the owner was seen up.
+SLEEP = [{"at": at(7, 23), "on": True}, {"at": at(6, 7), "on": False},
+         {"at": at(6, 22), "on": True}, {"at": at(5, 8), "on": False},
+         {"at": at(4, 23), "on": True}, {"at": at(3, 7), "on": False},
+         {"at": at(2, 23), "on": True, "rule": "rule-b"},
+         {"at": at(0, 9), "on": False, "inferred": "Sleep left on, owner up", "left_on": "rule-b"}]
+with tempfile.TemporaryDirectory() as tmp:
+    st = Path(tmp)
+    (st / "sleepmode.jsonl").write_text("".join(json.dumps(dict(r, at=datetime.fromtimestamp(r["at"], UTC)
+                                                                .isoformat().replace("+00:00", "Z"))) + "\n"
+                                                for r in SLEEP))
+    m = delivery_audit.brief_misses(WEEK, WEEK_WAKES, UTC, sleep=delivery_audit.sleep_rows(st, {}))
+print("\n# the same week with sleepmode.jsonl: the last hold was in a Sleep mode left on (brief_misses sleep=)")
+print(m["label"])
+print(json.dumps(m["days"]))
 print(json.dumps({r: c for r, c in m["reasons"].items() if c}))
 
 # A third synthetic log: the first week, then the last two pushes failed to send (the transport returned non-zero,

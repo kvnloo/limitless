@@ -1391,7 +1391,8 @@ def delivery(reader: StateReader, now: float, raw: bool = False, env: Optional[M
     rows, skipped = got
     a = _delivery.audit(rows, wake_days=jobs_runner.delivery_wake_days(reader.path, now, env, home, tz),
                         today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=_delivery.push_cap(cfg),
-                        skipped=skipped, signals=_delivery.signals(reader.path, cfg, now, env))
+                        skipped=skipped, signals=_delivery.signals(reader.path, cfg, now, env),
+                        sleep=_delivery.sleep_rows(reader.path, env))
     if not a["known_days"]:
         out = envelope(None, _delivery.MODALITY, None, reason=_delivery.NO_ROWS_REASON)
         out["label"] = unknown

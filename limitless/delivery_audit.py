@@ -42,12 +42,13 @@ counts (T0); the text is never stored. Label: "no complaints this week" / "some 
 request" / "complaints: unknown, <why>".
 Missed briefs (``brief_misses``, the audit's ``misses``): for each known wake day with rows and no delivered
 brief, one reason from MISS_REASONS, decided only from that day's brief rows (precedence MISS_ORDER; no brief
-row is MISS_NONE). Counts per reason are T0; the label is words only; ``miss_clause`` words the most common
-reason for the tool and the doctor when the goal is not met.
+row is MISS_NONE). A Sleep hold is MISS_LEFT_ON when sleepmode.jsonl (``sleep_rows``) shows the poller later
+closed that activation as left on. Counts per reason are T0; the label is words only; ``miss_clause`` words the
+most common reason for the tool and the doctor when the goal is not met.
 Send failures (the audit's ``send_failures``, T0): SEND_FAIL_RUN or more transport failures (``how`` starting
 ``log (telegram rc=``) in a row as the window's last transport attempts are worded SEND_FAILING ("the last
 pushes failed to send", no count) and make the goal not met. See docs/delivery-audit.md.
-Pure: no clock, no file except read_log and signals, no send. Stdlib only, Python 3.9+.
+Pure: no clock, no file except read_log, sleep_rows and signals, no send. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
@@ -251,14 +252,17 @@ def stop_request(text) -> bool:
 
 # Why a wake day had no delivered brief (brief_misses): the fixed list, in words, no digit.
 MISS_SLEEP, MISS_QUIET = "held while Sleep mode was on", "held by the quiet setting"
+MISS_LEFT_ON = "held while Sleep mode was left on"   # a Sleep hold in an activation later closed as left on
 MISS_REPEAT, MISS_GATE = "stopped as a repeat", "refused by the send gate"
 MISS_LOGGED, MISS_NONE, MISS_UNKNOWN = "logged but not sent", "no brief attempt on that day", "unknown"
-MISS_REASONS = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_NONE, MISS_UNKNOWN)
+MISS_REASONS = (MISS_SLEEP, MISS_LEFT_ON, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_NONE, MISS_UNKNOWN)
 # Precedence when a day has several brief rows and none delivered: the first of these that any of them has.
 # The cause that stopped the first attempt comes first: a Sleep hold or a quiet drop leaves the event for a
 # retry that the gate then stops as a repeat, refuses (cap) or only logs, so those come after it. A day with
 # no brief row at all is MISS_NONE; a brief row whose ``how`` is none of the known words is MISS_UNKNOWN.
-MISS_ORDER = (MISS_SLEEP, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_UNKNOWN)
+# A Sleep hold is MISS_LEFT_ON only when sleepmode.jsonl shows its activation closed by a ``left_on`` row; a day
+# with a hold in a real night as well keeps MISS_SLEEP.
+MISS_ORDER = (MISS_SLEEP, MISS_LEFT_ON, MISS_QUIET, MISS_REPEAT, MISS_GATE, MISS_LOGGED, MISS_UNKNOWN)
 MISSES_PREFIX, MISSES_NONE = "missed wake briefs: ", "no wake brief was missed"
 MISSES_UNKNOWN = MISSES_PREFIX + "unknown"
 MISS_CLAUSE = "most common miss: {}"
@@ -281,14 +285,34 @@ def miss_reason(how) -> str:
     return MISS_UNKNOWN
 
 
+def sleep_rows(state_dir, env: Optional[Mapping[str, str]] = None) -> Optional[list]:
+    """sleepmode.jsonl as ``brief_misses(sleep=...)`` takes it (sleepmode.read of sleepmode.path: the file
+    kevin-push's Sleep hold reads, $LIMITLESS_SLEEPMODE else the state dir); None when it is absent or cannot be
+    read, so the reasons stay as they were. Read-only."""
+    from . import sleepmode
+    return sleepmode.read(sleepmode.path(state_dir, env))
+
+
+def _reason(r: dict, sleep: Optional[list]) -> str:
+    """miss_reason of one brief row; a Sleep hold whose activation sleepmode.jsonl later closed as left on is
+    MISS_LEFT_ON."""
+    from . import sleepmode
+    m = miss_reason(r.get("how"))
+    if m == MISS_SLEEP and sleep and sleepmode.left_on_close(sleep, float(r["at"])):
+        return MISS_LEFT_ON
+    return m
+
+
 def brief_misses(rows: Optional[Iterable], wake_days: Optional[Iterable], tz: Optional[tzinfo] = None, *,
-                 days: Optional[Iterable] = None) -> dict:
+                 days: Optional[Iterable] = None, sleep: Optional[list] = None) -> dict:
     """Why the wake brief did not reach the person on each known wake day without a delivered one.
 
     A wake day (``wake_days``, as audit takes them) is judged only when the log has rows that day, like audit;
     ``days`` (optional) limits the judged days (audit passes its window). One reason a missed day, decided only
     from that day's rows titled WAKE_TITLE: a delivered one means no miss; else the first reason in MISS_ORDER
     any of them has (miss_reason); no such row at all is MISS_NONE. Other titles never lend their reason.
+    ``sleep`` (sleep_rows: sleepmode.jsonl as sleepmode.read gives it; None = not read) turns a Sleep hold into
+    MISS_LEFT_ON when the activation it was held in was later closed by the poller's ``left_on`` row.
     T0: ``{"known", "missed", "reasons": {reason: count for every MISS_REASONS}, "days": {iso day: reason},
     "unknown_wake_days", "top", "label"}``; ``known`` is False (and nothing counted) when no wake day is known or
     the log has no row. ``top`` is the most common reason (ties by MISS_REASONS order), None with no miss.
@@ -315,7 +339,7 @@ def brief_misses(rows: Optional[Iterable], wake_days: Optional[Iterable], tz: Op
         briefs = [r for r in got if r.get("title") == WAKE_TITLE]
         if any(delivered(r) for r in briefs):
             continue
-        seen = {miss_reason(r.get("how")) for r in briefs}
+        seen = {_reason(r, sleep) for r in briefs}
         reason = next((m for m in MISS_ORDER if m in seen), MISS_NONE)
         out["days"][d.isoformat()] = reason
         out["reasons"][reason] += 1
@@ -411,10 +435,11 @@ def _complaints(signals: Optional[Mapping], good: list, days: set, tz: Optional[
 
 def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None, *, today: Optional[date] = None,
           tz: Optional[tzinfo] = None, cap: Optional[int] = None, skipped: int = 0,
-          signals: Optional[Mapping] = None) -> dict:
+          signals: Optional[Mapping] = None, sleep: Optional[list] = None) -> dict:
     """The delivery audit of ``rows`` over the ``days`` local days ending ``today`` (default: the newest row's
     day). T0 counts per day and in total, and one T1 ``label`` in words. ``signals`` (``signals()``) are the
-    complaint sources; None is complaints unknown. See the module doc."""
+    complaint sources; None is complaints unknown. ``sleep`` (sleep_rows()) goes to brief_misses. See the
+    module doc."""
     good, bad = [], int(skipped or 0)
     for r in rows or ():
         if valid(r):
@@ -461,7 +486,7 @@ def audit(rows: Iterable, days: int = DAYS, wake_days: Optional[Iterable] = None
     if wake["wake_days"]:
         wake["brief_share"] = wake["brief_delivered"] / wake["wake_days"]
     out["wake"] = wake
-    out["misses"] = brief_misses(good, wake_days, tz, days=window)
+    out["misses"] = brief_misses(good, wake_days, tz, days=window, sleep=sleep)
     out["complaints"] = _complaints(signals, good, set(window) if out["known_days"] else set(), tz)
     out["send_failures"] = _send_failures([r for d in window for r in by_day[d]])
     out["labels"] = {"push": _push_words(out, len(window)),

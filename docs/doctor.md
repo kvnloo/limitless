@@ -23,7 +23,8 @@ dir is `LIMITLESS_STATE`, else `"state"` there).
 | `uptime`, right after the last sync run | source | every input was fresh on at least config `uptime_target` of the last `uptime_days` local days of `runs.jsonl` (the uptime goal met); the reason is `limitless_uptime`'s words, never a count | the goal was not met, even counting every unknown day as fresh | no `runs.jsonl`, no run in the window, fewer than a week of runs that name their stale inputs, or too many unknown days to tell ([uptime-audit.md](uptime-audit.md)) | |
 | `delivery`, right after the uptime row | source | north-star row two met as the scorecard measures it (`delivery_audit.goal` over config `push_log`, complaints from config `hermes_db` and `quiet.json`); the reason is `limitless_delivery`'s words, never a count or a reply | the goal was not met (over the push limit, a missed brief, a push with no reply line, a quiet or stop request, or "the last pushes failed to send") | the goal is unknown: an unreadable log, no row this week, unknown wake days, or complaints unknown (no Hermes DB set, or it cannot be read) ([delivery-audit.md](delivery-audit.md)) | no `push_log` set |
 | `push sender`, right after the delivery row | source | `set: the sender profile exists`: the Hermes profile `bin/kevin-push` sends through (`KEVIN_PUSH_PROFILE`, else config `push_profile`, else the default) is `default`, or its dir exists under the Hermes home's `profiles/` (the home as `hermes -p` resolves it: `HERMES_HOME`, or its grandparent when it is a `<root>/profiles/<name>` profile home, else `~/.hermes`); only the dir is checked, hermes is never run and nothing is sent | | `broken: the sender profile does not exist` (every send would fail and only be logged), or `unknown:` no Hermes home is set, it does not exist, or it cannot be read; never the profile name, the target or a path | |
-| `local labeler`, right after the push sender row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
+| `Sleep mode`, right after the push sender row | source | the last row of `sleepmode.jsonl` (`LIMITLESS_SLEEPMODE`, else the state dir; the file kevin-push's Sleep hold reads) is `off`, or `on since <age in words>`; an on row adds "the Sleep mode poll is not fresh, so pushes are not held" while `sleepmode-poll.json` is not ok or older than kevin-push's limit (it fails open) | `left on, ignored since the owner was seen up`: the last row is the poller's inferred off row with `left_on`; or `stale: on far longer than a night; pushes are being held`: on longer than `sleepmode.NIGHT_H` with no such row ([below](#sleep-mode-row)) | `unknown:` no file, it cannot be read, no row with a time and an on or off, or the last row is in the future | |
+| `local labeler`, right after the Sleep mode row | labeler | `set:` `LIMITLESS_T1_CMD` or config `t1_model_cmd` names a command whose program exists and, for the bundled runner `bin/limitless-t1-local`, its model binary and model file (`LIMITLESS_T1_BIN` / `LIMITLESS_T1_MODEL`, else config `t1_bin` / `t1_model`) exist too; only files are checked, the model is never run. The reason says whether a passing local model check (`bin/limitless-t1-check`) is on file: `set: checked, agrees on most checks` (config `t1_check_file`, at least `t1_min_agreement`), or `set: not checked yet` (no check file set, so none is required) | | `broken:` the command cannot be read, its program does not exist, or the runner's binary or model file is not set or does not exist; the rule labels are used | no local model command set (the default): the rule labels are used; or set with config `t1_check_file` but no passing check on file (`set: not checked yet, ...` or `set: checked, agrees on few checks, below the minimum, ...`): the rule labels are used until one is ([privacy-tiers.md](privacy-tiers.md#local-model-labeler), [the check](privacy-tiers.md#local-model-check)) |
 | `tool <name>`, one per tool in `plugin.yaml`, in its order | tool | the tool answers with a value (its evidence tier in words) | it answers, but its evidence tier is stale | `value` is null, or the value is `unknown`: the envelope's own reason | the reason says its input is not set in config, or the feature is off by config (focus guard, breathing link, card dir) |
 | `NOOP MCP`, right after the tools | mcp | | | config `noop_mcp` is set but malformed; `refused: t0_tools does not cover its tools`; or set and covered, to be added to the host's `mcp_servers` by hand (the host has no plugin API for it; the doctor cannot see `mcp_servers`) | `noop_mcp` is unset (the default) ([noop-mcp.md](noop-mcp.md)) |
 | `desktop AW`, after the NOOP MCP row | source | config `desktop_aw_url` (or `desktop_aw_export`) is set and shows active app time within `STALE_H`, its age in words | it answers with no active app time in that time | `unreachable:` it does not answer, or what it sends cannot be used (no window bucket, no afk bucket, not ActivityWatch data); the plain reason | neither is set (the default); nothing is called ([desktop-aw.md](desktop-aw.md)) |
@@ -43,6 +44,47 @@ The thresholds are the plugin's own (`envelope.STALE_H`, the one `limitless_stat
 doctor adds none. A tool row comes from calling that tool's plugin function with `{}` the way its handler does
 (`tools.labeled`, then `tier_audit.audit_result`). A tool that needs arguments (`limitless_capture`) says so in
 front of its reason. A tool that raises is `missing` with the exception's type only, never its message.
+
+## Sleep mode row
+
+kevin-push holds every non-critical push while the last row of `sleepmode.jsonl` says on and the poll
+heartbeat next to it (`sleepmode-poll.json`) is ok and fresh; a stale poll fails open and nothing is held. The
+poller that writes the file closes a phone Sleep rule left on far longer than a night once the owner is seen up,
+with an inferred off row `{"on": false, "inferred": "Sleep left on, owner up", "left_on": "<rule id>"}`, and
+ignores that rule after; newer on rows also carry `"rule"`. The `Sleep mode` row reads the same file
+(`LIMITLESS_SLEEPMODE`, else the state dir) and says which case holds, in words only (no clock time, no digit,
+never the rule id or a path):
+
+- `off`: the last row is a plain off row (old rows without `rule` or `left_on` read the same).
+- `on since <age in words>`: counted from the first on row of the current activation; plus "the Sleep mode poll
+  is not fresh, so pushes are not held" when kevin-push would fail open.
+- `left on, ignored since the owner was seen up` (stale): the last row is the poller's inferred off row with
+  `left_on`. Pushes go out; the phone rule is still on and no longer means sleep.
+- `stale: on far longer than a night; pushes are being held`: on for longer than `sleepmode.NIGHT_H` (sixteen
+  hours, the longest one night keeps Sleep mode on) with no `left_on` row yet. With a poll that is not fresh it
+  says pushes are not held instead.
+- `unknown: <reason>` (missing): no file, it cannot be read, no row with a time and an on or off, or the last
+  row is in the future.
+
+The delivery audit uses the same `left_on` rows to tell a brief held by a night from one held while Sleep mode
+was left on ([delivery-audit.md](delivery-audit.md#why-a-wake-brief-was-missed)).
+
+The real output of `python3 -I scripts/sleep_mode_doctor_example.py` (made-up files, a fixed clock, UTC):
+
+```text
+# a night that ended (old rows: no rule, no left_on)
+Sleep mode: live: off
+# on since a nap began, poll fresh
+Sleep mode: live: on since about three hours ago
+# the same, but the poll stopped
+Sleep mode: live: on since about three hours ago; the Sleep mode poll is not fresh, so pushes are not held
+# a rule left on, not closed yet
+Sleep mode: stale: stale: on far longer than a night; pushes are being held
+# the poller closed it once the owner was seen up
+Sleep mode: stale: left on, ignored since the owner was seen up
+# no sleepmode.jsonl at all
+Sleep mode: missing: unknown: no Sleep mode file in the state dir
+```
 
 ## What it never does
 
@@ -80,6 +122,7 @@ last sync run: live: the last sync run was about an hour ago and finished ok
 uptime: missing: fewer than a week of sync runs name their stale inputs
 delivery: off: no push log set (config push_log)
 push sender: live: set: the sender profile exists
+Sleep mode: live: off
 local labeler: off: no local model command set, so the rule labels are used
 tool limitless_status: live: answers from direct evidence
 tool limitless_state: live: answers from a proxy

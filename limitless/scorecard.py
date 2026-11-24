@@ -190,7 +190,7 @@ def _delivery_measured(state_dir, cfg: Mapping, now: float, tz, env, home) -> tu
     rows, skipped = got
     a = da.audit(rows, wake_days=jobs_runner.delivery_wake_days(state_dir, now, env, home, tz),
                  today=datetime.fromtimestamp(now, tz).date(), tz=tz, cap=da.push_cap(cfg), skipped=skipped,
-                 signals=da.signals(state_dir, cfg, now, env))
+                 signals=da.signals(state_dir, cfg, now, env), sleep=da.sleep_rows(state_dir, env))
     if not a["known_days"]:
         return da.UNKNOWN_ROWS, da.GOAL_UNKNOWN, a
     return a["label"]["label"], da.goal(a), a

@@ -9,7 +9,9 @@ uptime goal was met, stale when not, missing when unknown; kind source, words on
 (north-star row two as the scorecard measures it, complaints included: off with no push log, live when met,
 stale when not, missing when unknown; kind source, words only), the push sender row (whether kevin-push's
 Hermes profile directory exists, push_sender.check: live when it does, missing when it does not or cannot be
-told; hermes is never run; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
+told; hermes is never run; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
+kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
+or unknown; kind source, words only), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
@@ -193,6 +195,45 @@ def push_sender_row(cfg: Mapping, env: Optional[Mapping[str, str]] = None,
     words = push_sender.check(cfg if isinstance(cfg, Mapping) else {}, os.environ if env is None else env,
                               hermes_home)
     return _row(PUSH_SENDER_ROW, "source", LIVE if words == push_sender.SET else MISSING, words)
+
+
+SLEEP_MODE_ROW = "Sleep mode"
+SLEEP_LEFT_ON = "left on, ignored since the owner was seen up"
+SLEEP_STALE = "stale: on far longer than a night"
+SLEEP_HELD, SLEEP_NOT_HELD = "pushes are being held", "the Sleep mode poll is not fresh, so pushes are not held"
+
+
+def sleep_mode_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
+    """Phone Sleep mode as kevin-push's hold reads it (sleepmode.path: $LIMITLESS_SLEEPMODE, else sleepmode.jsonl in
+    the state dir), from the last readable row: "off" (live); "on since <age words>" (live); "left on, ignored
+    since the owner was seen up" (stale) when it is the poller's inferred off row with ``left_on``; "stale: on far
+    longer than a night; pushes are being held" when the current activation began over sleepmode.NIGHT_H ago and
+    no such row closed it. An on row adds that pushes are not held while the poll heartbeat is not fresh
+    (kevin-push fails open). "unknown: <reason>" (missing) with no file, an unreadable one, no readable row or a
+    last row in the future. Words only: never a time, a rule id or a path. Kind ``source``. Read-only."""
+    from . import sleepmode
+    env = os.environ if env is None else env
+    p = sleepmode.path(state_path(cfg, env), env)
+    if not p.exists():
+        return _row(SLEEP_MODE_ROW, "source", MISSING, "unknown: no Sleep mode file in the state dir")
+    got = sleepmode.read(p)
+    if got is None:
+        return _row(SLEEP_MODE_ROW, "source", MISSING, "unknown: the Sleep mode file could not be read")
+    if not got:
+        return _row(SLEEP_MODE_ROW, "source", MISSING, "unknown: no Sleep mode row with a time and an on or off")
+    at, last = got[-1]
+    if at > now:
+        return _row(SLEEP_MODE_ROW, "source", MISSING, "unknown: the last Sleep mode row is timestamped in the future")
+    if sleepmode.is_left_on(last):
+        return _row(SLEEP_MODE_ROW, "source", STALE, SLEEP_LEFT_ON)
+    if not last["on"]:
+        return _row(SLEEP_MODE_ROW, "source", LIVE, "off")
+    age_h = max(0.0, now - sleepmode.since(got)) / 3600
+    held = sleepmode.poll_fresh(p, now)
+    if age_h > sleepmode.NIGHT_H:
+        return _row(SLEEP_MODE_ROW, "source", STALE, f"{SLEEP_STALE}; {SLEEP_HELD if held else SLEEP_NOT_HELD}")
+    tail = "" if held else f"; {SLEEP_NOT_HELD}"
+    return _row(SLEEP_MODE_ROW, "source", LIVE, f"on since {age_words(age_h)}{tail}")
 
 
 LOCAL_LABELER_ROW = "local labeler"
@@ -692,8 +733,9 @@ def apps_ask_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = No
 
 def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), north-star row
-    two (delivery_row), kevin-push's sender profile (push_sender_row), the local labeler (local_labeler_row),
-    each tool in plugin.yaml, the context packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
+    two (delivery_row), kevin-push's sender profile (push_sender_row), phone Sleep mode as kevin-push's hold
+    reads it (sleep_mode_row), the local labeler (local_labeler_row), each tool in plugin.yaml, the context
+    packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then the
     desktop's ActivityWatch (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
@@ -710,7 +752,8 @@ def report(cfg: Mapping, now: float) -> list:
     path = state_path(cfg)
     reader = StateReader(path)
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
-    rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg), local_labeler_row(cfg)]
+    rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
+             sleep_mode_row(cfg, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg)]
