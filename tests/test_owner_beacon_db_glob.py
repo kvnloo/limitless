@@ -195,17 +195,19 @@ class PrintedJob(ScheduleBase):
                 [argv] = self.writer_step(kind, "--label", LABEL, "--out", str(out), "--every", "60",
                                           "--db-glob", pattern)
                 self.assertEqual(argv[-2:], ["--db-glob", pattern], kind)
-                self.assertEqual(self.run_step(argv), 0, kind)
+                self.assertEqual(self.run_step(argv, d), 0, kind)
                 self.assertEqual(json.loads(out.read_text())["at"], iso(float(int(now - 3 * H))), kind)
                 (homes / "two").mkdir()     # a new agent home: the job is not printed again
                 make_db(homes / "two" / "state.db", [("s-tg", "user", CONTENT, now - H)])
-                self.assertEqual(self.run_step(argv), 0, kind)
+                self.assertEqual(self.run_step(argv, d), 0, kind)
                 self.assertEqual(json.loads(out.read_text())["at"], iso(float(int(now - H))), kind)
 
-    def run_step(self, argv):
-        """Run the printed writer argv as the job would (no shell needed: the words are already split)."""
-        r = subprocess.run(argv, capture_output=True, text=True, env=child_env(self.env), cwd=str(self.home),
-                           timeout=30)
+    def run_step(self, argv, home):
+        """Run the printed writer argv as the job would (no shell needed: the words are already split). It runs in
+        its own home: the job's interpreter may write caches under $HOME (macOS: ~/Library/Caches), and
+        self.home must stay empty for the next print's "printing must write nothing" check."""
+        r = subprocess.run(argv, capture_output=True, text=True, env=child_env(dict(self.env, HOME=str(home))),
+                           cwd=str(home), timeout=30)
         self.assertEqual(r.stderr, "")
         return r.returncode
 
