@@ -17,6 +17,7 @@ Stdlib only (sqlite3), Python 3.9+.
 from __future__ import annotations
 
 import sqlite3
+from typing import NamedTuple
 
 DEFAULT_CAP = 6   # send_gate.DAILY_CAP: the same N-a-day budget
 WINDOW_CLASSES = ("peak", "anytime", "trough", "bypass")
@@ -52,6 +53,12 @@ SELECT COUNT(*) FROM delivery
    AND window_class <> 'bypass' AND reserved_at >= ?"""
 
 
+class Reservation(NamedTuple):
+    id: int
+    state: str            # "queued" or "held"
+    reason: "str | None"  # None when queued, else cap | quiet | sleep | dedup
+
+
 def open_ledger(path, timeout: float = 30.0) -> sqlite3.Connection:
     """A connection to the ledger at ``path`` (created with its schema when missing). Autocommit: every
     transaction here is an explicit ``BEGIN IMMEDIATE``. The caller closes it."""
@@ -64,3 +71,64 @@ def open_ledger(path, timeout: float = 30.0) -> sqlite3.Connection:
         conn.close()
         raise
     return conn
+
+
+def _target_ok(target) -> bool:
+    parts = target.split(":", 2) if isinstance(target, str) else []
+    return len(parts) == 3 and bool(parts[0]) and bool(parts[1]) and "\n" not in target
+
+
+def _check_args(target, window_class, day_start, now, cap):
+    if not _target_ok(target):
+        raise ValueError(f"target is not platform:chat_id:thread_id: {target!r}")
+    if window_class not in WINDOW_CLASSES:
+        raise ValueError(f"unknown window_class: {window_class!r}")
+    if day_start > now:
+        raise ValueError("day_start is after now")
+    if not isinstance(cap, int) or cap < 1:
+        raise ValueError(f"cap must be a positive int: {cap!r}")
+
+
+def _fits(conn, target, window_class, day_start, cap) -> bool:
+    return conn.execute(BUDGET_SQL, (target, day_start)).fetchone()[0] < cap
+
+
+def used(conn, target: str, day_start: float) -> int:
+    """The budget slots ``target`` has used since ``day_start`` (BUDGET_SQL)."""
+    return conn.execute(BUDGET_SQL, (target, day_start)).fetchone()[0]
+
+
+def reserve(conn, target: str, body: str, *, day_start: float, now: float, cap: int = DEFAULT_CAP,
+            window_class: str = "anytime", job_id: "str | None" = None, dedup_key: "str | None" = None,
+            hold: "str | None" = None, release_after: "float | None" = None) -> Reservation:
+    """Insert one row for a message to ``target``: ``queued`` when it may go now (it takes its budget slot at
+    once), else ``held`` with its reason. In one BEGIN IMMEDIATE, in this order:
+
+    1. ``hold`` (``quiet`` or ``sleep``, the caller's own check): held with that reason.
+    2. the budget has no slot for this class: held, ``cap``.
+    3. queued.
+
+    ``release_after`` is stored on a held row for ``due_held``."""
+    _check_args(target, window_class, day_start, now, cap)
+    if hold is not None and hold not in HOLD_REASONS:
+        raise ValueError(f"hold must be one of {HOLD_REASONS}: {hold!r}")
+    if not isinstance(body, str):
+        raise ValueError("body must be a str")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if hold is not None:
+            state, reason = "held", hold
+        elif not _fits(conn, target, window_class, day_start, cap):
+            state, reason = "held", "cap"
+        else:
+            state, reason, release_after = "queued", None, None
+        cur = conn.execute(
+            "INSERT INTO delivery (target, job_id, dedup_key, window_class, state, reason, body, created_at,"
+            " release_after, reserved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (target, job_id, dedup_key, window_class, state, reason, body, now, release_after,
+             now if state == "queued" else None))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return Reservation(cur.lastrowid, state, reason)
