@@ -4,8 +4,9 @@
           # {"at": iso | None, "age_h": float | None, "sources_read": int, "sources_failed": int}
 
 The person chats from several machines, each with its own Hermes session store, so one store alone can look
-a day old while they are active. Every store is read; the newest role ``user`` message of any session
-source wins. Only the timestamp is read: message content is never selected or returned. Each store is
+a day old while they are active. Every store is read; the newest role ``user`` message wins, from any
+session source except the ones Hermes starts by itself (AUTOMATED_SOURCES: cron, kanban, subagent), whose
+``user`` rows are the agent's own prompts. Only the timestamp is read: message content is never selected or returned. Each store is
 opened read-only (``mode=ro``) with a short busy timeout; a missing, locked or malformed store counts in
 ``sources_failed`` and never raises. A message stamped more than SKEW_S after ``now`` (a machine whose clock
 is wrong) is ignored; a smaller skew reads as age 0. Paths: ``StateReader.owner_db_paths`` ($LIMITLESS_OWNER_DBS or config ``owner_dbs``; none by default).
@@ -44,10 +45,16 @@ SKEW_S = 300.0         # clock skew between machines tolerated before a timestam
 BEACON_V = 1           # the only beacon shape: {"at": ISO with offset, "v": 1}
 BEACON_MAX_BYTES = 4096  # a beacon is a few dozen bytes; anything larger is not one
 
-FLAT_SQL = ("SELECT timestamp FROM messages WHERE role = 'user' AND timestamp <= ? "
-            "ORDER BY timestamp DESC LIMIT 1")
+# Session sources Hermes starts by itself: their role ``user`` rows are the agent's own prompts (a cron
+# job's prompt, a kanban card's brief, a delegated child's goal), never the person writing.
+AUTOMATED_SOURCES = ("cron", "kanban", "subagent")
+_NOT_AUTOMATED = "s.source NOT IN (" + ", ".join("'" + s + "'" for s in AUTOMATED_SOURCES) + ")"
+FLAT_SQL = ("SELECT m.timestamp FROM messages m JOIN sessions s ON s.id = m.session_id "
+            "WHERE m.role = 'user' AND m.timestamp <= ? AND " + _NOT_AUTOMATED + " "
+            "ORDER BY m.timestamp DESC LIMIT 1")
 PER_SESSION_SQL = ("SELECT MAX((SELECT m.timestamp FROM messages m WHERE m.session_id = s.id "
-                   "AND m.role = 'user' AND m.timestamp <= ? ORDER BY m.timestamp DESC LIMIT 1)) FROM sessions s")
+                   "AND m.role = 'user' AND m.timestamp <= ? ORDER BY m.timestamp DESC LIMIT 1)) FROM sessions s "
+                   "WHERE " + _NOT_AUTOMATED)
 
 
 def _index_columns(con) -> list:

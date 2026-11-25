@@ -165,11 +165,12 @@ class LargeDbGuard(unittest.TestCase):
         con = sqlite3.connect(str(self.dir / "h.db"))  # why: the naive query would scan and sort it all
         naive = [r[-1] for r in con.execute("EXPLAIN QUERY PLAN " + om.FLAT_SQL, (NOW,)).fetchall()]
         con.close()
-        self.assertIn("SCAN messages", naive)
+        self.assertTrue(any(s in ("SCAN messages", "SCAN m") for s in naive), naive)
 
     def test_a_timestamp_index_is_walked_backwards_once(self):
         sql, steps = plan(make_db(self.dir / "t.db", self.rows, index="CREATE INDEX idx_ts ON messages(timestamp);"))
-        self.assertIn("ORDER BY timestamp DESC LIMIT 1", sql)
+        self.assertEqual(sql, om.FLAT_SQL)
+        self.assertIn("ORDER BY m.timestamp DESC LIMIT 1", sql)
         self.assertTrue(any("idx_ts" in s for s in steps), steps)
         self.assertFalse(any("TEMP B-TREE" in s for s in steps), steps)
 
