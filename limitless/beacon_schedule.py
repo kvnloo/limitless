@@ -15,12 +15,35 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import shlex
 from typing import Iterable, Optional
 
 KINDS = ("launchd", "systemd")
+MIN_EVERY, MAX_EVERY = 5, 1440      # minutes: no tighter than five, no looser than a day
+LABEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")   # reverse-DNS style; also a plain unit file name
 BOOT_DELAY = "5min"   # the first run after boot; then every --every minutes
 DEFAULT_LABEL = "limitless.owner-beacon"
+
+
+def refusal(values: Iterable[str], every: str, out: str, copy_to: Optional[str] = None, dbs: Iterable[str] = (),
+            label: Optional[str] = None) -> Optional[str]:
+    """Why these arguments are refused, in one line, or None when they are fine. ``values`` is every value
+    given (a newline in any of them is refused first); ``every`` is the raw --every text."""
+    if any("\n" in v or "\r" in v for v in values):
+        return "a value contains a newline"
+    if not (every.isascii() and every.isdigit()) or not MIN_EVERY <= int(every) <= MAX_EVERY:
+        return f"--every must be a whole number of minutes from {MIN_EVERY} to {MAX_EVERY}"
+    if not os.path.isabs(out):
+        return "--out must be an absolute path (the job does not run in this directory or expand ~)"
+    if copy_to is not None and (":" not in copy_to or copy_to.startswith("-")):
+        return "--copy-to must be an scp destination like user@host:path"
+    for db in dbs:
+        if not os.path.isabs(db) or os.pathsep in db:
+            return f"--db must be an absolute path without {os.pathsep!r}"
+    if label is not None and not LABEL_RE.match(label):
+        return "--label must be letters, digits, dots, dashes or underscores (like org.example.owner-beacon)"
+    return None
 
 
 def _join(argv: Iterable[str]) -> str:

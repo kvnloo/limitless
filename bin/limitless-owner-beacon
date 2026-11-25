@@ -86,10 +86,13 @@ def parse_schedule(args):
 
 
 def schedule(opts) -> int:
-    every = opts["every"]
-    if not (every.isascii() and every.isdigit()):
-        print(USAGE + "\n" + SCHEDULE_USAGE, file=sys.stderr)
+    values = [v for k, v in opts.items() if k != "db"] + opts["db"]
+    why = beacon_schedule.refusal(values, opts["every"], opts["out"], opts.get("copy-to"), opts["db"],
+                                  opts.get("label"))
+    if why:
+        print(f"{NAME}: refused: {why}", file=sys.stderr)
         return 2
+    every = opts["every"]
     print(beacon_schedule.render(opts["kind"], sys.executable, str(Path(__file__).resolve()), opts["out"],
                                  int(every), copy_to=opts.get("copy-to"), dbs=opts["db"],
                                  label=opts.get("label", beacon_schedule.DEFAULT_LABEL)), end="")
@@ -168,7 +171,7 @@ def main(argv) -> int:
     if args[:1] == ["schedule"]:
         opts = parse_schedule(args)
         if opts is None:
-            print(USAGE + "\n" + SCHEDULE_USAGE, file=sys.stderr)
+            print("usage: " + SCHEDULE_USAGE.strip(), file=sys.stderr)
             return 2
         return schedule(opts)
     opts = parse(args)

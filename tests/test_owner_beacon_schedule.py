@@ -166,6 +166,67 @@ class Systemd(Base):
         self.assertEqual(self.sh_steps(words), [writer(ODD, [odd_db]), ["scp", "-q", "-p", ODD, DEST]])
 
 
+class Refusals(Base):
+    """Exit 2, one line on stderr naming the flag, nothing on stdout, no traceback, for both kinds."""
+
+    def assert_refused(self, flag, *args):
+        for kind in ("launchd", "systemd"):
+            r = self.run_cli("schedule", "--print", "--kind", kind, *args)
+            self.assertEqual(r.returncode, 2, (kind, args, r.stdout))
+            self.assertEqual(r.stdout, "")
+            self.assertEqual(len(r.stderr.strip().splitlines()), 1, r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertIn("limitless-owner-beacon: refused:", r.stderr)
+            self.assertIn(flag, r.stderr)
+            self.assertEqual(sorted(self.home.iterdir()), [])
+
+    def test_every_under_5_or_over_1440_or_not_a_number(self):
+        for every in ("4", "0", "1441", "100000", "-5", "1.5", "an hour", "６０"):
+            self.assert_refused("--every", "--out", OUT, "--every", every)
+
+    def test_the_bounds_themselves_are_fine(self):
+        for every in ("5", "1440"):
+            self.schedule("--kind", "systemd", "--out", OUT, "--every", every)
+
+    def test_copy_to_without_a_colon(self):
+        for dest in ("user@example-host", "/tmp/example/beacons/b.json"):
+            self.assert_refused("--copy-to", "--out", OUT, "--every", "60", "--copy-to", dest)
+
+    def test_copy_to_that_scp_would_read_as_an_option(self):
+        self.assert_refused("--copy-to", "--out", OUT, "--every", "60", "--copy-to", "-oProxyCommand=x:y")
+
+    def test_a_relative_out(self):
+        for out in ("owner-beacon.json", "cache/owner-beacon.json", "~/owner-beacon.json", "./b.json"):
+            self.assert_refused("--out", "--out", out, "--every", "60")
+
+    def test_a_relative_db_or_one_with_the_path_separator(self):
+        for db in ("a.db", "/tmp/example/a.db" + os.pathsep + "/tmp/example/b.db"):
+            self.assert_refused("--db", "--out", OUT, "--every", "60", "--db", db)
+
+    def test_a_label_that_is_not_a_plain_name(self):
+        for label in ("org/example", "has space", "-leading", "a;b"):
+            self.assert_refused("--label", "--out", OUT, "--every", "60", "--label", label)
+
+    def test_a_value_with_a_newline(self):
+        self.assert_refused("newline", "--out", "/tmp/example/a\nb.json", "--every", "60")
+        self.assert_refused("newline", "--out", OUT, "--every", "60", "--copy-to", "user@example-host:/tmp/a\nb")
+        self.assert_refused("newline", "--out", OUT, "--every", "60", "--db", "/tmp/example/a\rb.db")
+        self.assert_refused("newline", "--out", OUT, "--every", "60", "--label", "org.example\nx")
+        self.assert_refused("newline", "--out", OUT, "--every", "60\n")
+
+    def test_bad_arguments_are_one_usage_line(self):
+        for args in (("schedule",), ("schedule", "--kind", "launchd", "--out", OUT, "--every", "60"),
+                     ("schedule", "--print", "--kind", "cron", "--out", OUT, "--every", "60"),
+                     ("schedule", "--print", "--kind", "launchd", "--every", "60"),
+                     ("schedule", "--print", "--kind", "launchd", "--out", OUT),
+                     ("schedule", "--print", "--kind", "launchd", "--out", OUT, "--every", "60", "--bogus", "x"),
+                     ("schedule", "--print", "--kind", "launchd", "--out", OUT, "--out", OUT, "--every", "60")):
+            r = self.run_cli(*args)
+            self.assertEqual((r.returncode, r.stdout), (2, ""), args)
+            self.assertEqual(len(r.stderr.strip().splitlines()), 1, r.stderr)
+            self.assertTrue(r.stderr.startswith("usage: limitless-owner-beacon schedule --print"), r.stderr)
+
+
 class Help(Base):
     def test_help_says_it_only_prints(self):
         for args in (("--help",), ("schedule", "--help")):
