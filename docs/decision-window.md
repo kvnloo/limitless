@@ -202,6 +202,16 @@ Once the host jobs send, the systemd timer can drop `--send` and run `limitless-
 If both run anyway, a job still speaks at most once per event: the `--once` key and `jobs-sent.jsonl` see to it.
 The host accepts each payload (`tests/test_cron_spec.py` runs them through copies of the fork's own rules).
 
+Once the jobs exist, nothing on the host keeps them in step with the plugin: an update that changes a job's
+window or expiry leaves the old record in place. `bin/limitless-cron-spec --check <the host's cron/jobs.json>`
+reads that file, read-only, and prints one line per sending job: `ok`, `missing`, `differs:` with the fields in
+words (`window and expiry`; the others are interval, script, agent mode and delivery), `paused on the host`, or
+`unreadable` for a record it cannot read; a `limitless-` host job the plugin no longer has says `not a plugin job
+any more`, and other host jobs are left alone. It reads the records as the fork's `create_job` stores them (the
+parsed interval, `window_class` and `stale_after_s` only when set, and the host's own normalizing of both). It exits
+0 when every job is ok, 1 otherwise, and 2 for a usage error or a file it cannot read; it never writes and never
+calls Hermes. The fix for a line that is not ok stays with the operator (`cron.jobs.update_job` or a new job).
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
