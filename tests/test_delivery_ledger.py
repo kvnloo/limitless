@@ -84,5 +84,75 @@ class Schema(LedgerCase):
         self.assertTrue(any(f.startswith(" ".join(dl.BUDGET_SQL.split())) for f in flat), flat)
 
 
+# --- stage reserve
+class Reserve(LedgerCase):
+    def test_under_the_cap_is_queued_and_takes_its_slot_at_once(self):
+        r = dl.reserve(self.db, T, "synthetic body", day_start=DAY, now=NOW, cap=3, job_id="synthetic-job")
+        self.assertEqual((r.state, r.reason), ("queued", None))
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+        self.assertEqual(self.row(r.id)["reserved_at"], NOW)
+
+    def test_at_the_cap_is_held_with_reason_cap(self):
+        self.fill(2, cls="peak", cap=2)
+        r = dl.reserve(self.db, T, "one more", day_start=DAY, now=NOW, cap=2, window_class="peak",
+                       release_after=NOW + H)
+        self.assertEqual((r.state, r.reason), ("held", "cap"))
+        self.assertEqual(self.row(r.id)["release_after"], NOW + H)
+        self.assertEqual(dl.used(self.db, T, DAY), 2)
+
+    def test_the_budget_is_per_target(self):
+        self.fill(2, cls="peak", cap=2)
+        self.assertEqual(dl.reserve(self.db, T2, "b", day_start=DAY, now=NOW, cap=2).state, "queued")
+
+    def test_the_callers_quiet_or_sleep_hold_is_kept_and_takes_no_slot(self):
+        for why in ("quiet", "sleep"):
+            r = dl.reserve(self.db, T, "b", day_start=DAY, now=NOW, hold=why)
+            self.assertEqual((r.state, r.reason), ("held", why))
+        self.assertEqual(dl.used(self.db, T, DAY), 0)
+
+    def test_bad_arguments_raise(self):
+        for kw in ({"window_class": "wind_down"}, {"hold": "cap"}, {"cap": 0}, {"day_start": NOW + 1}):
+            args = {"day_start": DAY, "now": NOW, **kw}
+            with self.assertRaises(ValueError):
+                dl.reserve(self.db, T, "b", **args)
+        for target in ("telegram", "telegram:synthetic-chat", ":synthetic-chat:", "telegram::"):
+            with self.assertRaises(ValueError):
+                dl.reserve(self.db, target, "b", day_start=DAY, now=NOW)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM delivery").fetchone()[0], 0)
+
+    def test_two_connections_racing_on_the_last_slot_queue_exactly_one(self):
+        for n in range(8):   # a fresh target per round; each round both threads start together
+            target = f"telegram:synthetic-race-{n}:"
+            dl.reserve(self.db, target, "first", day_start=DAY, now=NOW, cap=2, window_class="peak")
+            gate, out, errors = threading.Barrier(2), [], []
+
+            def go(i):
+                conn = dl.open_ledger(self.path)
+                try:
+                    gate.wait()
+                    out.append(dl.reserve(conn, target, f"racer {i}", day_start=DAY, now=NOW, cap=2,
+                                          window_class="peak"))
+                except Exception as e:  # pragma: no cover - reported below
+                    errors.append(e)
+                finally:
+                    conn.close()
+
+            threads = [threading.Thread(target=go, args=(i,)) for i in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+            self.assertEqual(errors, [])
+            self.assertEqual(sorted(r.state for r in out), ["held", "queued"], f"round {n}")
+            self.assertEqual(dl.used(self.db, target, DAY), 2)
+
+    def test_the_budget_day_refills_on_the_callers_boundary_not_a_rolling_day(self):
+        self.fill(2, cls="peak", cap=2, at=DAY - H, day=YESTERDAY)   # both slots taken an hour before the boundary
+        self.assertEqual(dl.used(self.db, T, DAY - 2 * H), 2)
+        self.assertEqual(dl.used(self.db, T, DAY), 0)    # a new day: under 24 h later, the budget is full again
+        r = dl.reserve(self.db, T, "new day", day_start=DAY, now=DAY + 60, cap=2, window_class="peak")
+        self.assertEqual(r.state, "queued")
+
+
 if __name__ == "__main__":
     unittest.main()
