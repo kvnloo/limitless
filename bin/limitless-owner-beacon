@@ -11,7 +11,10 @@ No content, no counts, no source or session names. The file is written atomicall
 same directory, then rename) with mode 0600. Copying it to the plugin host is up to the operator (see
 docs/owner-beacon.md); there it is listed in $LIMITLESS_OWNER_BEACONS or config "owner_beacons".
 
-Exit 0 when the beacon was written, and also when there is nothing to write (no DB configured, no DB
+When the newest time equals the one in a valid beacon already at --out, the file is left as it is (same
+bytes, same mtime) and one line says it is unchanged, so a copy step on a schedule only moves a changed file.
+
+Exit 0 when the beacon was written or left unchanged, and also when there is nothing to write (no DB configured, no DB
 readable, no message from the person): then nothing is written, an old beacon is left as it is, and one
 line says why. Exit 1 and one line on stderr when the file cannot be written; exit 2 and a usage line for
 bad arguments. It never sends and never prints a traceback.
@@ -69,6 +72,21 @@ def write_atomic(out: Path, body: str) -> None:
         raise
 
 
+def current_time(out: Path):
+    """Epoch seconds of the valid beacon already at ``out``, else None (absent, unreadable, too large, or not
+    ``{"at": ISO with offset, "v": 1}``)."""
+    try:
+        if not out.is_file():
+            return None
+        with open(out, "rb") as f:
+            raw = f.read(owner_messages.BEACON_MAX_BYTES + 1)
+        if len(raw) > owner_messages.BEACON_MAX_BYTES:
+            return None
+        return owner_messages.beacon_time(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, OverflowError):
+        return None
+
+
 def write(out: Path, dbs, now: float) -> int:
     if dbs is None:
         print(f"{NAME}: nothing written: no owner session DBs (--dbs, {OWNER_DBS_ENV} or "
@@ -80,8 +98,12 @@ def write(out: Path, dbs, now: float) -> int:
                else "the owner session DBs could not be read")
         print(f"{NAME}: nothing written: {why}")
         return 0
+    body = json.dumps({"at": got["at"], "v": owner_messages.BEACON_V}) + "\n"
+    if current_time(out) == owner_messages.beacon_time(body):
+        print(f"{NAME}: beacon unchanged: the newest time is the one already at --out")
+        return 0
     try:
-        write_atomic(out, json.dumps({"at": got["at"], "v": owner_messages.BEACON_V}) + "\n")
+        write_atomic(out, body)
     except OSError as e:
         print(f"{NAME}: could not write the beacon: {e.strerror or type(e).__name__}", file=sys.stderr)
         return 1

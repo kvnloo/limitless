@@ -105,6 +105,64 @@ class Write(Base):
         self.assertEqual(json.loads(self.out.read_text())["at"], iso(self.t_new))
 
 
+class Unchanged(Base):
+    """The same newest time as the valid beacon already at --out: the file is left as it is (bytes and mtime),
+    so a copy step that runs on a schedule only moves a changed file."""
+    OLD_MTIME = 1_000_000_000
+
+    def put(self, body, mode=0o600):
+        self.out.write_text(body)
+        os.chmod(self.out, mode)
+        os.utime(self.out, (self.OLD_MTIME, self.OLD_MTIME))
+
+    def assert_untouched(self, body, r):
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assert_one_line(r.stdout + r.stderr)
+        self.assertIn("unchanged", r.stdout)
+        self.assertEqual(r.stderr, "")
+        self.assertEqual(self.out.read_text(), body)
+        self.assertEqual(self.out.stat().st_mtime, self.OLD_MTIME)
+        self.assertEqual(sorted(p.name for p in self.out.parent.iterdir()), ["beacon.json"])
+
+    def assert_rewritten(self, r):
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "limitless-owner-beacon: beacon written")
+        self.assertEqual(json.loads(self.out.read_text()), {"at": iso(self.t_new), "v": 1})
+        self.assertNotEqual(self.out.stat().st_mtime, self.OLD_MTIME)
+        self.assertEqual(stat.S_IMODE(self.out.stat().st_mode), 0o600)
+        self.assertEqual(sorted(p.name for p in self.out.parent.iterdir()), ["beacon.json"])
+
+    def test_same_time_leaves_the_file_untouched(self):
+        body = json.dumps({"at": iso(self.t_new), "v": 1}) + "\n"
+        self.put(body)
+        self.assert_untouched(body, self.run_cli("write", "--out", str(self.out), "--dbs", str(self.b)))
+
+    def test_second_run_is_a_no_op(self):
+        args = ("write", "--out", str(self.out), "--dbs", os.pathsep.join([str(self.a), str(self.b)]))
+        self.assertEqual(self.run_cli(*args).returncode, 0)
+        os.utime(self.out, (self.OLD_MTIME, self.OLD_MTIME))
+        body = self.out.read_text()
+        self.assert_untouched(body, self.run_cli(*args))
+
+    def test_same_instant_written_another_way_is_still_the_same_time(self):
+        body = json.dumps({"v": 1, "at": iso(self.t_new).replace("+00:00", "Z")})
+        self.put(body)
+        self.assert_untouched(body, self.run_cli("write", "--out", str(self.out), "--dbs", str(self.b)))
+
+    def test_an_older_or_newer_time_is_rewritten(self):
+        for other in (self.t_new - H, self.t_new + 1):
+            self.put(json.dumps({"at": iso(other), "v": 1}) + "\n", mode=0o644)
+            self.assert_rewritten(self.run_cli("write", "--out", str(self.out), "--dbs", str(self.b)))
+
+    def test_not_a_valid_beacon_is_rewritten(self):
+        same = iso(self.t_new)
+        for body in ("", "not json", json.dumps({"at": same, "v": 2}), json.dumps({"at": same}),
+                     json.dumps({"at": same[:-6], "v": 1}), json.dumps([same, 1]),
+                     json.dumps({"at": same, "v": 1, "pad": "x" * om.BEACON_MAX_BYTES})):
+            self.put(body)
+            self.assert_rewritten(self.run_cli("write", "--out", str(self.out), "--dbs", str(self.b)))
+
+
 class Nothing(Base):
     def assert_nothing_written(self, r, why):
         self.assertEqual(r.returncode, 0, r.stderr)
