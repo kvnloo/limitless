@@ -80,6 +80,10 @@ class DoctorNames(unittest.TestCase):
             with self.subTest(job=i):
                 self.assertIn(jobs.JOB_WORDS[i], said)
 
+    def test_job_names_never_guesses_from_an_id(self):
+        with self.assertRaises(KeyError):
+            doctor.job_names(["synthetic_job"])
+
     def test_job_rows_are_named_from_the_table(self):
         for row, i in ((doctor.NOOP_ROW, "noop_export"), (doctor.APPS_INGEST_ROW, "apps_ingest"),
                        (doctor.RANKED_INGEST_ROW, "ranked_ingest"), (doctor.SENDER_INGEST_ROW, "sender_ingest"),
@@ -149,7 +153,6 @@ class EveryLine(unittest.TestCase):
         for c in schedule_cards.cards(**ALL_CARDS):
             with self.subTest(job=c["id"]):
                 self.assertEqual(c["job"], jobs.JOB_WORDS[c["id"]])
-                self.assertEqual(c["words"]["job"], jobs.JOB_WORDS[c["id"]])
 
     def test_the_cron_spec_word_lines(self):
         self.assertNoRawId(cron_spec.plan_lines())

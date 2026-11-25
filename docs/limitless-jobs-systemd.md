@@ -125,4 +125,4 @@ ExecStart=%h/src/limitless/bin/limitless-jobs --ingest --confirm
 Drop `--confirm` for a pass that sends nothing at all. The timer unit above drives it as is. While a sync waits for
 its ingest, `limitless-doctor`'s `job apps ingest`, `job ranked ingest` and `job sender ingest` rows say
 `(limitless-jobs --ingest or --send runs it)`, and while a sender change waits for its confirmation the
-`job sender confirm` row says `(limitless-jobs --ingest --confirm or --send sends it)` ([doctor.md](doctor.md)).
+`job sender confirmation` row says `(limitless-jobs --ingest --confirm or --send sends it)` ([doctor.md](doctor.md)).

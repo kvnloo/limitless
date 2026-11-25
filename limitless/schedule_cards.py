@@ -5,7 +5,7 @@ person approved, shown on a "Schedule this job?" card (PR #158289, approval kind
 describes each limitless job (jobs.SPECS) as one such card, so a host can show and govern it instead of the
 plugin keeping a schedule nobody sees:
 
-    card_for(spec) -> {id, kind, name, description, trigger, ends, window, stale_after_s, once_key,
+    card_for(spec) -> {id, kind, name, job, description, trigger, ends, window, stale_after_s, once_key,
                        budget, per_window, sender, words}
     cards(external=(), habit=None) -> [card_for(spec) for every job]
 
@@ -14,6 +14,7 @@ a card grows one. ``once_key`` is the template of the send gate's event key (job
 ``budget`` is the send gate's per-day cap (shared by every limitless push); ``per_window`` the job's own
 limit per trigger. ``sender`` is ``plugin`` (limitless-jobs sends it) or ``external`` (a job named in
 ``external_jobs``: its own sender has the content). ``words`` is jobs.to_schedule_card: the plain lines.
+``name`` is the push's own title; ``job`` is the job's name in words (jobs.JOB_WORDS), as the doctor says it.
 Field names follow #158289 where it has one (``kind``, ``name``, ``description``); docs/schedule-cards.md
 has the mapping.
 
@@ -67,7 +68,7 @@ def card_for(spec: jobs.JobSpec, external: Iterable[str] = ()) -> dict:
     sender = EXTERNAL if spec.name in set(external or ()) else PLUGIN
     desc = f'Schedule "{words["name"]}" ({words["speaks"]}; {words["window"]}): ends {words["ends"]}; ' \
            f'{words["delivery"]}' + (OWN_SENDER if sender == EXTERNAL else "")
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": spec.stale_after_s, "once_key": once_key(spec), "budget": send_gate.DAILY_CAP,
             "per_window": spec.max_per_window, "sender": sender, "words": words}
@@ -111,7 +112,7 @@ def ledger_card() -> dict:
     w = jobs.to_schedule_card(LEDGER_SPEC)
     w.update(delivery=LEDGER_DOES, runs=LEDGER_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {LEDGER_DOES}'
-    return {"id": LEDGER_ID, "kind": KIND, "name": LEDGER_SPEC.send_title, "description": desc,
+    return {"id": LEDGER_ID, "kind": KIND, "name": LEDGER_SPEC.send_title, "job": jobs.job_words(LEDGER_ID), "description": desc,
             "trigger": LEDGER_SPEC.trigger_event, "ends": LEDGER_SPEC.expires, "window": LEDGER_SPEC.window_class,
             "stale_after_s": None, "once_key": f"{LEDGER_ID}:<night date>", "budget": 0,
             "per_window": LEDGER_SPEC.max_per_window, "sender": LOCAL, "words": w}
@@ -132,7 +133,7 @@ def noop_export_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=NOOP_WINDOW, delivery=NOOP_DOES, runs=NOOP_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {NOOP_DOES}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
             "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
@@ -150,7 +151,7 @@ def apps_ingest_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=NOOP_WINDOW, delivery=APPS_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {APPS_DOES}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
             "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
@@ -168,7 +169,7 @@ def ranked_ingest_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=NOOP_WINDOW, delivery=RANKED_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {RANKED_DOES}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
             "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
@@ -187,7 +188,7 @@ def sender_ingest_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=NOOP_WINDOW, delivery=SENDER_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {SENDER_DOES}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
             "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
@@ -205,7 +206,7 @@ def fit_ingest_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=NOOP_WINDOW, delivery=FIT_DOES, runs=INGEST_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {FIT_DOES}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": None, "once_key": f"{spec.name}:<sync run time>", "budget": 0,
             "per_window": spec.max_per_window, "sender": LOCAL, "words": w}
@@ -224,7 +225,7 @@ def sender_confirm_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=CONFIRM_WINDOW, runs=jobs.CONFIRM_RUNS)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {w["delivery"]}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": spec.stale_after_s, "once_key": f"{spec.name}:<sender reply time>",
             "budget": send_gate.DAILY_CAP, "per_window": spec.max_per_window, "sender": PLUGIN, "words": w}
@@ -242,7 +243,7 @@ def outage_recap_card() -> dict:
     w = jobs.to_schedule_card(spec)
     w.update(window=RECAP_WINDOW)
     desc = f'Schedule "{w["name"]}" ({w["speaks"]}; {w["window"]}): ends {w["ends"]}; {w["delivery"]}'
-    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "description": desc,
+    return {"id": spec.name, "kind": KIND, "name": spec.send_title, "job": jobs.job_words(spec.name), "description": desc,
             "trigger": spec.trigger_event, "ends": spec.expires, "window": spec.window_class,
             "stale_after_s": spec.stale_after_s, "once_key": f"{spec.name}:<first failed push time>",
             "budget": send_gate.DAILY_CAP, "per_window": spec.max_per_window, "sender": PLUGIN, "words": w}

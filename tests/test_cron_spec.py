@@ -181,7 +181,7 @@ class PlanWords(unittest.TestCase):
             with self.subTest(job=spec.name):
                 self.assertFalse(re.search(r"\d", line), line)
         text = "\n".join(lines)
-        self.assertIn("limitless-miq (MIQ for tonight?): window wind down, stale after three hours", text)
+        self.assertIn("limitless-miq (MIQ): window wind down, stale after three hours", text)
         self.assertIn("limitless-noop_export (NOOP export): skipped, sends nothing", text)
 
 

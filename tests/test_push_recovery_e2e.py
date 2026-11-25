@@ -256,7 +256,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual(changed, [sender_reply.MARK])
         self.assertEqual(rows, [])
         self.assertTrue(lines["Sender ingest"].startswith("Sender ingest: run: a sync ran; "), lines)
-        self.assertEqual(lines["Sender confirm"], f"Sender confirm: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
+        self.assertEqual(lines["Sender confirmation"], f"Sender confirmation: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
         self.assertEqual(lines["Outage recap"], RECAP_OPEN)
         self.assertOutageShown(True)
 
@@ -275,8 +275,8 @@ class Recovery(unittest.TestCase):
         self.assertEqual([(r["title"], r["how"]) for r in rows], [(confirm_job.TITLE_SENT, "telegram")])
         self.assertEqual(lines["Sender ingest"],
                          "Sender ingest: run: a sync ran; set the sender profile from your reply")
-        self.assertTrue(lines["Sender confirm"].startswith("Sender confirm: deliver: "), lines)
-        self.assertTrue(lines["Sender confirm"].endswith("; sent"), lines)
+        self.assertTrue(lines["Sender confirmation"].startswith("Sender confirmation: deliver: "), lines)
+        self.assertTrue(lines["Sender confirmation"].endswith("; sent"), lines)
         self.assertEqual(lines["Outage recap"], RECAP_WAITS)
         self.assertOutageShown(False)   # the confirmation was delivered: the card stops saying the outage
 
@@ -293,7 +293,7 @@ class Recovery(unittest.TestCase):
         self.assertIn("(wake brief, MIQ prompt)", body)
         self.assertNotIn(GOOD, body)
         self.assertEqual(lines["Outage recap"], f"Outage recap: deliver: {recap_job.EVENT}; sent")
-        self.assertEqual(lines["Sender confirm"], "Sender confirm: drop: " + jobs.SENDER_SETTLED)
+        self.assertEqual(lines["Sender confirmation"], "Sender confirmation: drop: " + jobs.SENDER_SETTLED)
         self.assertOutageShown(False)
 
         # pass 3, after a new sync row: nothing more is sent and only the ingest's own mark moves
@@ -302,7 +302,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(changed, [sender_reply.MARK])
         self.assertEqual(rows, [])
-        self.assertEqual(lines["Sender confirm"], "Sender confirm: drop: " + jobs.SENDER_SETTLED)
+        self.assertEqual(lines["Sender confirmation"], "Sender confirmation: drop: " + jobs.SENDER_SETTLED)
         self.assertEqual(lines["Outage recap"], "Outage recap: drop: already told about this outage")
         self.assertOutageShown(False)
 
@@ -320,7 +320,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual(self.mark(sender_reply.MARK)["action"], sender_reply.MISSING)
         self.assertIsNone(self.mark(push_sender.REPLY_FILE))
         self.assertNotIn(NOWHERE, lines["Sender ingest"])
-        self.assertEqual(lines["Sender confirm"], f"Sender confirm: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
+        self.assertEqual(lines["Sender confirmation"], f"Sender confirmation: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
         self.assertEqual(lines["Outage recap"], RECAP_OPEN)
         self.assertOutageShown(True)
         lines, calls, changed, rows = self.run_pass()   # and the next pass does not pick it up again
@@ -340,7 +340,7 @@ class Recovery(unittest.TestCase):
         self.assertIsNone(self.mark(push_sender.REPLY_FILE))
         self.assertEqual(lines["Sender ingest"], "Sender ingest: run: a sync ran; your reply named a profile with "
                                                  "no Telegram bot, so it was not applied")
-        self.assertEqual(lines["Sender confirm"], f"Sender confirm: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
+        self.assertEqual(lines["Sender confirmation"], f"Sender confirmation: {jobs.NOT_TRIGGERED}: {jobs.SENDER_NO_REPLY}")
         self.assertEqual(lines["Outage recap"], RECAP_OPEN)
         self.assertOutageShown(True)
         self.assertEqual(self.recovery(), (doctor.MISSING, refused))
@@ -382,7 +382,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual([(r["title"], r["how"]) for r in rows], [(confirm_job.TITLE_SENT, "log (telegram rc=1)")])
         self.assertEqual(lines["Sender ingest"],
                          "Sender ingest: run: a sync ran; set the sender profile from your reply")
-        self.assertIn(confirm_job.NOT_REACHED, lines["Sender confirm"])
+        self.assertIn(confirm_job.NOT_REACHED, lines["Sender confirmation"])
         self.assertEqual(lines["Outage recap"], RECAP_OPEN)
         # the doctor row and the card both say the named profile may have no bot, never its name
         self.assertEqual(self.recovery(), (doctor.MISSING, no_bot))
@@ -434,7 +434,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual(changed, sorted([sender_reply.MARK, push_sender.REPLY_FILE, confirm_job.MARK]))
         self.assertEqual(self.mark(confirm_job.MARK)["outcome"], confirm_job.HELD)
         self.assertEqual([r["how"] for r in rows], ["held (sleep mode)"])
-        self.assertIn("Sleep mode holds it", lines["Sender confirm"])
+        self.assertIn("Sleep mode holds it", lines["Sender confirmation"])
         self.assertEqual(lines["Outage recap"], RECAP_OPEN)
         self.assertIsNone(self.mark(recap_job.MARK))
 

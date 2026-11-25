@@ -86,16 +86,16 @@ class Missing(Case):
     def test_an_empty_dir_names_every_sending_job(self):
         self.dir.mkdir()
         r = self.row()
-        self.check(r, doctor.MISSING, NOT_THERE + "wake brief, nap, miq, habit checkin, week review, break nudge, "
-                                                  "outage recap and sender confirm")
+        self.check(r, doctor.MISSING, NOT_THERE + "wake brief, back from nap, MIQ, habit check-in, week review, "
+                                                  "break nudge, outage recap and sender confirmation")
 
     def test_two_missing_scripts_are_named_in_words(self):
         self.fill(skip={name(jobs.SPECS["nap"]), name(jobs.SPECS["week_review"])})
-        self.check(self.row(), doctor.MISSING, NOT_THERE + "nap and week review")
+        self.check(self.row(), doctor.MISSING, NOT_THERE + "back from nap and week review")
 
     def test_one_missing_script(self):
         self.fill(skip={name(jobs.SPECS["nap"])})
-        self.check(self.row(), doctor.MISSING, NOT_THERE + "nap")
+        self.check(self.row(), doctor.MISSING, NOT_THERE + "back from nap")
 
     def test_a_job_that_sends_nothing_needs_no_script(self):
         self.fill()
@@ -105,7 +105,7 @@ class Missing(Case):
     def test_missing_and_stale_together_say_both_and_stay_missing(self):
         self.fill(skip={name(jobs.SPECS["nap"])})
         os.chmod(self.dir / name(jobs.SPECS["miq"]), 0o644)
-        self.check(self.row(), doctor.MISSING, NOT_THERE + "nap; " + DIFFER + "miq")
+        self.check(self.row(), doctor.MISSING, NOT_THERE + "back from nap; " + DIFFER + "MIQ")
 
     def test_a_tilde_path_is_expanded(self):
         home = Path(os.path.expanduser("~"))
@@ -120,7 +120,7 @@ class Stale(Case):
         old = p.read_text().replace(f" {cron_spec.JOB_FLAGS}\n", "\n")   # an older plugin's script: no --send
         self.assertNotEqual(old, p.read_text())
         p.write_text(old)
-        self.check(self.row(), doctor.STALE, DIFFER + "nap")
+        self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_a_body_from_another_script_body_is_stale(self):
         self.fill()
@@ -132,14 +132,14 @@ class Stale(Case):
     def test_mode_0644_is_stale(self):
         self.fill()
         os.chmod(self.dir / name(jobs.SPECS["nap"]), 0o644)
-        self.check(self.row(), doctor.STALE, DIFFER + "nap")
+        self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_group_or_world_bits_are_stale(self):
         for mode in (0o755, 0o750, 0o701, 0o600, 0o400, 0o300):
             with self.subTest(mode=oct(mode)):
                 self.fill()
                 os.chmod(self.dir / name(jobs.SPECS["nap"]), mode)
-                self.check(self.row(), doctor.STALE, DIFFER + "nap")
+                self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_owner_read_and_execute_only_is_fine(self):
         self.fill(mode=0o500)
@@ -149,23 +149,23 @@ class Stale(Case):
         self.fill()
         p = self.dir / name(jobs.SPECS["nap"])
         p.write_bytes(p.read_bytes().replace(b"\n", b"\r\n"))
-        self.check(self.row(), doctor.STALE, DIFFER + "nap")
+        self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_not_text_is_stale(self):
         self.fill()
         (self.dir / name(jobs.SPECS["nap"])).write_bytes(b"\xff\xfe\x00 not a script")
-        self.check(self.row(), doctor.STALE, DIFFER + "nap")
+        self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_a_dir_with_the_script_name_is_stale(self):
         self.fill(skip={name(jobs.SPECS["nap"])})
         (self.dir / name(jobs.SPECS["nap"])).mkdir(mode=0o700)
-        self.check(self.row(), doctor.STALE, DIFFER + "nap")
+        self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_three_stale_scripts_in_spec_order(self):
         self.fill()
         for j in ("break_nudge", "nap", "wake_brief"):
             os.chmod(self.dir / name(jobs.SPECS[j]), 0o644)
-        self.check(self.row(), doctor.STALE, DIFFER + "wake brief, nap and break nudge")
+        self.check(self.row(), doctor.STALE, DIFFER + "wake brief, back from nap and break nudge")
 
 
 class Ok(Case):

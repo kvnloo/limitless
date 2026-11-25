@@ -350,6 +350,24 @@ SENDER_CHANGED = "your reply changed the sender for your phone pushes"
 SENDER_NO_REPLY = "no reply has set the sender"
 SENDER_SETTLED = "this sender change was already confirmed"
 
+# Each job's name in words, the one way a line a person reads names a job: the doctor's job rows and job lists
+# (doctor.job_names), the cron-spec word lines (cron_spec.plan_line), the schedule cards' ``job`` and the sender
+# confirmation's limitless-jobs row (sender_confirm_job.TITLE). An id is a
+# key (send gate, host job name, config), never words: nothing builds a job's words from its id. Lowercase as they
+# sit mid-line, but MIQ, NOOP and FIT. ``send_title`` stays the push's own title. A test holds every job id here.
+JOB_WORDS = {
+    "wake_brief": "wake brief", "nap": "back from nap", "miq": "MIQ", "habit_checkin": "habit check-in",
+    "week_review": "week review", "break_nudge": "break nudge", "outage_recap": "outage recap",
+    "sender_confirm": "sender confirmation", "noop_export": "NOOP export", "apps_ingest": "apps ingest",
+    "ranked_ingest": "ranked ingest", "sender_ingest": "sender ingest", "fit_ingest": "FIT import",
+    "idea_ledger": "idea ledger",
+}
+
+
+def job_words(job_id: str) -> str:
+    """The job's name in words (JOB_WORDS). An id not in the table is a KeyError: never guessed from the id."""
+    return JOB_WORDS[job_id]
+
 
 def sender_confirm_mode(cfg: Any) -> str:
     """Config ``sender_confirm``: off (the default, and for any value that is not one of SENDER_CONFIRM_MODES),

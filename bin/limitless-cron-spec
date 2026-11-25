@@ -2,7 +2,7 @@
 """limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file>]: the Hermes cron job
 each plugin job would be.
 
-Without --json: one line per job in words (its title, the decision window it waits for, how long until a held
+Without --json: one line per job in words (its name in words, the decision window it waits for, how long until a held
 occurrence is stale), or "skipped, sends nothing". With --json: a JSON list of keyword arguments for the host's
 cron.jobs.create_job(...), one per sending job; the host's `hermes cron create` and cronjob tool do not take
 window_class or stale_after_s (docs/decision-window.md#creating-the-jobs-on-a-patched-host).

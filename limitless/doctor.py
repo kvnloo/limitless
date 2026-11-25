@@ -74,7 +74,7 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping, Optional
 
-from . import card, mock_guard, noop_mcp, tier_audit, tools
+from . import card, jobs, mock_guard, noop_mcp, tier_audit, tools
 from .envelope import STALE_H
 from .state_reader import StateReader, config, parse_ts
 
@@ -515,7 +515,7 @@ def _checked(cfg: Mapping, env: Mapping[str, str], status: str, files: str) -> t
     return status, f"set: checked, {words}; {files}"
 
 
-NOOP_ROW = "job NOOP export"
+NOOP_ROW = f"job {jobs.job_words(jobs.NOOP_EXPORT.name)}"
 _NOOP_MODE_WORDS = {"dry_run": "dry run mode (counts only, no file written)", "write": "write mode"}
 
 
@@ -548,7 +548,7 @@ def noop_export_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     return _row(NOOP_ROW, "job", STALE, f"{ran}: {outcome}")
 
 
-APPS_INGEST_ROW = "job apps ingest"
+APPS_INGEST_ROW = f"job {jobs.job_words(jobs.APPS_INGEST.name)}"
 _APPS_DID = {"nothing": "no new apps reply", "would write": "would write the app lists",
              "write": "wrote the app lists"}
 APPS_TOLD, APPS_NOT_TOLD = "told in a brief", "not told yet"   # the last write, after it (apps-set.json)
@@ -582,7 +582,7 @@ def apps_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional
                 f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}{said}")
 
 
-RANKED_INGEST_ROW = "job ranked ingest"
+RANKED_INGEST_ROW = f"job {jobs.job_words(jobs.RANKED_INGEST.name)}"
 _RANKED_DID = {"nothing": "no new owner message", "ignore": "no owner drop to append",
                "would write": "would append owner drop rows", "write": "appended owner drop rows"}
 
@@ -620,7 +620,7 @@ def ranked_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
                 f"{_NOOP_MODE_WORDS.get(mark.get('mode'), 'unknown mode')}: ran {ago} after a sync: {did}")
 
 
-SENDER_INGEST_ROW = "job sender ingest"
+SENDER_INGEST_ROW = f"job {jobs.job_words(jobs.SENDER_INGEST.name)}"
 
 
 def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
@@ -646,7 +646,7 @@ def sender_ingest_row(reader: StateReader, cfg: Mapping, now: float, env: Option
                 f"{mode}: ran {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}{wins}")
 
 
-FIT_IMPORT_ROW = "fit import"
+FIT_IMPORT_ROW = f"job {jobs.job_words(jobs.FIT_INGEST.name)}"
 
 
 def fit_import_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> dict:
@@ -668,7 +668,7 @@ def fit_import_row(reader: StateReader, cfg: Mapping, now: float, env: Optional[
                 f"{mode}: last pass {age_words(max(0.0, now - ran_at) / 3600)} after a sync: {did}")
 
 
-SENDER_CONFIRM_ROW = "job sender confirm"
+SENDER_CONFIRM_ROW = f"job {jobs.job_words(jobs.SENDER_CONFIRM.name)}"
 _CONFIRM_MODE_WORDS = {"dry_run": "dry run mode (nothing sent)", "write": "write mode"}
 
 
@@ -682,7 +682,7 @@ def sender_confirm_row(reader: StateReader, cfg: Mapping, now: float,
     sent, or there is no sender change to confirm; then the mode. Never the profile name, a message or a path; never sends; read-only."""
     from . import jobs, sender_confirm_job as job   # sender_confirm_job -> jobs_runner -> card
     cfg = cfg if isinstance(cfg, Mapping) else {}
-    head = "sender confirm: "
+    head = f"{jobs.job_words(jobs.SENDER_CONFIRM.name)}: "
     st, at = job.state(reader.path, cfg, now, env)
     if st == job.S_OFF:
         return _row(SENDER_CONFIRM_ROW, "job", OFF, f"{head}off (config {job.CONFIG_KEY})")
@@ -815,8 +815,9 @@ HOST_SCRIPTS_OK = "every sending job has its current script"
 
 
 def job_names(names) -> str:
-    """Job names in words: ``week_review`` is \"week review\"; \"a\", \"a and b\", \"a, b and c\"."""
-    said = [n.replace("_", " ") for n in names]
+    """Job ids in words, each its jobs.JOB_WORDS name (``habit_checkin`` is \"habit check-in\", ``miq`` is \"MIQ\");
+    \"a\", \"a and b\", \"a, b and c\". An id not in the table is a KeyError: never guessed from the id."""
+    said = [jobs.job_words(n) for n in names]
     return said[0] if len(said) == 1 else ", ".join(said[:-1]) + " and " + said[-1]
 
 
@@ -950,7 +951,7 @@ def voice_miq_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     return _row(VOICE_MIQ_ROW, "job", LIVE, f"{_VOICE_MODE_WORDS[mode]}: {said}")
 
 
-OUTAGE_RECAP_ROW = "job outage recap"
+OUTAGE_RECAP_ROW = f"job {jobs.job_words(jobs.OUTAGE_RECAP.name)}"
 _RECAP_MODE_WORDS = {"dry_run": "dry run mode (nothing sent)", "write": "write mode"}
 
 
@@ -961,7 +962,7 @@ def outage_recap_row(reader: StateReader, cfg: Mapping, now: float) -> dict:
     outage was recapped, with when in words) or "nothing to recap", then the mode. Never sends, never runs
     hermes. Words only."""
     from . import outage_recap_job as job   # outage_recap_job -> jobs_runner -> card
-    head = "outage recap: "
+    head = f"{jobs.job_words(jobs.OUTAGE_RECAP.name)}: "
     st, at = job.state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now)
     if st == job.S_OFF:
         return _row(OUTAGE_RECAP_ROW, "job", OFF, f"{head}off (config {job.CONFIG_KEY})")

@@ -41,7 +41,8 @@ from .state_reader import config
 OFF, DRY_RUN, WRITE = jobs.SENDER_CONFIRM_OFF, jobs.SENDER_CONFIRM_DRY_RUN, jobs.SENDER_CONFIRM_WRITE
 CONFIG_KEY = jobs.SENDER_CONFIRM_CONFIG
 MARK = "sender-confirm.json"
-TITLE = "Sender confirm"                     # the job's row name in limitless-jobs and the doctor
+_WORDS = jobs.job_words(jobs.SENDER_CONFIRM.name)   # "sender confirmation"
+TITLE = _WORDS[:1].upper() + _WORDS[1:]              # the job's row name in limitless-jobs: its JOB_WORDS name
 TITLE_SENT = jobs.SENDER_CONFIRM.send_title  # "Pushes": the message's title
 BODY = "This is the new route for your phone pushes. If you see this, it works."
 WHY = "your reply changed the sender for your phone pushes"

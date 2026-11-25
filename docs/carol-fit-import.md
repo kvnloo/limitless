@@ -59,7 +59,7 @@ Exports usually come in batches. Instead of running the importer per file, drop 
   `bin/limitless-brief send` marks it told in `fit-rides-told.json` (`told`, `told_at`: epochs only, 0600) only
   after a real delivery, so a held or failed send says it next time. A dry run, config `off`, or rides imported by
   hand with `bin/limitless-import-fit` never make the line.
-- **Doctor**: the `fit import` row says `off`, or `dry run` / `write` with the last pass in words; `missing` when
+- **Doctor**: the `job FIT import` row says `off`, or `dry run` / `write` with the last pass in words; `missing` when
   the folder is set but does not exist, `stale` with no folder set or before its first pass after a sync.
 - **Schedule card**: `fit_ingest`, on the `sync` event, sender `local`, budget zero
   ([schedule-cards.md](schedule-cards.md)).

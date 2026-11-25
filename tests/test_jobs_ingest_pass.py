@@ -309,7 +309,7 @@ class IngestCli(Fakes):
         self.assertEqual((calls[0]["bin"], calls[0]["argv"][:2], calls[0]["strict"]),
                          ("kevin-push", ["limitless", "Pushes"], "1"))
         lines = r.stdout.splitlines()
-        self.assertTrue(any(ln.startswith("Sender confirm: deliver") and ln.endswith("; sent") for ln in lines),
+        self.assertTrue(any(ln.startswith("Sender confirmation: deliver") and ln.endswith("; sent") for ln in lines),
                         r.stdout)
         self.assertTrue(any(ln.startswith("Back from nap: deliver") for ln in lines), r.stdout)
         self.assertTrue(any(ln.startswith("Outage recap: hold") and "waits for the next pass" in ln for ln in lines),
@@ -328,7 +328,7 @@ class IngestCli(Fakes):
         self.config("write", outage_recap="write", push_log="push-log.jsonl", sender_confirm="write")
         r = self.run_cli("--ingest")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(any(ln.startswith("Sender confirm: deliver") and "nothing sent" in ln
+        self.assertTrue(any(ln.startswith("Sender confirmation: deliver") and "nothing sent" in ln
                             for ln in r.stdout.splitlines()), r.stdout)
         self.assertEqual(self.calls_made(), [])
         self.assertFalse((self.st / "sender-confirm.json").exists())
@@ -373,11 +373,11 @@ class EveryJobDue(Fakes):
         rc, out = self.main("--ingest", "--confirm")
         self.assertEqual(rc, 0)
         got = {ln.split(": ")[0]: ln for ln in out.splitlines()}
-        for job in ("Wake-up brief", "Habit check-in", "Sender confirm"):
+        for job in ("Wake-up brief", "Habit check-in", "Sender confirmation"):
             self.assertIn(f"{job}: deliver: ", got.get(job, ""), out)
         self.assertIn("Outage recap: hold: ", got["Outage recap"])
         self.assertIn("waits for the next pass", got["Outage recap"])
-        self.assertTrue(got["Sender confirm"].endswith("; sent"), got["Sender confirm"])
+        self.assertTrue(got["Sender confirmation"].endswith("; sent"), got["Sender confirmation"])
         calls = self.calls_made()
         self.assertEqual(len(calls), 1, calls)
         argv = calls[0]["argv"]
@@ -451,7 +451,7 @@ class Runner(Base):
 
     def test_the_doctor_doc_names_the_confirm_pass_for_the_sender_confirm_row(self):
         text = (ROOT / "docs" / "doctor.md").read_text(encoding="utf-8")
-        line = [ln for ln in text.splitlines() if ln.startswith("| `job sender confirm`")]
+        line = [ln for ln in text.splitlines() if ln.startswith("| `job sender confirmation`")]
         self.assertEqual(len(line), 1)
         self.assertIn("`limitless-jobs --ingest --confirm` or `--send` sends it", line[0])
 
@@ -474,7 +474,7 @@ class TimerDoc(unittest.TestCase):
         for word in ("sender_confirm", "`--ingest --confirm`", "`--confirm` without `--ingest` is a usage error",
                      "the outage recap", "which waits for the pass after a confirmation push"):
             self.assertIn(word, section)
-        self.assertIn("`job sender confirm`", section)
+        self.assertIn("`job sender confirmation`", section)
 
     def test_the_schedule_cards_doc_says_what_runs_the_ingest_cards(self):
         text = (ROOT / "docs" / "schedule-cards.md").read_text(encoding="utf-8")

@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from limitless import jobs, jobs_runner, schedule_cards, send_gate  # noqa: E402
 
-FIELDS = {"id", "kind", "name", "description", "trigger", "ends", "window", "stale_after_s", "once_key",
+FIELDS = {"id", "kind", "name", "job", "description", "trigger", "ends", "window", "stale_after_s", "once_key",
           "budget", "per_window", "sender", "words"}
 # A clock time or a cron string in any form: 07:30, 7am, 7 pm, "0 7 * * *", @daily, "every day at".
 CLOCK = re.compile(r"\d|:\d|\b(am|pm)\b|\*|@(daily|hourly|weekly|midnight)|\bevery\b|\bcron\b|o'clock", re.I)
