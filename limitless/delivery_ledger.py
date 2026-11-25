@@ -53,6 +53,10 @@ SELECT COUNT(*) FROM delivery
    AND window_class <> 'bypass' AND reserved_at >= ?"""
 
 
+class IllegalTransition(ValueError):
+    """A move the state diagram does not allow from the row's current state (or the row does not exist)."""
+
+
 class Reservation(NamedTuple):
     id: int
     state: str            # "queued" or "held"
@@ -141,3 +145,33 @@ def reserve(conn, target: str, body: str, *, day_start: float, now: float, cap: 
         conn.execute("ROLLBACK")
         raise
     return Reservation(cur.lastrowid, state, reason)
+
+
+def _state(conn, row_id) -> "str | None":
+    row = conn.execute("SELECT state FROM delivery WHERE id = ?", (row_id,)).fetchone()
+    return row[0] if row else None
+
+
+def _move(conn, row_id: int, frm: str, to: str, sets: str = "", args: tuple = ()) -> None:
+    cur = conn.execute(f"UPDATE delivery SET state = ?{sets} WHERE id = ? AND state = ?",
+                       (to, *args, row_id, frm))
+    if cur.rowcount != 1:
+        raise IllegalTransition(f"row {row_id}: {_state(conn, row_id) or 'no such row'} -> {to} is not allowed")
+
+
+def mark_sent(conn, row_id: int, now: float) -> None:
+    """queued -> sent: the transport said it delivered. The row keeps its slot."""
+    _move(conn, row_id, "queued", "sent", ", sent_at = ?", (now,))
+
+
+def mark_unknown(conn, row_id: int) -> None:
+    """queued -> unknown: the transport may have delivered (a timeout, a crash mid-send). The row keeps its
+    slot and is never replayed: no move leaves ``unknown``."""
+    _move(conn, row_id, "queued", "unknown")
+
+
+def mark_failed(conn, row_id: int, release_after: "float | None" = None) -> None:
+    """queued -> held, reason ``failed``: the transport said it did not deliver. The slot is freed (its
+    ``reserved_at`` is cleared) and the row waits for ``release`` like any other held row."""
+    _move(conn, row_id, "queued", "held", ", reason = 'failed', reserved_at = NULL, release_after = ?",
+          (release_after,))
