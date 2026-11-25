@@ -52,6 +52,11 @@ SELECT COUNT(*) FROM delivery
  WHERE target = ? AND state IN ('queued', 'sent', 'unknown')
    AND window_class <> 'bypass' AND reserved_at >= ?"""
 
+DEDUP_SQL = """\
+SELECT 1 FROM delivery
+ WHERE target = ? AND dedup_key = ? AND state IN ('queued', 'sent', 'unknown')
+   AND reserved_at >= ? LIMIT 1"""
+
 
 class IllegalTransition(ValueError):
     """A move the state diagram does not allow from the row's current state (or the row does not exist)."""
@@ -106,6 +111,10 @@ def _fits(conn, target, window_class, day_start, cap) -> bool:
     return limit is None or conn.execute(BUDGET_SQL, (target, day_start)).fetchone()[0] < limit
 
 
+def _duplicate(conn, target, dedup_key, day_start) -> bool:
+    return dedup_key is not None and conn.execute(DEDUP_SQL, (target, dedup_key, day_start)).fetchone() is not None
+
+
 def used(conn, target: str, day_start: float) -> int:
     """The budget slots ``target`` has used since ``day_start`` (BUDGET_SQL)."""
     return conn.execute(BUDGET_SQL, (target, day_start)).fetchone()[0]
@@ -117,11 +126,12 @@ def reserve(conn, target: str, body: str, *, day_start: float, now: float, cap: 
     """Insert one row for a message to ``target``: ``queued`` when it may go now (it takes its budget slot at
     once), else ``held`` with its reason. In one BEGIN IMMEDIATE, in this order:
 
-    1. ``hold`` (``quiet`` or ``sleep``, the caller's own check): held with that reason.
-    2. the budget has no slot for this class: held, ``cap``.
-    3. queued.
+    1. ``dedup_key`` already queued, sent or unknown for this target since ``day_start``: held, ``dedup``.
+    2. ``hold`` (``quiet`` or ``sleep``, the caller's own check): held with that reason.
+    3. the budget has no slot for this class: held, ``cap``.
+    4. queued.
 
-    ``release_after`` is stored on a held row for ``due_held``."""
+    ``release_after`` is stored on a held row for ``due_held`` (never on a dedup hold: a duplicate never goes)."""
     _check_args(target, window_class, day_start, now, cap)
     if hold is not None and hold not in HOLD_REASONS:
         raise ValueError(f"hold must be one of {HOLD_REASONS}: {hold!r}")
@@ -129,7 +139,9 @@ def reserve(conn, target: str, body: str, *, day_start: float, now: float, cap: 
         raise ValueError("body must be a str")
     conn.execute("BEGIN IMMEDIATE")
     try:
-        if hold is not None:
+        if _duplicate(conn, target, dedup_key, day_start):
+            state, reason, release_after = "held", "dedup", None
+        elif hold is not None:
             state, reason = "held", hold
         elif not _fits(conn, target, window_class, day_start, cap):
             state, reason = "held", "cap"
