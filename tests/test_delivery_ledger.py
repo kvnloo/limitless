@@ -208,19 +208,50 @@ class Moves(LedgerCase):
         self.assertEqual(dl.used(self.db, T, DAY), 1)
         self.assertEqual(dl.reserve(self.db, T, "c", day_start=DAY, now=NOW, cap=1, window_class="peak").reason,
                          "cap")
-        for move in (lambda: dl.mark_sent(self.db, i, NOW), lambda: dl.mark_failed(self.db, i),
-                     lambda: dl.mark_unknown(self.db, i)):
+        for move in (lambda: dl.mark_unknown(self.db, i),
+                     lambda: dl.release(self.db, i, day_start=DAY, now=NOW, cap=1)):
             with self.assertRaises(dl.IllegalTransition):
                 move()
+        self.assertEqual(dl.due_held(self.db, NOW + 365 * 24 * H), [])
+
+    def test_unknown_then_a_confirmed_delivery_is_sent_and_keeps_its_slot(self):
+        i = self.queued(window_class="peak", cap=2)
+        dl.mark_unknown(self.db, i)
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+        dl.mark_sent(self.db, i, NOW + 90)   # a slow send settles after its row was named unknown
+        row = self.row(i)
+        self.assertEqual((row["state"], row["sent_at"], row["reserved_at"]), ("sent", NOW + 90, NOW))
+        self.assertEqual(dl.used(self.db, T, DAY), 1)   # the same slot: the budget is unchanged
+
+    def test_unknown_then_a_confirmed_failure_is_held_failed_and_frees_its_slot(self):
+        i = self.queued(window_class="peak", cap=1)
+        dl.mark_unknown(self.db, i)
+        self.assertEqual(dl.reserve(self.db, T, "c", day_start=DAY, now=NOW, cap=1, window_class="peak").reason,
+                         "cap")
+        dl.mark_failed(self.db, i, release_after=NOW + 60)
+        row = self.row(i)
+        self.assertEqual((row["state"], row["reason"], row["reserved_at"], row["release_after"], row["sent_at"]),
+                         ("held", "failed", None, NOW + 60, None))
+        self.assertEqual(dl.used(self.db, T, DAY), 0)   # one slot freed
+        self.assertEqual(dl.reserve(self.db, T, "d", day_start=DAY, now=NOW, cap=1, window_class="peak").state,
+                         "queued")
 
     def test_illegal_moves_raise_and_change_nothing(self):
         sent = self.queued()
         dl.mark_sent(self.db, sent, NOW)
         held = dl.reserve(self.db, T, "h", day_start=DAY, now=NOW, hold="quiet").id
+        unknown = self.queued()
+        dl.mark_unknown(self.db, unknown)
+        expired = dl.reserve(self.db, T, "x", day_start=YESTERDAY, now=NOW - 13 * H, hold="sleep").id
+        dl.expire_old(self.db, NOW, 12 * H)
         before = [dict(r) for r in self.db.execute("SELECT * FROM delivery ORDER BY id")]
         for move in (lambda: dl.mark_sent(self.db, sent, NOW), lambda: dl.mark_failed(self.db, sent),
                      lambda: dl.mark_unknown(self.db, sent), lambda: dl.mark_sent(self.db, held, NOW),
                      lambda: dl.mark_failed(self.db, held), lambda: dl.mark_unknown(self.db, held),
+                     lambda: dl.mark_unknown(self.db, unknown),
+                     lambda: dl.release(self.db, unknown, day_start=DAY, now=NOW),
+                     lambda: dl.mark_sent(self.db, expired, NOW), lambda: dl.mark_failed(self.db, expired),
+                     lambda: dl.mark_unknown(self.db, expired),
                      lambda: dl.mark_sent(self.db, 999, NOW)):
             with self.assertRaises(dl.IllegalTransition):
                 move()
