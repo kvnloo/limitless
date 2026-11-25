@@ -1,0 +1,278 @@
+{
+ "jobs": [
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000001",
+   "name": "limitless-nap",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-nap.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 3600.0,
+   "state": "scheduled",
+   "window_class": "peak"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000002",
+   "name": "limitless-miq",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-miq.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 3600.0,
+   "state": "scheduled",
+   "window_class": "wind_down"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000003",
+   "name": "limitless-habit_checkin",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 15m",
+    "kind": "interval",
+    "minutes": 15
+   },
+   "schedule_display": "every 15m",
+   "script": "limitless-habit_checkin.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 10800.0,
+   "state": "scheduled",
+   "window_class": "anytime"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": false,
+   "id": "a00000000004",
+   "name": "limitless-week_review",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": "2000-01-02T00:00:00+00:00",
+   "paused_reason": "synthetic pause",
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-week_review.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 10800.0,
+   "state": "paused",
+   "window_class": "anytime"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": false,
+   "id": "a00000000005",
+   "name": "limitless-break_nudge",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": "2000-01-02T00:00:00+00:00",
+   "paused_reason": "synthetic pause",
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-break_nudge.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 7200.0,
+   "state": "paused",
+   "window_class": "anytime"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000006",
+   "name": "limitless-outage_recap",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": "every 5m",
+   "schedule_display": "every 5m",
+   "script": "limitless-outage_recap.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": "an hour",
+   "state": "scheduled",
+   "window_class": "anytime"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000007",
+   "name": "limitless-sender_confirm",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-sender_confirm.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 43200.0,
+   "state": "scheduled",
+   "window_class": "anytime"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000008",
+   "name": "limitless-sender_confirm",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-sender_confirm.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 43200.0,
+   "state": "scheduled",
+   "window_class": "anytime"
+  },
+  {
+   "created_at": "2000-01-01T00:00:00+00:00",
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000009",
+   "name": "limitless-old_reminder",
+   "next_run_at": null,
+   "no_agent": true,
+   "origin": null,
+   "paused_at": null,
+   "paused_reason": null,
+   "prompt": "",
+   "repeat": {
+    "completed": 0,
+    "times": null
+   },
+   "schedule": {
+    "display": "every 5m",
+    "kind": "interval",
+    "minutes": 5
+   },
+   "schedule_display": "every 5m",
+   "script": "limitless-old_reminder.sh",
+   "skill": null,
+   "skills": [],
+   "stale_after_s": 3600.0,
+   "state": "scheduled",
+   "window_class": "anytime"
+  },
+  {
+   "deliver": "local",
+   "enabled": true,
+   "id": "a00000000010",
+   "name": "someone else's job",
+   "no_agent": false,
+   "prompt": "Summarise the synthetic feed.",
+   "schedule": {
+    "display": "every 60m",
+    "kind": "interval",
+    "minutes": 60
+   },
+   "script": null,
+   "state": "scheduled"
+  },
+  "not a record"
+ ],
+ "updated_at": "2000-01-02T00:00:00+00:00"
+}
