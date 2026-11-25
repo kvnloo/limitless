@@ -72,11 +72,13 @@ Only these moves exist; anything else raises `IllegalTransition`.
 ```text
  reserve() --+--> queued --mark_sent()-----> sent      (keeps its slot)
              |      |  \---mark_unknown()--> unknown   (keeps its slot, never replayed)
-             |      |
-             |      \---mark_failed()------> held (reason failed, slot freed)
-             |                                 |
-             \--> held (cap|quiet|sleep|dedup) +--release()--> queued   (budget checked again)
-                                               \--expire_old()--> expired (counted, never deleted)
+             |      |                        +--mark_sent()----> sent  (confirmed late, same slot)
+             |      |                        \--mark_failed()--\
+             |      \---mark_failed()--------------------------+--> held (reason failed, slot freed)
+             |                                                      |
+             \--> held (cap|quiet|sleep|dedup) <--------------------/  (one held state, any reason)
+                  +--release()------> queued   (budget checked again)
+                  \--expire_old()---> expired  (counted, never deleted)
 ```
 
 | from | to | call | slot |
@@ -84,13 +86,18 @@ Only these moves exist; anything else raises `IllegalTransition`.
 | (new) | `queued` | `reserve` | taken |
 | (new) | `held` | `reserve` (dedup, quiet, sleep, cap) | none |
 | `queued` | `sent` | `mark_sent(id, now)` | kept |
-| `queued` | `unknown` | `mark_unknown(id)` | kept; no move leaves `unknown` |
+| `queued` | `unknown` | `mark_unknown(id)` | kept |
 | `queued` | `held` (reason `failed`) | `mark_failed(id, release_after)` | freed |
+| `unknown` | `sent` | `mark_sent(id, now)` (a slow send confirmed delivery) | kept; `sent_at` set |
+| `unknown` | `held` (reason `failed`) | `mark_failed(id, release_after)` (a slow send confirmed failure) | freed |
 | `held` | `queued` | `release(id, day_start, now, cap)` | taken, or stays held with reason `cap` |
 | `held` | `expired` | `expire_old(now, max_age_s)` | none |
 
-`sent`, `unknown` and `expired` are final. `failed` is in the state list as agreed, but no move writes it in this
-draft (see the open questions). A dedup hold never comes due and can only expire.
+`sent` and `expired` are final. `unknown` leaves only on a confirmed answer from the send that left it, as a
+pending row renamed unknown does on main: a delivery makes it `sent` (the same slot), a failure makes it `held`
+with reason `failed` (the slot freed). Nothing else moves it: it is never released, retried or expired. `failed`
+is in the state list as agreed, but no move writes it in this draft (see the open questions). A dedup hold never
+comes due and can only expire.
 
 ## The budget
 
@@ -156,6 +163,4 @@ unchanged until that one step.
   insert a new row instead?
 - Dedup span: the current budget day (this draft), 12 h, or forever for event keys such as
   `wake_brief:<event time>`? Should a second copy of a message that is already held also be held as `dedup`?
-- `unknown` -> `sent` when the transport later confirms: allow it (the slot is the same), or keep `unknown`
-  final?
 - `wind_down` (a window class in `docs/decision-window.md`) is not in the ledger's list: map it to `anytime`?

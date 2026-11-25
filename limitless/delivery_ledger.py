@@ -164,29 +164,35 @@ def _state(conn, row_id) -> "str | None":
     return row[0] if row else None
 
 
-def _move(conn, row_id: int, frm: str, to: str, sets: str = "", args: tuple = ()) -> None:
-    cur = conn.execute(f"UPDATE delivery SET state = ?{sets} WHERE id = ? AND state = ?",
-                       (to, *args, row_id, frm))
-    if cur.rowcount != 1:
-        raise IllegalTransition(f"row {row_id}: {_state(conn, row_id) or 'no such row'} -> {to} is not allowed")
+def _move(conn, row_id: int, frm, to: str, sets: str = "", args: tuple = ()) -> None:
+    """One ``UPDATE ... WHERE id = ? AND state = ?`` per allowed source state (``frm``: a state or a tuple of
+    them), stopping at the first that changes the row; when none does, the move is illegal."""
+    for state in ((frm,) if isinstance(frm, str) else frm):
+        cur = conn.execute(f"UPDATE delivery SET state = ?{sets} WHERE id = ? AND state = ?",
+                           (to, *args, row_id, state))
+        if cur.rowcount == 1:
+            return
+    raise IllegalTransition(f"row {row_id}: {_state(conn, row_id) or 'no such row'} -> {to} is not allowed")
 
 
 def mark_sent(conn, row_id: int, now: float) -> None:
-    """queued -> sent: the transport said it delivered. The row keeps its slot."""
-    _move(conn, row_id, "queued", "sent", ", sent_at = ?", (now,))
+    """queued or unknown -> sent: the transport said it delivered (from ``unknown``: a slow send confirmed
+    after its row was named unknown). The row keeps its slot."""
+    _move(conn, row_id, ("queued", "unknown"), "sent", ", sent_at = ?", (now,))
 
 
 def mark_unknown(conn, row_id: int) -> None:
     """queued -> unknown: the transport may have delivered (a timeout, a crash mid-send). The row keeps its
-    slot and is never replayed: no move leaves ``unknown``."""
+    slot and is never replayed; it leaves ``unknown`` only on a confirmed answer (``mark_sent``,
+    ``mark_failed``)."""
     _move(conn, row_id, "queued", "unknown")
 
 
 def mark_failed(conn, row_id: int, release_after: "float | None" = None) -> None:
-    """queued -> held, reason ``failed``: the transport said it did not deliver. The slot is freed (its
-    ``reserved_at`` is cleared) and the row waits for ``release`` like any other held row."""
-    _move(conn, row_id, "queued", "held", ", reason = 'failed', reserved_at = NULL, release_after = ?",
-          (release_after,))
+    """queued or unknown -> held, reason ``failed``: the transport said it did not deliver. The slot is freed
+    (its ``reserved_at`` is cleared) and the row waits for ``release`` like any other held row."""
+    _move(conn, row_id, ("queued", "unknown"), "held",
+          ", reason = 'failed', reserved_at = NULL, release_after = ?", (release_after,))
 
 
 def release(conn, row_id: int, *, day_start: float, now: float, cap: int = DEFAULT_CAP) -> Reservation:
