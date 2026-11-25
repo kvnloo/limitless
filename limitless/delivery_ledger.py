@@ -219,3 +219,12 @@ def due_held(conn, now: float) -> list:
     return [dict(r) for r in conn.execute(
         "SELECT * FROM delivery WHERE state = 'held' AND reason <> 'dedup' AND release_after IS NOT NULL"
         " AND release_after <= ? ORDER BY created_at, id", (now,))]
+
+
+def expire_old(conn, now: float, max_age_s: float) -> int:
+    """held -> expired for every row held since ``now - max_age_s`` or earlier; returns how many moved, for the
+    one count line. No row is ever deleted."""
+    if max_age_s < 0:
+        raise ValueError("max_age_s must not be negative")
+    return conn.execute("UPDATE delivery SET state = 'expired' WHERE state = 'held' AND created_at <= ?",
+                        (now - max_age_s,)).rowcount
