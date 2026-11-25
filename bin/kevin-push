@@ -47,7 +47,10 @@ profiles/intake directory:
 sent.json is read, decided on and written under an exclusive flock on sent.json.lock beside it, so two pushes
 on one tick cannot both take the last daily-cap slot, and one write never drops another push's row. A send
 first writes its row marked pending (it counts for the cap and dedupe while hermes runs); on delivery the
-mark is removed, on a failed send the row is removed, so only a real delivery uses up the cap.
+mark is removed, on a failed send the row is removed, so only a real delivery uses up the cap. A row still marked
+pending after twice the sender's timeout (send_gate.PENDING_UNKNOWN_S) was left by a push killed before it settled:
+the next push, inside the same lock, swaps its mark for "unknown": true. It keeps its cap slot and dedupe key
+(delivery unknown).
 """
 import fcntl
 import json
@@ -145,6 +148,13 @@ def read_sent(now):
     return [s for s in sent if now - s["t"] < 86400]
 
 
+def name_unknown(sent, now):
+    """Under the lock: a row still pending after g.PENDING_UNKNOWN_S was left by a push killed before settle();
+    its mark becomes ``"unknown": true``. The row stays: delivery unknown keeps its cap slot and dedupe key."""
+    return [dict({k: v for k, v in s.items() if k != "pending"}, unknown=True)
+            if "pending" in s and now - s["t"] > g.PENDING_UNKNOWN_S else s for s in sent]
+
+
 def settle(now, pending, delivered):
     """Under the lock: the row marked ``pending`` loses its mark when delivered, else it is removed."""
     with sent_lock():
@@ -170,7 +180,7 @@ def main(argv):
     ST.mkdir(parents=True, exist_ok=True)
     now = time.time()
     with sent_lock():   # read -> decide -> reserve: no other push takes the same cap slot in between
-        sent = read_sent(now)
+        sent = name_unknown(read_sent(now), now)
         quiet = q.check(state_dir(), now)
         verdict = g.decide(tag, title, body, cls, now, sent, asleep(), once_key=once, quiet=quiet)
         how = HOW.get(verdict, "log")
