@@ -131,8 +131,24 @@ def systemd_words(value):
             j = value.find(" ", i)
             j = len(value) if j < 0 else j
             w, i = value[i:j], j
-        words.append(w.replace("%%", "\0").replace("$$", "$").replace("\0", "%"))
+        words.append(unescape_specifiers(w))
     return words
+
+
+def unescape_specifiers(word):
+    """%% -> % and $$ -> $. A lone % or $ is refused: systemd would expand it as a specifier or a variable,
+    so the shell line would no longer be the one printed."""
+    out, i = "", 0
+    while i < len(word):
+        c = word[i]
+        if c in "%$":
+            if word[i + 1:i + 2] != c:
+                raise AssertionError(f"systemd would expand the lone {c!r} at {i} in {word!r}")
+            i += 2
+        else:
+            i += 1
+        out += c
+    return out
 
 
 class Systemd(Base):
