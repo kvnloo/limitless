@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""limitless-owner-beacon write --out PATH [--dbs a:b]: write this machine's "last seen" beacon.
+"""limitless-owner-beacon write --out PATH [--dbs a:b] [--db-glob PATTERN ...]: write this machine's "last seen" beacon.
 
 For a machine whose Hermes session store the plugin host cannot open. It reads the owner session DBs here
-(--dbs, os.pathsep-separated; else $LIMITLESS_OWNER_DBS or config "owner_dbs") with the same read-only
+(--dbs, os.pathsep-separated, and every match of each absolute --db-glob pattern, expanded on every run,
+sorted, each path once; else $LIMITLESS_OWNER_DBS or config "owner_dbs") with the same read-only
 query as limitless/owner_messages.py and writes only the newest user-message time:
 
     {"at": "<ISO 8601, UTC>", "v": 1}
@@ -25,6 +26,7 @@ user .service and .timer) that runs the writer every MINUTES and then, with --co
 `scp -q -p -o BatchMode=yes` of the beacon to the plugin host (limitless/beacon_schedule.py). It only prints: it never writes,
 loads, enables or runs anything. Every host-specific value comes from the arguments.
 """
+import glob
 import json
 import os
 import sys
@@ -36,7 +38,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from limitless import beacon_schedule, owner_messages  # noqa: E402
 from limitless.state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, state_dir  # noqa: E402
 
-USAGE = "usage: limitless-owner-beacon write --out PATH [--dbs PATH" + os.pathsep + "PATH...]"
+USAGE = ("usage: limitless-owner-beacon write --out PATH [--dbs PATH" + os.pathsep + "PATH...] "
+         "[--db-glob PATTERN ...]")
 SCHEDULE_USAGE = ("       limitless-owner-beacon schedule --print --kind launchd|systemd --out PATH --every MINUTES "
                   "[--copy-to USER@HOST:PATH] [--db PATH ...] [--label LABEL]")
 HELP = (USAGE + "\n" + SCHEDULE_USAGE + "\n\n"
@@ -48,16 +51,25 @@ SCHEDULE_FLAGS = ("--kind", "--out", "--every", "--copy-to", "--label")
 
 
 def parse(args):
-    """{"out", "dbs"} or None for bad arguments."""
+    """{"out", "dbs"?, "db-glob": [...]} or None for bad arguments."""
     if not args or args[0] != "write":
         return None
-    got, rest = {}, list(args[1:])
+    got, globs, rest = {}, [], list(args[1:])
     while rest:
         flag = rest.pop(0)
-        if flag not in ("--out", "--dbs") or flag[2:] in got or not rest or not rest[0]:
+        if flag not in ("--out", "--dbs", "--db-glob") or not rest or not rest[0]:
             return None
-        got[flag[2:]] = rest.pop(0)
-    return got if "out" in got else None
+        value = rest.pop(0)
+        if flag == "--db-glob":
+            globs.append(value)
+        elif flag[2:] in got:
+            return None
+        else:
+            got[flag[2:]] = value
+    if "out" not in got:
+        return None
+    got["db-glob"] = globs
+    return got
 
 
 def parse_schedule(args):
@@ -99,11 +111,20 @@ def schedule(opts) -> int:
     return 0
 
 
-def db_paths(flag):
-    """The DBs to read: --dbs when given, else the configured owner_dbs (None when there are none)."""
-    if flag is not None:
-        return [Path(p).expanduser() for p in flag.split(os.pathsep) if p.strip()] or None
-    return StateReader(state_dir()).owner_db_paths()
+def db_paths(flag, patterns=()):
+    """The DBs to read: --dbs in order, then the sorted matches of each --db-glob pattern, expanded now (so a
+    store added since the job was printed is read), each path once; else the configured owner_dbs. None when
+    there are none, also when every pattern matched nothing."""
+    if flag is None and not patterns:
+        return StateReader(state_dir()).owner_db_paths()
+    paths = [Path(p).expanduser() for p in (flag or "").split(os.pathsep) if p.strip()]
+    for pattern in patterns:
+        paths += [Path(p) for p in sorted(glob.glob(pattern))]
+    once = []
+    for p in paths:
+        if p not in once:
+            once.append(p)
+    return once or None
 
 
 def write_atomic(out: Path, body: str) -> None:
@@ -141,7 +162,7 @@ def current_time(out: Path):
 
 def write(out: Path, dbs, now: float) -> int:
     if dbs is None:
-        print(f"{NAME}: nothing written: no owner session DBs (--dbs, {OWNER_DBS_ENV} or "
+        print(f"{NAME}: nothing written: no owner session DBs (--dbs, --db-glob, {OWNER_DBS_ENV} or "
               f"\"{OWNER_DBS_CONFIG}\" in config.json)")
         return 0
     got = owner_messages.newest_user_message(dbs, now)
@@ -179,7 +200,7 @@ def main(argv) -> int:
         print(USAGE, file=sys.stderr)
         return 2
     try:
-        return write(Path(opts["out"]).expanduser(), db_paths(opts.get("dbs")), time.time())
+        return write(Path(opts["out"]).expanduser(), db_paths(opts.get("dbs"), opts["db-glob"]), time.time())
     except Exception as e:  # noqa: BLE001 - a broken config or store is one line, never a traceback
         print(f"{NAME}: could not write the beacon: {type(e).__name__}", file=sys.stderr)
         return 1
