@@ -140,6 +140,18 @@ class ChildEnv(unittest.TestCase):
         child_env(base, B="2")
         self.assertEqual(base, {"PATH": "/x"})
 
+    def test_a_child_is_told_not_to_write_bytecode(self):
+        # A child interpreter run without -I writes caches (macOS: under $HOME/Library/Caches), so a test that
+        # gave it a temp HOME and later expects that dir empty would fail on one host only.
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(child_env()["PYTHONDONTWRITEBYTECODE"], "1")
+        self.assertEqual(child_env({"PATH": "/x"})["PYTHONDONTWRITEBYTECODE"], "1")
+        self.assertEqual(child_env({}, A="1")["PYTHONDONTWRITEBYTECODE"], "1")
+
+    def test_a_bytecode_setting_the_caller_chose_is_kept(self):
+        self.assertEqual(child_env({"PYTHONDONTWRITEBYTECODE": "x"})["PYTHONDONTWRITEBYTECODE"], "x")
+        self.assertEqual(child_env({}, PYTHONDONTWRITEBYTECODE="")["PYTHONDONTWRITEBYTECODE"], "")
+
     @unittest.skipUnless(hermetic_env._passwd_home(), "no passwd entry")
     def test_the_passwd_home_is_refused(self):
         with self.assertRaises(RuntimeError):
