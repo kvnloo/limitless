@@ -46,6 +46,14 @@ class Docs(unittest.TestCase):
                   "no state column"):
             self.assertIn(w, why)
 
+    def test_cutover_says_the_ledger_replaces_both_files_in_one_step(self):
+        heads = re.findall(r"^## (.+)$", DOC.read_text(), re.M)
+        self.assertIn("Cutover", heads)
+        cut = self.section("Cutover")
+        for w in ("replaces", "`sent.json`", "`held.jsonl`", "one step", "no longer written",
+                  "never a period where both are written"):
+            self.assertIn(w, cut)
+
     def test_the_open_questions_ask_at_least_these(self):
         qs = DOC.read_text().split("## Open questions for review", 1)[1]
         for q in ("Digest body cap", "Max hold age default", "What a bypass counts against"):
