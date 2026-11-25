@@ -89,8 +89,17 @@ def _check_args(target, window_class, day_start, now, cap):
         raise ValueError(f"cap must be a positive int: {cap!r}")
 
 
+def _limit(window_class: str, cap: int) -> "int | None":
+    """Slots this class may fill: peak every one, anytime and trough all but the last (peak's reserved
+    token), bypass no limit."""
+    if window_class == "bypass":
+        return None
+    return cap if window_class == "peak" else cap - 1
+
+
 def _fits(conn, target, window_class, day_start, cap) -> bool:
-    return conn.execute(BUDGET_SQL, (target, day_start)).fetchone()[0] < cap
+    limit = _limit(window_class, cap)
+    return limit is None or conn.execute(BUDGET_SQL, (target, day_start)).fetchone()[0] < limit
 
 
 def used(conn, target: str, day_start: float) -> int:
