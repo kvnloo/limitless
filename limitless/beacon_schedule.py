@@ -3,11 +3,13 @@ schedule --print, docs/owner-beacon.md).
 
     text = render(kind, python, writer, out, every, copy_to=None, dbs=(), label=DEFAULT_LABEL)
 
-``launchd`` is one plist (``StartInterval`` = every * 60). Both kinds run one ``/bin/sh -c`` line: the writer
-(``<python> <writer> write --out <out> [--dbs a:b]``), then, with ``copy_to``, ``scp -q -p <out> <copy_to>``
-(``-p`` keeps the writer's 0600 mode and the mtime). Every value is shell-quoted. Every host-specific value
-comes from the caller: nothing here names a host, user or path, and nothing is written, loaded, enabled or
-run. Stdlib only, Python 3.9+.
+``launchd`` is one plist (``StartInterval`` = every * 60). ``systemd`` is a oneshot ``<label>.service`` and a
+``<label>.timer`` (``OnBootSec``, ``OnUnitActiveSec`` = every minutes), each after a ``# <label>.<kind>`` line;
+the shell line is one double-quoted ExecStart word, with backslash, double quote, ``%`` and ``$`` escaped for
+systemd. Both kinds run one ``/bin/sh -c`` line: the writer (``<python> <writer> write --out <out>
+[--dbs a:b]``), then, with ``copy_to``, ``scp -q -p <out> <copy_to>`` (``-p`` keeps the writer's 0600 mode
+and the mtime). Every value is shell-quoted. Every host-specific value comes from the caller: nothing here
+names a host, user or path, and nothing is written, loaded, enabled or run. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
 
@@ -16,7 +18,8 @@ import plistlib
 import shlex
 from typing import Iterable, Optional
 
-KINDS = ("launchd",)
+KINDS = ("launchd", "systemd")
+BOOT_DELAY = "5min"   # the first run after boot; then every --every minutes
 DEFAULT_LABEL = "limitless.owner-beacon"
 
 
@@ -50,9 +53,41 @@ def launchd(line: str, every: int, label: str) -> str:
     }).decode("utf-8")
 
 
+def systemd_word(text: str) -> str:
+    """``text`` as one double-quoted systemd word that systemd unquotes back to ``text`` (no specifier or
+    variable expansion)."""
+    for a, b in (("\\", "\\\\"), ('"', '\\"'), ("%", "%%"), ("$", "$$")):
+        text = text.replace(a, b)
+    return '"' + text + '"'
+
+
+def systemd(line: str, every: int, label: str) -> str:
+    return (f"# {label}.service\n"
+            "[Unit]\n"
+            "Description=Write the owner beacon (limitless-owner-beacon) and copy it when asked\n"
+            "\n"
+            "[Service]\n"
+            "Type=oneshot\n"
+            f"ExecStart=/bin/sh -c {systemd_word(line)}\n"
+            "\n"
+            f"# {label}.timer\n"
+            "[Unit]\n"
+            f"Description=Owner beacon, every {every} minutes\n"
+            "\n"
+            "[Timer]\n"
+            f"OnBootSec={BOOT_DELAY}\n"
+            f"OnUnitActiveSec={every}min\n"
+            f"Unit={label}.service\n"
+            "\n"
+            "[Install]\n"
+            "WantedBy=timers.target\n")
+
+
 def render(kind: str, python: str, writer: str, out: str, every: int, copy_to: Optional[str] = None,
            dbs: Iterable[str] = (), label: str = DEFAULT_LABEL) -> str:
     line = shell_line(python, writer, out, copy_to, dbs)
     if kind == "launchd":
         return launchd(line, every, label)
+    if kind == "systemd":
+        return systemd(line, every, label)
     raise ValueError(kind)

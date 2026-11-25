@@ -94,6 +94,78 @@ class Launchd(Base):
             self.assertNotIn(word, label)
 
 
+def units(text):
+    """{"<name>.service": {"Section": {"Key": "value"}}, ...} from the printed text: each unit starts with a
+    `# <name>.service` or `# <name>.timer` line."""
+    out, unit, section = {}, None, None
+    for line in text.splitlines():
+        if line.startswith("# ") and line.endswith((".service", ".timer")):
+            unit = out.setdefault(line[2:], {})
+        elif line.startswith("[") and line.endswith("]"):
+            section = unit.setdefault(line[1:-1], {})
+        elif "=" in line and not line.startswith("#"):
+            k, v = line.split("=", 1)
+            section[k] = v
+    return out
+
+
+def systemd_words(value):
+    """Split an ExecStart= value the way systemd does for the forms the printer uses: bare words and one
+    double-quoted word with C escapes; then %% -> % and $$ -> $."""
+    words, i = [], 0
+    while i < len(value):
+        if value[i] == " ":
+            i += 1
+            continue
+        if value[i] == '"':
+            i, w = i + 1, ""
+            while value[i] != '"':
+                if value[i] == "\\":
+                    w += {"\\": "\\", '"': '"', "'": "'"}[value[i + 1]]
+                    i += 2
+                else:
+                    w += value[i]
+                    i += 1
+            i += 1
+        else:
+            j = value.find(" ", i)
+            j = len(value) if j < 0 else j
+            w, i = value[i:j], j
+        words.append(w.replace("%%", "\0").replace("$$", "$").replace("\0", "%"))
+    return words
+
+
+class Systemd(Base):
+    def units(self, *args):
+        return units(self.schedule("--kind", "systemd", "--label", LABEL, *args))
+
+    def test_a_oneshot_service_and_a_timer(self):
+        got = self.units("--out", OUT, "--every", "60")
+        self.assertEqual(sorted(got), [LABEL + ".service", LABEL + ".timer"])
+        self.assertEqual(got[LABEL + ".service"]["Service"]["Type"], "oneshot")
+        timer = got[LABEL + ".timer"]
+        self.assertEqual(timer["Timer"]["OnUnitActiveSec"], "60min")
+        self.assertIn("OnBootSec", timer["Timer"])
+        self.assertEqual(timer["Timer"]["Unit"], LABEL + ".service")
+        self.assertEqual(timer["Install"]["WantedBy"], "timers.target")
+
+    def test_the_interval_is_the_minutes_given(self):
+        for every in (5, 90, 1440):
+            got = self.units("--out", OUT, "--every", str(every))
+            self.assertEqual(got[LABEL + ".timer"]["Timer"]["OnUnitActiveSec"], f"{every}min")
+
+    def test_exec_start_runs_the_writer_then_scp(self):
+        got = self.units("--out", OUT, "--every", "60", "--copy-to", DEST, "--db", "/tmp/example/a.db")
+        words = systemd_words(got[LABEL + ".service"]["Service"]["ExecStart"])
+        self.assertEqual(self.sh_steps(words), [writer(OUT, ["/tmp/example/a.db"]), ["scp", "-q", "-p", OUT, DEST]])
+
+    def test_a_space_a_quote_a_dollar_and_a_percent_survive_quoting(self):
+        odd_db = '/tmp/example/50% "of" $HOME/a b\\c.db'
+        got = self.units("--out", ODD, "--every", "60", "--copy-to", DEST, "--db", odd_db)
+        words = systemd_words(got[LABEL + ".service"]["Service"]["ExecStart"])
+        self.assertEqual(self.sh_steps(words), [writer(ODD, [odd_db]), ["scp", "-q", "-p", ODD, DEST]])
+
+
 class Help(Base):
     def test_help_says_it_only_prints(self):
         for args in (("--help",), ("schedule", "--help")):

@@ -19,8 +19,9 @@ readable, no message from the person): then nothing is written, an old beacon is
 line says why. Exit 1 and one line on stderr when the file cannot be written; exit 2 and a usage line for
 bad arguments. It never sends and never prints a traceback.
 
-limitless-owner-beacon schedule --print --kind launchd --out PATH --every MINUTES [--copy-to USER@HOST:PATH]
-[--db PATH ...] [--label LABEL] prints the job that runs the writer every MINUTES and then, with --copy-to,
+limitless-owner-beacon schedule --print --kind launchd|systemd --out PATH --every MINUTES
+[--copy-to USER@HOST:PATH] [--db PATH ...] [--label LABEL] prints the job (a launchd plist, or a systemd
+user .service and .timer) that runs the writer every MINUTES and then, with --copy-to,
 `scp -q -p` of the beacon to the plugin host (limitless/beacon_schedule.py). It only prints: it never writes,
 loads, enables or runs anything. Every host-specific value comes from the arguments.
 """
