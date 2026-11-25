@@ -186,11 +186,12 @@ class ToolRows(DoctorCase):
         self.assertEqual(rows[run_at + 3]["name"], "push sender")
         self.assertEqual(rows[run_at + 4]["name"], "sender candidates")
         self.assertEqual(rows[run_at + 5]["name"], "push recovery")
-        self.assertEqual(rows[run_at + 6]["name"], "Sleep mode")
-        self.assertEqual(rows[run_at + 7]["name"], "glide source")
-        self.assertEqual(rows[run_at + 8]["name"], "rides source")
-        self.assertEqual(rows[run_at + 9]["name"], "local labeler")
-        self.assertEqual(rows.index(tools_[0]), run_at + 10)
+        self.assertEqual(rows[run_at + 6]["name"], "push interrupted")
+        self.assertEqual(rows[run_at + 7]["name"], "Sleep mode")
+        self.assertEqual(rows[run_at + 8]["name"], "glide source")
+        self.assertEqual(rows[run_at + 9]["name"], "rides source")
+        self.assertEqual(rows[run_at + 10]["name"], "local labeler")
+        self.assertEqual(rows.index(tools_[0]), run_at + 11)
 
     def test_a_null_value_is_missing_with_the_envelopes_own_reason(self):
         r = self.tool("limitless_habit")
