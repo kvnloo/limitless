@@ -31,9 +31,14 @@ one verdict in words per sending job, so a plugin update that changes a job's wi
 (``create_job`` for a missing job, ``update_job`` with only the differing fields, ``none`` with a reason for what
 only a person can sort out); ``bin/limitless-cron-spec --plan <jobs file>`` prints them as JSON. It never makes
 one, never plans a resume and never plans a delete.
+
+``plan_commands(steps)`` prints those steps as the host's own ``hermes cron create`` / ``hermes cron edit`` lines,
+shell-quoted, with a comment for each field no flag sets (window and expiry have none) and for each ``none`` step;
+``bin/limitless-cron-spec --plan <jobs file> --cli`` prints them. Nothing here runs one.
 """
 import math
 import re
+import shlex
 from typing import Any, NamedTuple
 
 from limitless import jobs
@@ -368,4 +373,115 @@ def update_plan(records: Any, payloads: Any) -> list:
             out.append(step)
     out += [{"job": n, "call": "none", "why": RETIRED} for n in named if n.startswith(PREFIX) and n not in wanted]
     out += [{"job": n, "call": "none", "why": "unreadable: no name to read; fix it by hand"} for n in unnamed]
+    return out
+
+
+# --- The same plan as the host's own CLI commands ------------------------------------------------------------
+# The flags are the ones the fork's ``hermes cron`` parser has (hermes_cli/subcommands/cron.py at a910662):
+# ``create`` takes the schedule as its first positional (line 54), an optional prompt (lines 55-56), ``--name``
+# (57), ``--deliver`` (58-62), ``--script`` (73-78) and ``--no-agent`` (79-82); ``edit`` takes the job id or name
+# (136), ``--schedule`` (137), ``--name`` (139), ``--deliver`` (140), ``--script`` (154-157; '' clears it) and
+# ``--no-agent`` / ``--agent`` (158-163). No flag sets ``window_class`` or ``stale_after_s``: neither parser has
+# one, hermes_cli/cron.py's _JOB_ARG_FIELDS (lines 781-788) passes none on, and the cronjob tool's signature
+# (tools/cronjob_tools.py lines 1059-1093) has no such field. Clearing ``deliver`` or the schedule has no flag
+# either. Such a field becomes a comment line; it is never dropped.
+
+NO_FLAG_TAIL = "; set it with cron.jobs.update_job, as --plan shows (the cronjob tool has no such field either)"
+_CREATE_VALUE_FLAGS = {"name": "--name", "script": "--script", "deliver": "--deliver"}
+_EDIT_VALUE_FLAGS = {"schedule": "--schedule", "name": "--name", "script": "--script", "deliver": "--deliver"}
+_FLAG_ORDER = ("name",) + tuple(key for key, _, _, _ in _FIELDS)
+
+
+def _one_line(text: Any) -> str:
+    """``text`` as one comment-safe line: a record's name or id may hold a newline; it never starts a command."""
+    return "".join(c if c.isprintable() else " " for c in str(text))
+
+
+def _schedule_arg(value: Any) -> Any:
+    """A schedule as ``hermes cron`` takes it: the stored interval dict back to ``every <n>m``, a string as is,
+    anything else None (no flag clears a schedule)."""
+    if isinstance(value, dict) and value.get("kind") == "interval" and type(value.get("minutes")) is int:
+        return f"every {value['minutes']}m"
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _flag_args(key: str, value: Any, flags: dict, edit: bool) -> Any:
+    """The CLI arguments that set ``key`` to ``value``, or None when no flag can."""
+    if key == "no_agent":
+        return ["--no-agent"] if value else (["--agent"] if edit else [])
+    if key not in flags:
+        return None
+    if key == "schedule":
+        value = _schedule_arg(value)
+    elif key == "script" and value is None and edit:
+        value = ""                                   # '' clears the script (cron.py line 155)
+    if not isinstance(value, str):
+        return None
+    if value.startswith("-"):
+        return [f"{flags[key]}={value}"]           # never read as a flag of its own
+    return [flags[key], value]
+
+
+def _command(step: dict) -> tuple:
+    """(the argv for a create_job / update_job step, or None; the words for the fields no flag sets)."""
+    edit = step.get("call") == "update_job"
+    fields = dict(step.get("updates" if edit else "kwargs") or {})
+    flags = _EDIT_VALUE_FLAGS if edit else _CREATE_VALUE_FLAGS
+    if edit:
+        head = ["hermes", "cron", "edit", step.get("job_id")]
+    else:
+        head = ["hermes", "cron", "create", _schedule_arg(fields.pop("schedule", None))]
+        prompt = fields.pop("prompt", None)
+        if isinstance(prompt, str) and prompt and not prompt.startswith("-"):
+            head.append(prompt)
+        elif isinstance(prompt, str) and prompt:
+            fields["prompt"] = prompt                  # a positional that would read as a flag: say so instead
+        fields = {k: v for k, v in fields.items() if v is not None}   # create_job's own default for the rest
+    args, no_flag = [], []
+    for key in sorted(fields, key=lambda k: (_FLAG_ORDER.index(k) if k in _FLAG_ORDER else len(_FLAG_ORDER), k)):
+        got = _flag_args(key, fields[key], flags, edit)
+        if got is None:
+            no_flag.append(_WORDS.get(key, key.replace("_", " ")))
+        else:
+            args += got
+    if not args and edit:
+        return None, no_flag
+    return head + args, no_flag
+
+
+def _plain_argv(argv: list) -> bool:
+    """Every argument is one line of printable text, and the positional after the subcommand (the job id, or the
+    create schedule) is non-empty and cannot be read as a flag."""
+    if not all(isinstance(a, str) and a.isprintable() for a in argv):
+        return False
+    return bool(argv[3]) and not argv[3].startswith("-")
+
+
+def plan_commands(steps: Any) -> list:
+    """``update_plan``'s steps as lines an operator can review and paste into a shell on the host: one
+    ``hermes cron create`` line per create_job step, one ``hermes cron edit <job id>`` line per update_job step with
+    only the differing fields that have a flag, each argument through ``shlex.quote``. The fields no flag sets
+    (window, expiry, a cleared delivery) follow as ``# <job>: <fields> has no hermes cron flag; ...``; a ``none``
+    step is ``# <job>: <why>``. Never a delete, pause or resume line, and a value that is not plain one-line text
+    (or a job id starting with ``-``) turns its step into a comment. Pure; it runs nothing."""
+    out = []
+    for step in steps or []:
+        if not isinstance(step, dict):
+            continue
+        job = _one_line(step.get("job"))
+        call = step.get("call")
+        if call == "none":
+            out.append(f"# {job}: {_one_line(step.get('why'))}")
+            continue
+        if call not in ("create_job", "update_job"):
+            out.append(f"# {job}: not a step this can print; see --plan")
+            continue
+        argv, no_flag = _command(step)
+        if argv is not None:
+            if not _plain_argv(argv):
+                out.append(f"# {job}: a value is not plain one-line text; make the call --plan shows by hand")
+                continue
+            out.append(" ".join(shlex.quote(a) for a in argv))
+        if no_flag:
+            out.append(f"# {job}: {_and(no_flag)} has no hermes cron flag{NO_FLAG_TAIL}")
     return out

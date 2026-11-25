@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file>]: the Hermes cron job
-each plugin job would be.
+"""limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file> [--cli]]: the Hermes cron
+job each plugin job would be.
 
 Without --json: one line per job in words (its title, the decision window it waits for, how long until a held
 occurrence is stale), or "skipped, sends nothing". With --json: a JSON list of keyword arguments for the host's
@@ -23,6 +23,12 @@ what only the operator can sort out (an unreadable record, two records with one 
 no longer has). A paused job is never resumed and no job is ever deleted. It makes none of the calls. Exit 0 when
 the plan is empty, 1 otherwise, 2 for usage or a file it cannot read as a jobs file.
 
+With --plan <jobs file> --cli: the same plan as the host's own commands (cron_spec.plan_commands), one line per
+step for the operator to review and paste: `hermes cron create ...` for a missing job, `hermes cron edit <job id>
+...` with only the differing fields that have a flag, each argument shell-quoted. A field no `hermes cron` flag
+sets (window, expiry) is a `# <job>: ... has no hermes cron flag` comment, never dropped; a "none" step is
+`# <job>: <why>`. Never a delete, pause or resume line. Same exit codes as --plan; it runs none of them.
+
 It never calls Hermes, never creates a job and never sends anything; without --scripts it writes no file.
 """
 import json
@@ -34,7 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from limitless import cron_spec  # noqa: E402
 
-USAGE = ("usage: limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file>]"
+USAGE = ("usage: limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file> [--cli]]"
          "  (<dir> must exist)")
 
 
@@ -78,18 +84,25 @@ def check(path: str) -> int:
     return 0 if all(v.ok for v in verdicts) else 1
 
 
-def plan(path: str) -> int:
-    """Print the update plan for the jobs file at ``path`` as JSON; 0 empty, 1 not, 2 unreadable. Read-only."""
+def plan(path: str, cli: bool = False) -> int:
+    """Print the update plan for the jobs file at ``path`` as JSON, or with ``cli`` as `hermes cron` lines; 0 empty,
+    1 not, 2 unreadable. Read-only."""
     records = read_records(path)
     if records is None:
         return 2
     steps = cron_spec.update_plan(records, cron_spec.payloads())
-    print(json.dumps(steps, indent=1, sort_keys=True))
+    if cli:
+        for line in cron_spec.plan_commands(steps):
+            print(line)
+    else:
+        print(json.dumps(steps, indent=1, sort_keys=True))
     return 0 if not steps else 1
 
 
 def main(argv):
     args = argv[1:]
+    if len(args) == 3 and args[0] == "--plan" and args[2] == "--cli":
+        return plan(args[1], cli=True)
     if args[:1] in (["--check"], ["--plan"]):
         if len(args) != 2:
             print(USAGE, file=sys.stderr)

@@ -106,7 +106,7 @@ class PlanCommands(unittest.TestCase):
         step = {"job": "limitless-nap", "call": "update_job", "job_id": "a00000000001",
                 "updates": {"script": "--help.sh"}}
         (line,) = cron_spec.plan_commands([step])
-        self.assertEqual(shlex.split(line)[3:], ["--script=--help.sh"])
+        self.assertEqual(shlex.split(line)[3:], ["a00000000001", "--script=--help.sh"])
         step["job_id"] = "-x"   # a positional cannot take the "=" spelling: the line is a comment instead
         (line,) = cron_spec.plan_commands([step])
         self.assertTrue(line.startswith("# limitless-nap: "), line)
