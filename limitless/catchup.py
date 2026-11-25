@@ -66,7 +66,12 @@ def away_word(gap_h: float) -> str:
 
 def after_h(env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None) -> float:
     """config ``catchup_after_h`` when it is a positive number, else DEFAULT_AFTER_H."""
-    v = config(env, home).get(CONFIG_KEY)
+    return after_h_of(config(env, home))
+
+
+def after_h_of(cfg) -> float:
+    """``after_h`` from a config mapping already read (the doctor's)."""
+    v = cfg.get(CONFIG_KEY) if isinstance(cfg, Mapping) else None
     ok = isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
     return float(v) if ok else DEFAULT_AFTER_H
 

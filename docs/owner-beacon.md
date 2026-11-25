@@ -92,3 +92,17 @@ WantedBy=timers.target
 
 On the plugin host, in `config.json`: `"owner_beacons": ["beacons/this-machine.json"]` (relative to
 `<state dir>`).
+
+## Checking it: the doctor's owner beacon row
+
+With `owner_beacons` (or `LIMITLESS_OWNER_BEACONS`) set, `bin/limitless-doctor` prints one `owner beacon` row
+right after `rides source`, in words only:
+
+- `live: last seen about two hours ago`: the beacon parses and its time is within config `catchup_after_h`
+  (default a day).
+- `stale: last seen about three days ago, past the catch-up threshold (catchup_after_h)`: older than that. If
+  you did chat there since, the writer or the copy step has stopped.
+- `missing: file missing`, `unreadable`, `not a beacon` or `stamped in the future`.
+
+With several beacons the worst one sets the status and each is said in order (`first: ...; second: ...`).
+Without `owner_beacons` there is no row.

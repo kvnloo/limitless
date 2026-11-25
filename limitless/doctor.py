@@ -22,7 +22,8 @@ or unknown; kind source, words only), the glide source row (glide_provider.path_
 the words, missing when not configured, the file is missing or unreadable, or Glide is older; kind source,
 words only), the rides source row (config rides_file: live with the last ride's age and the sources in words,
 missing when not configured, the file is missing or unreadable, or it holds no ride yet; kind source, words
-only), the local labeler's row (env LIMITLESS_T1_CMD
+only), the owner beacon row only when owner beacons are set (owner_beacon_row: missing, stale past
+catchup_after_h, or live, last seen in words), the local labeler's row (env LIMITLESS_T1_CMD
 or config t1_model_cmd: off, set or broken; files are checked, the model is never run), one row per tool in
 plugin.yaml, from that tool's own
 envelope for an empty call, the Open Wearables export's row (config open_wearables_export, its mark
@@ -76,7 +77,7 @@ from typing import Mapping, Optional
 
 from . import card, jobs, mock_guard, noop_mcp, tier_audit, tools
 from .envelope import STALE_H
-from .state_reader import StateReader, config, parse_ts
+from .state_reader import OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, StateReader, config, parse_ts
 
 LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
 STATUSES = (LIVE, STALE, MISSING, OFF)
@@ -443,6 +444,77 @@ def rides_source_row(reader: StateReader, now: float, env: Optional[Mapping[str,
     age = age_words(max(0.0, now - max(starts)) / 3600)
     said = source_words(r["source"] for r in rows)
     return _row(RIDES_SOURCE_ROW, "source", LIVE, f"last ride {age}; sources: {said}")
+
+
+OWNER_BEACON_ROW = "owner beacon"
+_ORDINALS = "first second third fourth fifth sixth seventh eighth ninth tenth".split()
+_WORST = {LIVE: 0, STALE: 1, MISSING: 2}
+
+
+def _beacon_paths(cfg: Mapping, env: Mapping[str, str]) -> list:
+    """The beacons the plugin reads: $LIMITLESS_OWNER_BEACONS (os.pathsep-separated), else config
+    ``owner_beacons`` (a list of strings); a relative path is in the state dir (StateReader.owner_beacon_paths)."""
+    if env.get(OWNER_BEACONS_ENV):
+        items = env[OWNER_BEACONS_ENV].split(os.pathsep)
+    else:
+        v = cfg.get(OWNER_BEACONS_CONFIG) if isinstance(cfg, Mapping) else None
+        items = v if isinstance(v, list) else []
+    st = state_path(cfg, env)
+    out = []
+    for v in items:
+        if isinstance(v, str) and v.strip():
+            p = Path(v).expanduser()
+            out.append(p if p.is_absolute() else st / p)
+    return out
+
+
+def _one_beacon(path: Path, now: float, after: float) -> tuple:
+    """(status, words) for one beacon, read the way owner_messages reads it; never the path, a time or a digit."""
+    from . import owner_messages as om
+    try:
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return MISSING, "file missing"
+    except (OSError, ValueError):
+        return MISSING, "unreadable"
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(om.BEACON_MAX_BYTES + 1)
+    except (OSError, ValueError):
+        return MISSING, "unreadable"
+    try:
+        t = om.beacon_time(raw.decode("utf-8")) if len(raw) <= om.BEACON_MAX_BYTES else None
+    except (UnicodeDecodeError, ValueError, OverflowError):
+        t = None
+    if t is None or not math.isfinite(t):
+        return MISSING, "not a beacon"
+    if t > now + om.SKEW_S:
+        return MISSING, "stamped in the future"
+    age_h = max(0.0, now - t) / 3600
+    if age_h > after:
+        return STALE, f"last seen {age_words(age_h)}, past the catch-up threshold (catchup_after_h)"
+    return LIVE, f"last seen {age_words(age_h)}"
+
+
+def owner_beacon_row(cfg: Mapping, now: float, env: Optional[Mapping[str, str]] = None) -> Optional[dict]:
+    """The owner beacons (bin/limitless-owner-beacon, docs/owner-beacon.md), or None when none is set
+    ($LIMITLESS_OWNER_BEACONS, else config ``owner_beacons``). Each beacon is missing (``file missing``,
+    ``unreadable``, ``not a beacon`` or ``stamped in the future``), stale (its time is older than config
+    ``catchup_after_h``, default catchup.DEFAULT_AFTER_H: a day) or live, with ``last seen <age in words>``.
+    One row: the worst beacon sets the status; with several, each is said in order (``first: ...; second:
+    ...``). Words only: never the path, a time or a digit. Kind ``source``: --strict does not count it."""
+    from .catchup import after_h_of
+    env = os.environ if env is None else env
+    paths = _beacon_paths(cfg, env)
+    if not paths:
+        return None
+    after = after_h_of(cfg)
+    got = [_one_beacon(p, now, after) for p in paths]
+    status = max((s for s, _ in got), key=_WORST.__getitem__)
+    if len(got) == 1:
+        return _row(OWNER_BEACON_ROW, "source", status, got[0][1])
+    said = [f"{_ORDINALS[i] if i < len(_ORDINALS) else 'another'}: {w}" for i, (_, w) in enumerate(got)]
+    return _row(OWNER_BEACON_ROW, "source", status, "; ".join(said))
 
 
 LOCAL_LABELER_ROW = "local labeler"
@@ -1240,7 +1312,7 @@ def report(cfg: Mapping, now: float) -> list:
     (sender_candidates_row), where a push-outage recovery stands
     (push_recovery_row), phone Sleep mode as kevin-push's hold
     reads it (sleep_mode_row), whether Glide's attention file is wired in (glide_source_row), whether the rides file is wired in
-    (rides_source_row), the local labeler
+    (rides_source_row), the owner beacons when any is set (owner_beacon_row), the local labeler
     (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then whether
@@ -1265,7 +1337,8 @@ def report(cfg: Mapping, now: float) -> list:
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
              sender_candidates_row(cfg, state_dir=reader.path),
              push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), glide_source_row(cfg, now),
-             rides_source_row(reader, now), local_labeler_row(cfg)]
+             rides_source_row(reader, now)]
+    rows += [r for r in (owner_beacon_row(cfg, now),) if r is not None] + [local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
     rows += [noop_mcp_row(cfg), cron_window_provider_row(cfg, now), host_scripts_row(cfg), host_jobs_row(cfg)]
