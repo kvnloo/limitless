@@ -43,13 +43,21 @@ profiles/intake directory:
 
     $ CIRCADIAN_CLASS=decision kevin-push x "Pick one" "Keep the loop?"
     kevin-push: log (no sender profile)
+
+sent.json is read, decided on and written under an exclusive flock on sent.json.lock beside it, so two pushes
+on one tick cannot both take the last daily-cap slot, and one write never drops another push's row. A send
+first writes its row marked pending (it counts for the cap and dedupe while hermes runs); on delivery the
+mark is removed, on a failed send the row is removed, so only a real delivery uses up the cap.
 """
+import fcntl
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -64,6 +72,7 @@ from limitless.state_reader import config  # noqa: E402
 
 ST = Path.home() / ".local/state/kevin-push"
 LOG, SENT = ST / "log.jsonl", ST / "sent.json"
+LOCK = ST / "sent.json.lock"
 CONFIG = Path(os.environ.get("LIMITLESS_CONFIG", Path.home() / ".config/limitless/config.json"))
 
 
@@ -120,6 +129,35 @@ def asleep():
         return False
 
 
+@contextmanager
+def sent_lock():
+    """An exclusive flock on sent.json.lock: every read-decide-write of sent.json happens inside one."""
+    with open(LOCK, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def read_sent(now):
+    sent = json.loads(SENT.read_text()) if SENT.exists() else []
+    return [s for s in sent if now - s["t"] < 86400]
+
+
+def settle(now, pending, delivered):
+    """Under the lock: the row marked ``pending`` loses its mark when delivered, else it is removed."""
+    with sent_lock():
+        sent = []
+        for s in read_sent(now):
+            if s.get("pending") == pending:
+                if not delivered:
+                    continue
+                s = {k: v for k, v in s.items() if k != "pending"}
+            sent.append(s)
+        SENT.write_text(json.dumps(sent))
+
+
 def main(argv):
     args, opts, ok = split_opts(argv[1:])
     once, why = opts.get("--once"), opts.get("--why")
@@ -131,17 +169,24 @@ def main(argv):
     cls = os.environ.get("CIRCADIAN_CLASS", "report")
     ST.mkdir(parents=True, exist_ok=True)
     now = time.time()
-    sent = json.loads(SENT.read_text()) if SENT.exists() else []
-    sent = [s for s in sent if now - s["t"] < 86400]
-    quiet = q.check(state_dir(), now)
-    verdict = g.decide(tag, title, body, cls, now, sent, asleep(), once_key=once, quiet=quiet)
-    how = HOW.get(verdict, "log")
-    if verdict == "drop" and g.quiet_reason(quiet) is not None:
-        how = f"log ({g.quiet_reason(quiet)})"
-        if once:
-            sent.append(g.quiet_row(now, once))   # this event is dropped, not queued: a retry is dropped too
-    elif verdict == "drop" and g.once_sent(sent, once, now):
-        how = f"log ({g.ONCE_DROP})"
+    with sent_lock():   # read -> decide -> reserve: no other push takes the same cap slot in between
+        sent = read_sent(now)
+        quiet = q.check(state_dir(), now)
+        verdict = g.decide(tag, title, body, cls, now, sent, asleep(), once_key=once, quiet=quiet)
+        how = HOW.get(verdict, "log")
+        if verdict == "drop" and g.quiet_reason(quiet) is not None:
+            how = f"log ({g.quiet_reason(quiet)})"
+            if once:
+                sent.append(g.quiet_row(now, once))   # this event is dropped, not queued: a retry is dropped too
+        elif verdict == "drop" and g.once_sent(sent, once, now):
+            how = f"log ({g.ONCE_DROP})"
+        if verdict == "send":
+            pending = uuid.uuid4().hex
+            row = {"t": now, "k": g.key(title, body)}   # the key is the message without its why line
+            if once:
+                row["once"] = once        # claimed only on real delivery (settle drops it on a failed send)
+            sent.append(dict(row, pending=pending))   # counts for the cap and dedupe while the send runs
+        SENT.write_text(json.dumps(sent))
     if verdict == "fold":
         lines = [ln for ln in body.splitlines() if ln.strip()]
         (ST / "asks-latest.json").write_text(json.dumps({"at": int(now), "count": len(lines), "lines": lines[:20]}))
@@ -149,30 +194,28 @@ def main(argv):
         # delivered inside the 'Back from nap' message; one row per message (once key, else dedupe key)
         held.add(ST / "held.jsonl", {"at": int(now), "tag": tag, "title": title, "body": body[:1000]}, once)
     elif verdict == "send":
-        reason = why if why is not None else os.environ.get("KEVIN_PUSH_WHY", "")
-        text = g.outgoing(body, g.why_line(reason if reason.strip() else g.why_reason(cls, title)))
-        cfg = config()
-        text, folded, cut = message_shape.fit(title, text, message_shape.limits(cfg))
-        if folded or cut:
-            tier_audit.record(tier_audit.shape_event(folded, cut, now))   # counts only, never the text
-        if push_sender.check(cfg) == push_sender.BROKEN:
-            # the profile cannot exist: no hermes, no fallback sender (choosing one is the owner's call)
-            rc, how = None, push_sender.NO_SENDER_HOW
-        else:
-            with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-                f.write(text)
-            # the Hermes profile that owns the Telegram bot and the contact alias (not a chat id): env > config > default
-            rc = subprocess.run(["hermes", "-p", push_sender.profile(cfg), "send", "--to", push_sender.target(cfg),
-                                 "--subject", title,
-                                 "--file", f.name, "-q"], capture_output=True, text=True, timeout=60).returncode
-            os.unlink(f.name)
-            how = "telegram" if rc == 0 else f"log (telegram rc={rc})"
-        if rc == 0:
-            row = {"t": now, "k": g.key(title, body)}   # the key is the message without its why line
-            if once:
-                row["once"] = once        # claimed only on real delivery
-            sent.append(row)
-    SENT.write_text(json.dumps(sent))
+        rc = None
+        try:
+            reason = why if why is not None else os.environ.get("KEVIN_PUSH_WHY", "")
+            text = g.outgoing(body, g.why_line(reason if reason.strip() else g.why_reason(cls, title)))
+            cfg = config()
+            text, folded, cut = message_shape.fit(title, text, message_shape.limits(cfg))
+            if folded or cut:
+                tier_audit.record(tier_audit.shape_event(folded, cut, now))   # counts only, never the text
+            if push_sender.check(cfg) == push_sender.BROKEN:
+                # the profile cannot exist: no hermes, no fallback sender (choosing one is the owner's call)
+                rc, how = None, push_sender.NO_SENDER_HOW
+            else:
+                with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+                    f.write(text)
+                # the Hermes profile that owns the Telegram bot and the contact alias (not a chat id): env > config > default
+                rc = subprocess.run(["hermes", "-p", push_sender.profile(cfg), "send", "--to", push_sender.target(cfg),
+                                     "--subject", title,
+                                     "--file", f.name, "-q"], capture_output=True, text=True, timeout=60).returncode
+                os.unlink(f.name)
+                how = "telegram" if rc == 0 else f"log (telegram rc={rc})"
+        finally:
+            settle(now, pending, rc == 0)   # counted only on real delivery
     with open(LOG, "a") as f:
         shown = text if verdict == "send" else body
         f.write(json.dumps({"at": int(now), "tag": tag, "cls": cls, "title": title, "body": shown[:2000], "how": how}) + "\n")
