@@ -84,6 +84,19 @@ class KevinPushLock(unittest.TestCase):
         self.assertEqual(len(rows), send_gate.DAILY_CAP, rows)
         self.assertEqual(sum(1 for r in rows if not r["k"].startswith("synthetic")), 1, rows)
 
+    def test_a_failed_send_leaves_sent_json_without_its_reservation(self):
+        rows = self.prefill(send_gate.DAILY_CAP - 1)
+        p = self.start("Pick one", "Synthetic choice A", FAKE_HERMES_RC="1", FAKE_HERMES_DELAY="0",
+                       KEVIN_PUSH_ONCE="synthetic_event:1999990000")
+        out, err = p.communicate(timeout=60)
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(out.strip(), "kevin-push: log (telegram rc=1)")
+        self.assertEqual(self.calls(), 1)
+        during = json.loads((self.home / "sent-during.json").read_text())
+        self.assertEqual(len(during), send_gate.DAILY_CAP, "the slot is reserved while the send runs")
+        self.assertEqual([r for r in during if r.get("pending")][0].get("once"), "synthetic_event:1999990000")
+        self.assertEqual(self.sent(), rows, "a failed send uses no cap slot and claims no event key")
+
 
 if __name__ == "__main__":
     unittest.main()
