@@ -154,5 +154,29 @@ class Reserve(LedgerCase):
         self.assertEqual(r.state, "queued")
 
 
+# --- stage peak
+class PeakToken(LedgerCase):
+    def test_the_last_slot_is_peaks_alone(self):
+        self.fill(2, cap=3)
+        for cls in ("anytime", "trough"):
+            r = dl.reserve(self.db, T, cls, day_start=DAY, now=NOW, cap=3, window_class=cls)
+            self.assertEqual((r.state, r.reason), ("held", "cap"))
+        self.assertEqual(dl.reserve(self.db, T, "decide", day_start=DAY, now=NOW, cap=3,
+                                    window_class="peak").state, "queued")
+        r = dl.reserve(self.db, T, "decide again", day_start=DAY, now=NOW, cap=3, window_class="peak")
+        self.assertEqual((r.state, r.reason), ("held", "cap"))   # never borrows from tomorrow
+        self.assertEqual(dl.used(self.db, T, DAY), 3)
+
+    def test_peak_may_also_take_an_ordinary_slot(self):
+        self.assertEqual(self.fill(1, cls="peak", cap=3)[0].state, "queued")
+        self.assertEqual(self.fill(1, cap=3)[0].state, "queued")
+
+    def test_bypass_takes_no_slot_and_is_never_held_for_the_cap(self):
+        self.fill(1, cls="peak", cap=1)
+        r = dl.reserve(self.db, T, "your schedule card", day_start=DAY, now=NOW, cap=1, window_class="bypass")
+        self.assertEqual(r.state, "queued")
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
