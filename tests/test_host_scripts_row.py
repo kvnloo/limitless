@@ -47,6 +47,8 @@ class Case(unittest.TestCase):
         for n, body in cron_spec.scripts().items():
             if n in skip:
                 continue
+            if (self.dir / n).exists():
+                os.chmod(self.dir / n, 0o600)   # an earlier subtest may have left it read-only
             (self.dir / n).write_text(body, encoding="utf-8")
             os.chmod(self.dir / n, mode)
 

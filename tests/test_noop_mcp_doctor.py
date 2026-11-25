@@ -92,17 +92,18 @@ class Report(unittest.TestCase):
         at = names.index(doctor.NOOP_MCP_ROW)
         self.assertEqual(names[at - 1], "tool " + doctor.manifest_tools()[-1])
         self.assertEqual(names[at + 1], doctor.CRON_WINDOW_ROW)  # then the cron window provider row,
-        self.assertEqual(names[at + 2], doctor.DESKTOP_AW_ROW)   # then the desktop AW row, the feed reflex,
-        self.assertEqual(names[at + 3], doctor.FEED_REFLEX_ROW)  # then the apps lists, the apps ask,
-        self.assertEqual(names[at + 4], doctor.APPS_ROW)         # the apps ingest job, the ranked ledger,
-        self.assertEqual(names[at + 5], doctor.APPS_ASK_ROW)     # the ranked ingest job, the sender ingest job,
-        self.assertEqual(names[at + 6], doctor.APPS_INGEST_ROW)  # the FIT import, the sender confirm job, voice MIQ
-        self.assertEqual(names[at + 7], doctor.RANKED_ROW)
-        self.assertEqual(names[at + 8], doctor.RANKED_INGEST_ROW)
-        self.assertEqual(names[at + 9], doctor.SENDER_INGEST_ROW)
-        self.assertEqual(names[at + 10], doctor.FIT_IMPORT_ROW)
-        self.assertEqual(names[at + 11], doctor.SENDER_CONFIRM_ROW)
-        self.assertEqual(names[at + 12], doctor.VOICE_MIQ_ROW)
+        self.assertEqual(names[at + 2], doctor.HOST_SCRIPTS_ROW)  # then the host job scripts row,
+        self.assertEqual(names[at + 3], doctor.DESKTOP_AW_ROW)   # then the desktop AW row, the feed reflex,
+        self.assertEqual(names[at + 4], doctor.FEED_REFLEX_ROW)  # then the apps lists, the apps ask,
+        self.assertEqual(names[at + 5], doctor.APPS_ROW)         # the apps ingest job, the ranked ledger,
+        self.assertEqual(names[at + 6], doctor.APPS_ASK_ROW)     # the ranked ingest job, the sender ingest job,
+        self.assertEqual(names[at + 7], doctor.APPS_INGEST_ROW)  # the FIT import, the sender confirm job, voice MIQ
+        self.assertEqual(names[at + 8], doctor.RANKED_ROW)
+        self.assertEqual(names[at + 9], doctor.RANKED_INGEST_ROW)
+        self.assertEqual(names[at + 10], doctor.SENDER_INGEST_ROW)
+        self.assertEqual(names[at + 11], doctor.FIT_IMPORT_ROW)
+        self.assertEqual(names[at + 12], doctor.SENDER_CONFIRM_ROW)
+        self.assertEqual(names[at + 13], doctor.VOICE_MIQ_ROW)
         self.assertEqual(rows[at]["status"], doctor.MISSING)
         self.assertNotIn("mcp", doctor.STRICT_KINDS)
         for r in rows:

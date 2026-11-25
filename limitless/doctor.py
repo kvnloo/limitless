@@ -35,7 +35,9 @@ when written within STALE_H, else stale; read from the packet's own generated_at
 (config noop_mcp and t0_tools; the server is never started), then the cron window provider row (config
 window_provider and hermes_agent_dir: off, missing when that Hermes checkout's plugin API has no
 register_window_provider, else live with the window Hermes' cron gate reads now, in words; one file is searched
-as text, Hermes is never imported), then the desktop ActivityWatch's row (config
+as text, Hermes is never imported), then the host job scripts row (config host_scripts_dir: off, missing when the
+dir or a sending job's limitless-<job>.sh is not there, stale when one is not this plugin's text or mode, else
+live; each script is read as text, never run), then the desktop ActivityWatch's row (config
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
 live, or unknown as status missing; words only, never its value), then the apps lists row (off, or each list
@@ -62,6 +64,7 @@ import json
 import math
 import os
 import re
+import stat
 import time
 from datetime import date
 from pathlib import Path
@@ -798,6 +801,70 @@ def _window_word(cfg: Mapping, now: float) -> str:
     return wp.word(tools.window_state(StateReader(state_path(cfg)), now, bands if isinstance(bands, dict) else None))
 
 
+HOST_SCRIPTS_ROW = "host job scripts"
+HOST_SCRIPTS_KEY = "host_scripts_dir"   # the dir the operator ran bin/limitless-cron-spec --scripts into
+HOST_SCRIPTS_OFF = f"no host scripts dir set (config {HOST_SCRIPTS_KEY})"
+HOST_SCRIPTS_NO_DIR = "the host scripts dir does not exist"
+HOST_SCRIPTS_NOT_THERE = "some scripts are not there"
+HOST_SCRIPTS_DIFFER = "some scripts differ from this plugin's"
+HOST_SCRIPTS_OK = "every sending job has its current script"
+
+
+def job_names(names) -> str:
+    """Job names in words: ``week_review`` is \"week review\"; \"a\", \"a and b\", \"a, b and c\"."""
+    said = [n.replace("_", " ") for n in names]
+    return said[0] if len(said) == 1 else ", ".join(said[:-1]) + " and " + said[-1]
+
+
+def _script_is_current(path: str, body: str) -> bool:
+    """Whether ``path`` holds exactly ``body`` (as text, no newline translation) with an owner-only executable
+    mode: owner read and execute, nothing for group or others (bin/limitless-cron-spec writes 0700). A dir, an
+    unreadable file or one that is not UTF-8 is not current. Reads only: nothing is run, written or chmodded."""
+    try:
+        st = os.stat(path)
+        if not stat.S_ISREG(st.st_mode):
+            return False
+        mode = stat.S_IMODE(st.st_mode)
+        if (mode & 0o077) or (mode & 0o500) != 0o500:
+            return False
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            return f.read() == body
+    except (OSError, ValueError):   # UnicodeDecodeError is a ValueError
+        return False
+
+
+def host_scripts_row(cfg: Mapping) -> dict:
+    """Whether the host job scripts (cron_spec.scripts(): one ``limitless-<job>.sh`` per sending job, as
+    bin/limitless-cron-spec --scripts writes them) are in the dir config ``host_scripts_dir`` names, and are this
+    plugin's: off when the key is unset; missing when the dir does not exist, or when a sending job has no script
+    there (``some scripts are not there: nap and week review``, the jobs in all_specs order); stale when a script's
+    text is not cron_spec.script_body's for this plugin, or its mode is not owner-only executable (``some scripts
+    differ from this plugin's: ...``); a dir with both says both and is missing; else live. Other files in the dir
+    are ignored. Read-only: each script is read as text, never run, written, chmodded or deleted. Words only: never
+    a path or a digit. Kind ``source``: --strict does not count it."""
+    from . import cron_spec
+    d = cfg.get(HOST_SCRIPTS_KEY) if isinstance(cfg, Mapping) else None
+    if not isinstance(d, str) or not d.strip():
+        return _row(HOST_SCRIPTS_ROW, "source", OFF, HOST_SCRIPTS_OFF)
+    root = os.path.expanduser(d.strip())
+    if not os.path.isdir(root):
+        return _row(HOST_SCRIPTS_ROW, "source", MISSING, HOST_SCRIPTS_NO_DIR)
+    absent, differ = [], []
+    for spec in cron_spec.all_specs():
+        p = cron_spec.job_spec(spec)
+        if not p:
+            continue
+        path = os.path.join(root, p["script"])
+        if not os.path.lexists(path):
+            absent.append(spec.name)
+        elif not _script_is_current(path, cron_spec.script_body(spec)):
+            differ.append(spec.name)
+    said = ([f"{HOST_SCRIPTS_NOT_THERE}: {job_names(absent)}"] if absent else []) + \
+        ([f"{HOST_SCRIPTS_DIFFER}: {job_names(differ)}"] if differ else [])
+    status = MISSING if absent else STALE if differ else LIVE
+    return _row(HOST_SCRIPTS_ROW, "source", status, "; ".join(said) or HOST_SCRIPTS_OK)
+
+
 VOICE_MIQ_ROW = "job voice MIQ"
 _VOICE_MODE_WORDS = {"dry_run": "dry run mode (nothing written)", "write": "write mode"}
 
@@ -1115,7 +1182,8 @@ def report(cfg: Mapping, now: float) -> list:
     (local_labeler_row), each tool in plugin.yaml, the context
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then whether
-    Hermes' cron gate gets the plugin's window (cron_window_provider_row), then the desktop's ActivityWatch
+    Hermes' cron gate gets the plugin's window (cron_window_provider_row), then whether the host job scripts are
+    in place and current (host_scripts_row), then the desktop's ActivityWatch
     (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
     then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the sender
@@ -1137,7 +1205,7 @@ def report(cfg: Mapping, now: float) -> list:
              rides_source_row(reader, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
-    rows += [noop_mcp_row(cfg), cron_window_provider_row(cfg, now)]
+    rows += [noop_mcp_row(cfg), cron_window_provider_row(cfg, now), host_scripts_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
              sender_ingest_row(reader, cfg, now), fit_import_row(reader, cfg, now), sender_confirm_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]
