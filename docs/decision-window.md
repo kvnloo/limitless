@@ -197,6 +197,9 @@ the flag the systemd unit runs ([docs/limitless-jobs-systemd.md](limitless-jobs-
 `LIMITLESS_PLUGIN_DIR` to the checkout in the host job's environment; when it is unset the script exits 2 and
 runs nothing. Then create each job with `cron.jobs.create_job(**payload)`.
 
+Set config `host_scripts_dir` to that directory and `bin/limitless-doctor`'s `host job scripts` row says whether
+every script is there and current, e.g. after a plugin update ([doctor.md](doctor.md#rows)).
+
 Once the host jobs send, the systemd timer can drop `--send` and run `limitless-jobs --ingest`, so the ingests
 (which have no host job) keep running. The voice MIQ is not a host job either and runs only in a full pass.
 If both run anyway, a job still speaks at most once per event: the `--once` key and `jobs-sent.jsonl` see to it.
