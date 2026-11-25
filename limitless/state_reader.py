@@ -289,19 +289,21 @@ class StateReader:
         None when neither names a path (the input is missing, not zero)."""
         return self._owner_paths(OWNER_DBS_ENV, OWNER_DBS_CONFIG, env, home)
 
-    def owner_beacon_paths(self, env: Optional[Mapping[str, str]] = None,
-                           home: Optional[Path] = None) -> Optional[list]:
+    def owner_beacon_paths(self, env: Optional[Mapping[str, str]] = None, home: Optional[Path] = None,
+                           cfg: Optional[Mapping] = None) -> Optional[list]:
         """Owner beacons written on other machines (bin/limitless-owner-beacon): $LIMITLESS_OWNER_BEACONS
-        (os.pathsep-separated), else config ``owner_beacons``; same rules as owner_db_paths."""
-        return self._owner_paths(OWNER_BEACONS_ENV, OWNER_BEACONS_CONFIG, env, home)
+        (os.pathsep-separated), else config ``owner_beacons``; same rules as owner_db_paths. The doctor's
+        owner beacon row reads its paths here too (doctor._beacon_paths), so the two never differ. ``cfg``: a
+        config already read (the doctor's), used instead of reading config(env, home) again."""
+        return self._owner_paths(OWNER_BEACONS_ENV, OWNER_BEACONS_CONFIG, env, home, cfg)
 
     def _owner_paths(self, env_key: str, config_key: str, env: Optional[Mapping[str, str]],
-                     home: Optional[Path]) -> Optional[list]:
+                     home: Optional[Path], cfg: Optional[Mapping] = None) -> Optional[list]:
         env = os.environ if env is None else env
         if env.get(env_key):
             items = env[env_key].split(os.pathsep)
         else:
-            v = config(env, home).get(config_key)
+            v = (config(env, home) if cfg is None else cfg).get(config_key)
             items = v if isinstance(v, list) else []
         out = []
         for v in items:

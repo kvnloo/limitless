@@ -77,7 +77,7 @@ from typing import Mapping, Optional
 
 from . import card, jobs, mock_guard, noop_mcp, tier_audit, tools
 from .envelope import STALE_H
-from .state_reader import OWNER_BEACONS_CONFIG, OWNER_BEACONS_ENV, StateReader, config, parse_ts
+from .state_reader import StateReader, config, parse_ts
 
 LIVE, STALE, MISSING, OFF = "live", "stale", "missing", "off"
 STATUSES = (LIVE, STALE, MISSING, OFF)
@@ -452,20 +452,11 @@ _WORST = {LIVE: 0, STALE: 1, MISSING: 2}
 
 
 def _beacon_paths(cfg: Mapping, env: Mapping[str, str]) -> list:
-    """The beacons the plugin reads: $LIMITLESS_OWNER_BEACONS (os.pathsep-separated), else config
-    ``owner_beacons`` (a list of strings); a relative path is in the state dir (StateReader.owner_beacon_paths)."""
-    if env.get(OWNER_BEACONS_ENV):
-        items = env[OWNER_BEACONS_ENV].split(os.pathsep)
-    else:
-        v = cfg.get(OWNER_BEACONS_CONFIG) if isinstance(cfg, Mapping) else None
-        items = v if isinstance(v, list) else []
-    st = state_path(cfg, env)
-    out = []
-    for v in items:
-        if isinstance(v, str) and v.strip():
-            p = Path(v).expanduser()
-            out.append(p if p.is_absolute() else st / p)
-    return out
+    """The beacons the plugin reads, through the reader's own rule (StateReader.owner_beacon_paths) over this
+    cfg and env: $LIMITLESS_OWNER_BEACONS, else config ``owner_beacons``; a relative path is in the state dir.
+    [] when none is set."""
+    cfg = cfg if isinstance(cfg, Mapping) else {}
+    return StateReader(state_path(cfg, env)).owner_beacon_paths(env, cfg=cfg) or []
 
 
 def _one_beacon(path: Path, now: float, after: float) -> tuple:
