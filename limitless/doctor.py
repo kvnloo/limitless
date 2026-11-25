@@ -37,7 +37,11 @@ window_provider and hermes_agent_dir: off, missing when that Hermes checkout's p
 register_window_provider, else live with the window Hermes' cron gate reads now, in words; one file is searched
 as text, Hermes is never imported), then the host job scripts row (config host_scripts_dir: off, missing when the
 dir or a sending job's limitless-<job>.sh is not there, stale when one is not this plugin's text or mode, else
-live; each script is read as text, never run), then the desktop ActivityWatch's row (config
+live; each script is read as text, never run), then the host job records row (config host_jobs_file, the host's
+cron jobs file, through cron_spec.diff_records as bin/limitless-cron-spec --check: off, missing when the file is not
+there or not a jobs file or a sending job has no host record, stale when one differs, is paused or unreadable, or a
+limitless- host job is not a plugin job any more, else live; opened once as text, never written or locked, Hermes
+never imported), then the desktop ActivityWatch's row (config
 desktop_aw_url or desktop_aw_export: off, live, stale, or unreachable as status missing; the only row that may
 call a server, read-only, with a short timeout), then the feed reflex's row (config feed_apps and aw_db: off,
 live, or unknown as status missing; words only, never its value), then the apps lists row (off, or each list
@@ -865,6 +869,63 @@ def host_scripts_row(cfg: Mapping) -> dict:
     return _row(HOST_SCRIPTS_ROW, "source", status, "; ".join(said) or HOST_SCRIPTS_OK)
 
 
+HOST_JOBS_ROW = "host job records"
+HOST_JOBS_KEY = "host_jobs_file"   # the host's cron jobs file, the one bin/limitless-cron-spec --check reads
+HOST_JOBS_OFF = f"no host jobs file set (config {HOST_JOBS_KEY})"
+HOST_JOBS_NOT_THERE = "the host jobs file is not there"
+HOST_JOBS_NOT_JOBS = "the host jobs file cannot be read as a jobs file"
+HOST_JOBS_ABSENT = "some jobs are not on the host"
+HOST_JOBS_DIFFER = "some host jobs differ from this plugin's"
+HOST_JOBS_RETIRED = "a host job the plugin no longer has"
+HOST_JOBS_NO_NAME = "a host job record with no name to read"
+HOST_JOBS_OK = "every sending job's host record matches"
+
+
+def host_jobs_row(cfg: Mapping) -> dict:
+    """Whether the host's cron job records (config ``host_jobs_file``, the host's cron/jobs.json) match this
+    plugin's payloads, as ``bin/limitless-cron-spec --check`` says (cron_spec.diff_records, the one comparer): off
+    when the key is unset; missing when the file is not there, or cannot be read as a jobs file, or when a sending
+    job has no host record (``some jobs are not on the host: nap and week review``, all_specs order); stale when a
+    sending job's record differs, is paused on the host, is unreadable or has more than one host job with its name
+    (``some host jobs differ from this plugin's: ...``), when a ``limitless-`` host job is not a plugin job any more
+    (``a host job the plugin no longer has``) or a record has no name to read; both missing and stale say both and
+    stay missing; else live. Other host jobs are left alone. Live exactly when --check would exit zero.
+    Read-only: the file is opened once as text, never written or locked; Hermes is never imported or run. Words
+    only: never a path, a digit or a host job's own name. Kind ``source``: --strict does not count it."""
+    from . import cron_spec
+    f = cfg.get(HOST_JOBS_KEY) if isinstance(cfg, Mapping) else None
+    if not isinstance(f, str) or not f.strip():
+        return _row(HOST_JOBS_ROW, "source", OFF, HOST_JOBS_OFF)
+    try:
+        with open(os.path.expanduser(f.strip()), "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (FileNotFoundError, NotADirectoryError):
+        return _row(HOST_JOBS_ROW, "source", MISSING, HOST_JOBS_NOT_THERE)
+    except (OSError, ValueError):   # a dir, no permission, not UTF-8 (UnicodeDecodeError is a ValueError)
+        return _row(HOST_JOBS_ROW, "source", MISSING, HOST_JOBS_NOT_JOBS)
+    try:
+        records = cron_spec.records_in(json.loads(text, strict=False))   # as --check reads it
+    except (ValueError, RecursionError):
+        return _row(HOST_JOBS_ROW, "source", MISSING, HOST_JOBS_NOT_JOBS)
+    payloads = cron_spec.payloads()
+    sending = {p["name"] for p in payloads}
+    absent, differ, retired, no_name = [], [], False, False
+    for v in cron_spec.diff_records(records, payloads):
+        if v.ok:
+            continue
+        if v.name in sending:
+            (absent if v.words == "missing" else differ).append(v.name[len(cron_spec.PREFIX):])
+        elif v.name.startswith(cron_spec.PREFIX):
+            retired = True
+        else:
+            no_name = True
+    said = ([f"{HOST_JOBS_ABSENT}: {job_names(absent)}"] if absent else []) + \
+        ([f"{HOST_JOBS_DIFFER}: {job_names(differ)}"] if differ else []) + \
+        ([HOST_JOBS_RETIRED] if retired else []) + ([HOST_JOBS_NO_NAME] if no_name else [])
+    status = MISSING if absent else STALE if said else LIVE
+    return _row(HOST_JOBS_ROW, "source", status, "; ".join(said) or HOST_JOBS_OK)
+
+
 VOICE_MIQ_ROW = "job voice MIQ"
 _VOICE_MODE_WORDS = {"dry_run": "dry run mode (nothing written)", "write": "write mode"}
 
@@ -1183,7 +1244,8 @@ def report(cfg: Mapping, now: float) -> list:
     packet (context_packet_row), the Open Wearables export (open_wearables_row), the NOOP export job
     (noop_export_row). The NOOP MCP server's row (noop_mcp_row) comes right after the tools, then whether
     Hermes' cron gate gets the plugin's window (cron_window_provider_row), then whether the host job scripts are
-    in place and current (host_scripts_row), then the desktop's ActivityWatch
+    in place and current (host_scripts_row), then whether the host's cron job records match this plugin's payloads
+    (host_jobs_row), then the desktop's ActivityWatch
     (desktop_aw_row), then the feed reflex (feed_reflex_row), then where the app lists
     come from (apps_row), then the app-lists ask (apps_ask_row), then the apps ingest job's (apps_ingest_row),
     then the ranked ledger's (ranked_ledger_row), then the ranked ingest job's (ranked_ingest_row), then the sender
@@ -1205,7 +1267,7 @@ def report(cfg: Mapping, now: float) -> list:
              rides_source_row(reader, now), local_labeler_row(cfg)]
     with labeler.rules_only():
         rows += [tool_row(name, now) for name in manifest_tools()]
-    rows += [noop_mcp_row(cfg), cron_window_provider_row(cfg, now), host_scripts_row(cfg)]
+    rows += [noop_mcp_row(cfg), cron_window_provider_row(cfg, now), host_scripts_row(cfg), host_jobs_row(cfg)]
     rows += [desktop_aw_row(cfg, now), feed_reflex_row(cfg, now), apps_row(cfg), apps_ask_row(cfg, now),
              apps_ingest_row(reader, cfg, now), ranked_ledger_row(cfg), ranked_ingest_row(reader, cfg, now),
              sender_ingest_row(reader, cfg, now), fit_import_row(reader, cfg, now), sender_confirm_row(reader, cfg, now), voice_miq_row(reader, cfg, now), outage_recap_row(reader, cfg, now)]

@@ -214,6 +214,8 @@ any more`, and other host jobs are left alone. It reads the records as the fork'
 parsed interval, `window_class` and `stale_after_s` only when set, and the host's own normalizing of both). It exits
 0 when every job is ok, 1 otherwise, and 2 for a usage error or a file it cannot read; it never writes and never
 calls Hermes. The fix for a line that is not ok stays with the operator (`cron.jobs.update_job` or a new job).
+Set config `host_jobs_file` to that file and `bin/limitless-doctor`'s `host job records` row says the same, next
+to the scripts row, so nobody has to remember to run `--check` ([doctor.md](doctor.md#rows)).
 
 ## Open questions
 
