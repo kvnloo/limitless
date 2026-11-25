@@ -299,5 +299,30 @@ class Release(LedgerCase):
         self.assertEqual(self.row(d)["state"], "held")
 
 
+# --- stage expire
+class Expire(LedgerCase):
+    def test_old_held_rows_expire_counted_and_never_deleted(self):
+        old = [dl.reserve(self.db, T, f"old {i}", day_start=YESTERDAY, now=NOW - 13 * H, hold="sleep").id
+               for i in range(3)]
+        new = dl.reserve(self.db, T, "new", day_start=DAY, now=NOW - H, hold="sleep").id
+        sent = dl.reserve(self.db, T, "sent", day_start=YESTERDAY, now=NOW - 13 * H).id
+        dl.mark_sent(self.db, sent, NOW - 13 * H)
+        total = self.db.execute("SELECT COUNT(*) FROM delivery").fetchone()[0]
+        self.assertEqual(dl.expire_old(self.db, NOW, 12 * H), 3)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM delivery").fetchone()[0], total)
+        self.assertEqual([self.row(i)["state"] for i in old], ["expired"] * 3)
+        self.assertEqual((self.row(new)["state"], self.row(sent)["state"]), ("held", "sent"))
+        self.assertEqual(dl.expire_old(self.db, NOW, 12 * H), 0)   # counted once
+        self.assertEqual([r["body"] for r in self.db.execute("SELECT body FROM delivery WHERE state = 'expired'")],
+                         ["old 0", "old 1", "old 2"])
+
+    def test_an_expired_row_cannot_move_again(self):
+        i = dl.reserve(self.db, T, "x", day_start=YESTERDAY, now=NOW - 13 * H, hold="quiet").id
+        dl.expire_old(self.db, NOW, 12 * H)
+        with self.assertRaises(dl.IllegalTransition):
+            dl.release(self.db, i, day_start=DAY, now=NOW)
+        self.assertEqual(dl.due_held(self.db, NOW + 365 * 24 * H), [])
+
+
 if __name__ == "__main__":
     unittest.main()
