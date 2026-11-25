@@ -226,7 +226,7 @@ class Row(Case):
         self.assertEqual(names.count(doctor.PUSH_RECOVERY_ROW), 1)
         self.assertEqual(names.index(doctor.PUSH_RECOVERY_ROW), names.index(doctor.SENDER_CANDIDATES_ROW) + 1)
         self.assertEqual(names.index(doctor.SENDER_CANDIDATES_ROW), names.index(doctor.PUSH_SENDER_ROW) + 1)
-        self.assertEqual(names.index(doctor.SLEEP_MODE_ROW), names.index(doctor.PUSH_RECOVERY_ROW) + 1)
+        self.assertEqual(names.index(doctor.PUSH_INTERRUPTED_ROW), names.index(doctor.PUSH_RECOVERY_ROW) + 1)
         self.assertEqual(rows[names.index(doctor.PUSH_RECOVERY_ROW)]["reason"], WAITING_REPLY)
 
 

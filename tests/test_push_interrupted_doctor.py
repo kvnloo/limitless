@@ -42,7 +42,9 @@ class PushInterruptedRow(unittest.TestCase):
         cfg_path.write_text(json.dumps(cfg))
         env = {k: v for k, v in os.environ.items() if not k.startswith("LIMITLESS_")}
         env.update(HOME=str(self.home), LIMITLESS_CONFIG=str(cfg_path))
-        with mock.patch.dict(os.environ, env, clear=True):
+        # hermetic_env pins Path.home() to the shared test home: point it at this test's own temp HOME
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(Path, "home", classmethod(lambda cls: cls(self.home))):
             return doctor.report(cfg, NOW)
 
     def row(self):

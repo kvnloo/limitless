@@ -161,7 +161,7 @@ class Path_(Case):
 
 
 class InTheReport(Case):
-    def test_the_row_comes_right_after_the_push_recovery_row_and_is_read_only(self):
+    def test_the_row_comes_right_after_the_push_interrupted_row_and_is_read_only(self):
         self.rows({"at": NOW - 2 * H, "on": False})
         before = sorted(p.name for p in self.st.iterdir())
         cfg_path = Path(self.tmp.name) / "config.json"
@@ -169,7 +169,7 @@ class InTheReport(Case):
         with mock.patch.dict(os.environ, {"LIMITLESS_CONFIG": str(cfg_path)}):
             rows = doctor.report(self.cfg, NOW)
         names = [r["name"] for r in rows]
-        self.assertEqual(names.index(doctor.SLEEP_MODE_ROW), names.index(doctor.PUSH_RECOVERY_ROW) + 1)
+        self.assertEqual(names.index(doctor.SLEEP_MODE_ROW), names.index(doctor.PUSH_INTERRUPTED_ROW) + 1)
         self.assertEqual(rows[names.index(doctor.SLEEP_MODE_ROW)]["reason"], "off")
         self.assertEqual(sorted(p.name for p in self.st.iterdir()), before)
 

@@ -50,7 +50,7 @@ first writes its row marked pending (it counts for the cap and dedupe while herm
 mark is removed, on a failed send the row is removed, so only a real delivery uses up the cap. A row still marked
 pending after twice the sender's timeout (send_gate.PENDING_UNKNOWN_S) was left by a push killed before it settled:
 the next push, inside the same lock, swaps its mark for "unknown": true. It keeps its cap slot and dedupe key
-(delivery unknown).
+(delivery unknown), and limitless-doctor's "push interrupted" row says so for a day.
 """
 import fcntl
 import json

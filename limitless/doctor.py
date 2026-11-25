@@ -16,7 +16,9 @@ reply ``push via <name>`` with, ready ones then maybes, or none can reach Telegr
 one row that names profiles), the push recovery row (push_recovery.from_state: where a push-outage recovery
 stands, from kevin-push's log, push-sender.json and the sender confirm and outage recap marks: no outage, waiting
 for a sender reply, the confirmation not delivered yet, the recap waiting, or recap sent / settled; missing with
-no push log; kind source, words only, the two reply stages ending with the candidates), the Sleep mode row (sleepmode.jsonl's last row as
+no push log; kind source, words only, the two reply stages ending with the candidates), the push interrupted row
+(kevin-push's sent.json: missing when a row from the last day is marked unknown, i.e. a push was killed before it
+was confirmed, else live with none; kind source, words only), the Sleep mode row (sleepmode.jsonl's last row as
 kevin-push's hold reads it: off, on since some words, left on and ignored, stale when on far longer than a night,
 or unknown; kind source, words only), the glide source row (glide_provider.path_status: live with ok and
 the words, missing when not configured, the file is missing or unreadable, or Glide is older; kind source,
@@ -334,6 +336,28 @@ def push_recovery_row(reader: StateReader, cfg: Mapping, now: float, env: Option
     status, words = push_recovery.from_state(reader.path, cfg if isinstance(cfg, Mapping) else {}, now,
                                              env=env, hermes_home=hermes_home)
     return _row(PUSH_RECOVERY_ROW, "source", status, words)
+
+
+PUSH_INTERRUPTED_ROW = "push interrupted"
+PUSH_INTERRUPTED_NONE = "none"
+PUSH_INTERRUPTED_CUT = "a push may have been cut off before it was confirmed"
+
+
+def push_interrupted_row(now: float, home: Optional[Path] = None) -> dict:
+    """Whether a push was cut off before it was confirmed: bin/kevin-push marks a sent.json row (its own state dir,
+    ~/.local/state/kevin-push) ``"unknown": true`` when the push that reserved it was killed before it settled
+    (send_gate.PENDING_UNKNOWN_S). Missing with PUSH_INTERRUPTED_CUT when such a row is from the last day, else
+    live with ``none`` (no sent.json, or one that cannot be read, is none too). Words only: never a digit, a
+    title, a body or a key. Read-only, no lock taken. Kind ``source``: --strict does not count it."""
+    p = (Path.home() if home is None else home) / ".local/state/kevin-push/sent.json"
+    try:
+        sent = json.loads(p.read_text())
+    except (OSError, ValueError):
+        sent = []
+    cut = any(isinstance(s, dict) and s.get("unknown") is True and isinstance(s.get("t"), (int, float))
+              and 0 <= now - s["t"] < 86400 for s in (sent if isinstance(sent, list) else []))
+    return _row(PUSH_INTERRUPTED_ROW, "source", MISSING if cut else LIVE,
+                PUSH_INTERRUPTED_CUT if cut else PUSH_INTERRUPTED_NONE)
 
 
 SLEEP_MODE_ROW = "Sleep mode"
@@ -1301,7 +1325,8 @@ def report(cfg: Mapping, now: float) -> list:
     """Every row, in order: state dir, inputs, the last sync run, the uptime audit (uptime_row), north-star row
     two (delivery_row), kevin-push's sender profile (push_sender_row), the profiles that could be the sender
     (sender_candidates_row), where a push-outage recovery stands
-    (push_recovery_row), phone Sleep mode as kevin-push's hold
+    (push_recovery_row), whether a push was cut off before it was confirmed (push_interrupted_row), phone Sleep
+    mode as kevin-push's hold
     reads it (sleep_mode_row), whether Glide's attention file is wired in (glide_source_row), whether the rides file is wired in
     (rides_source_row), the owner beacons when any is set (owner_beacon_row), the local labeler
     (local_labeler_row), each tool in plugin.yaml, the context
@@ -1327,7 +1352,8 @@ def report(cfg: Mapping, now: float) -> list:
     rows = [state_row(path)] + input_rows(tools.status(reader, now, cfg)) + [run_row(reader, now)]
     rows += [uptime_row(reader, now), delivery_row(reader, cfg, now), push_sender_row(cfg),
              sender_candidates_row(cfg, state_dir=reader.path),
-             push_recovery_row(reader, cfg, now), sleep_mode_row(cfg, now), glide_source_row(cfg, now),
+             push_recovery_row(reader, cfg, now), push_interrupted_row(now), sleep_mode_row(cfg, now),
+             glide_source_row(cfg, now),
              rides_source_row(reader, now)]
     rows += [r for r in (owner_beacon_row(cfg, now),) if r is not None] + [local_labeler_row(cfg)]
     with labeler.rules_only():
