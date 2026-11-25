@@ -47,5 +47,28 @@ class Recipe(unittest.TestCase):
         self.assertTrue(re.search(r"0600", self.text))
 
 
+class PrintedSchedule(unittest.TestCase):
+    """The two `schedule --print` commands, what the copy does, and a check-it step through the doctor row."""
+
+    def setUp(self):
+        self.text = DOC.read_text()
+
+    def test_both_print_commands(self):
+        for kind in ("launchd", "systemd"):
+            self.assertRegex(self.text, r"bin/limitless-owner-beacon schedule --print --kind " + kind
+                             + r" --out \S+ --every \d+ --copy-to \S+")
+
+    def test_says_it_only_prints_and_how_it_copies(self):
+        self.assertIn("only prints", self.text)
+        self.assertIn("scp -q -p", self.text)
+        self.assertIn("0600", self.text)
+
+    def test_check_it_with_the_doctor_row(self):
+        m = re.search(r"(?ms)^#+ Check it\b.*?(?=^#+ |\Z)", self.text)
+        self.assertIsNotNone(m, "no 'Check it' section")
+        self.assertIn("limitless-doctor", m.group(0))
+        self.assertIn("owner beacon", m.group(0))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,9 +25,52 @@ as one more source.
   job's prompt, a card's brief or a delegated goal, never you). Every other source is: the CLI, the desktop
   and gui apps, chat platforms, and one-shot runs.
 - **Transport is yours.** Nothing here copies or sends, and nothing is installed by the plugin: the script and
-  service files below are text for you to adapt. See the operator recipe.
+  service files below, printed by `schedule --print` or written by hand, are text for you to review and install.
 
-## Operator recipe: a writer on a schedule, copied to the plugin host
+## Print the schedule: `schedule --print`
+
+`bin/limitless-owner-beacon schedule --print` prints the job for you: a launchd plist or a systemd user
+`.service` + `.timer` that runs the writer every `--every` minutes and then, with `--copy-to`, copies the beacon
+with `scp -q -p` (`-p` keeps the writer's 0600 mode and the mtime). It only prints: it never writes, loads,
+enables or runs anything, and every host-specific value comes from your arguments (there is no default host,
+user or path). The job runs one `/bin/sh -c` line with every value shell-quoted; the writer runs with the
+interpreter and checkout you ran `schedule` from. `--db PATH` (repeatable) passes `--dbs` to the writer; without
+it the writer uses `LIMITLESS_OWNER_DBS` or config `owner_dbs`. `--label` names the job (default
+`limitless.owner-beacon`).
+
+It refuses, in one line with exit 2: `--every` under 5 or over 1440, a `--copy-to` without a `:` (or one that
+starts with `-`), a relative `--out` or `--db` (`~` is not expanded by the job), and any value with a newline.
+
+Create the beacon's directory first (`mkdir -p "$HOME/.cache/limitless"`), then on macOS:
+
+```
+bin/limitless-owner-beacon schedule --print --kind launchd --out "$HOME/.cache/limitless/owner-beacon.json" --every 60 --copy-to "<plugin host>:<state dir>/beacons/this-machine.json" --label org.example.owner-beacon
+```
+
+Review the plist, save it as `~/Library/LaunchAgents/org.example.owner-beacon.plist`, then
+`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.example.owner-beacon.plist`. On Linux:
+
+```
+bin/limitless-owner-beacon schedule --print --kind systemd --out "$HOME/.cache/limitless/owner-beacon.json" --every 60 --copy-to "<plugin host>:<state dir>/beacons/this-machine.json" --label owner-beacon
+```
+
+It prints two units, each after a `# <label>.service` / `# <label>.timer` line. Save them under
+`~/.config/systemd/user/` as `owner-beacon.service` and `owner-beacon.timer`, then
+`systemctl --user daemon-reload` and `systemctl --user enable --now owner-beacon.timer`.
+
+Unlike `rsync -t` below, `scp` copies the beacon on every run even when it is unchanged; it is a few dozen bytes.
+Until the writer has written a first beacon (no message yet), the copy step fails for lack of a file and the
+next run tries again.
+
+### Check it
+
+- On this machine: `launchctl print gui/$(id -u)/org.example.owner-beacon` (macOS) or
+  `systemctl --user list-timers owner-beacon.timer` (Linux) shows the job and its next run.
+- On the plugin host, with the copy listed in `owner_beacons`, run `bin/limitless-doctor`: the `owner beacon`
+  row should read `live: last seen ...`. `missing: file missing` means the copy has not arrived; `stale` means
+  the writer or the copy has stopped (see the doctor row below).
+
+## Operator recipe by hand: a writer on a schedule, copied to the plugin host
 
 On the machine you chat from, one small script writes the beacon and copies it to `<plugin host>`, into
 `<state dir>/beacons/` (the plugin host's limitless state dir). Placeholders in angle brackets are yours to fill
