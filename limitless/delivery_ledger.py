@@ -187,3 +187,35 @@ def mark_failed(conn, row_id: int, release_after: "float | None" = None) -> None
     ``reserved_at`` is cleared) and the row waits for ``release`` like any other held row."""
     _move(conn, row_id, "queued", "held", ", reason = 'failed', reserved_at = NULL, release_after = ?",
           (release_after,))
+
+
+def release(conn, row_id: int, *, day_start: float, now: float, cap: int = DEFAULT_CAP) -> Reservation:
+    """held -> queued when the budget has a slot for the row's class (the check and the move in one BEGIN
+    IMMEDIATE); else the row stays held with reason ``cap``. A dedup hold, or a row that is not held, raises."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT target, window_class, state, reason FROM delivery WHERE id = ?",
+                           (row_id,)).fetchone()
+        if row is None or row["state"] != "held" or row["reason"] == "dedup":
+            what = "no such row" if row is None else f"{row['state']} ({row['reason']})"
+            raise IllegalTransition(f"row {row_id}: {what} -> queued is not allowed")
+        _check_args(row["target"], row["window_class"], day_start, now, cap)
+        if _fits(conn, row["target"], row["window_class"], day_start, cap):
+            _move(conn, row_id, "held", "queued", ", reason = NULL, reserved_at = ?, release_after = NULL", (now,))
+            out = Reservation(row_id, "queued", None)
+        else:
+            _move(conn, row_id, "held", "held", ", reason = 'cap'")
+            out = Reservation(row_id, "held", "cap")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return out
+
+
+def due_held(conn, now: float) -> list:
+    """The held rows a periodic pass may try to ``release`` now: ``release_after`` set and passed, oldest first.
+    Dedup holds never come due."""
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM delivery WHERE state = 'held' AND reason <> 'dedup' AND release_after IS NOT NULL"
+        " AND release_after <= ? ORDER BY created_at, id", (now,))]
