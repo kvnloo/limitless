@@ -26,6 +26,11 @@ one per sending job into the directory it is given; nothing here writes.
 ``diff_records(records, payloads)`` checks the host's job records (its cron jobs file) against these payloads,
 one verdict in words per sending job, so a plugin update that changes a job's window or expiry shows up;
 ``bin/limitless-cron-spec --check <jobs file>`` prints them. It reads; it never writes or calls Hermes.
+
+``update_plan(records, payloads)`` turns the same comparison into the host calls an operator would make
+(``create_job`` for a missing job, ``update_job`` with only the differing fields, ``none`` with a reason for what
+only a person can sort out); ``bin/limitless-cron-spec --plan <jobs file>`` prints them as JSON. It never makes
+one, never plans a resume and never plans a delete.
 """
 import math
 import re
@@ -210,19 +215,28 @@ def _paused(record: dict) -> bool:
     return not record.get("enabled", True) or record.get("state") == "paused" or bool(record.get("paused_at"))
 
 
-def _compare(record: dict, payload: dict) -> str:
+def _field_diff(record: dict, payload: dict) -> tuple:
+    """(keys that differ, words for the fields that cannot be read), both in _FIELDS order."""
     differs, unreadable = [], []
     for key, read, read_payload, word in _FIELDS:
         try:
             if read(record.get(key)) != read_payload(payload.get(key)):
-                differs.append(word)
+                differs.append(key)
         except _Unreadable:
             unreadable.append(word)
+    return differs, unreadable
+
+
+_WORDS = {key: word for key, _, _, word in _FIELDS}
+
+
+def _compare(record: dict, payload: dict) -> str:
+    differs, unreadable = _field_diff(record, payload)
     if unreadable:
         return "unreadable: " + _and(unreadable)
     paused = _paused(record)
     if differs:
-        return "differs: " + _and(differs) + ("; paused on the host" if paused else "")
+        return "differs: " + _and([_WORDS[k] for k in differs]) + ("; paused on the host" if paused else "")
     return "paused on the host" if paused else "ok"
 
 
@@ -241,12 +255,8 @@ def records_in(data: Any) -> list:
     raise ValueError("not a cron jobs file: expected {\"jobs\": [...]}")
 
 
-def diff_records(records: Any, payloads: Any) -> list:
-    """Each sending job's host record against its payload, in payload order, one Verdict each: "ok", "missing",
-    "differs: <fields in words>", "paused on the host", "unreadable: <fields>" or "more than one host job with this
-    name". Then each host record named ``limitless-...`` that no payload names ("not a plugin job any more"), then
-    each record with no name to read ("unreadable"). Records of other jobs are left alone. Pure; never raises on
-    a record, whatever its shape."""
+def _by_name(records: Any) -> tuple:
+    """({stripped name: [records]}, ["record <n>" for each record with no name to read])."""
     if records is None:
         records = []
     elif not isinstance(records, (list, tuple)):
@@ -258,6 +268,16 @@ def diff_records(records: Any, payloads: Any) -> list:
             named.setdefault(name.strip(), []).append(rec)
         else:
             unnamed.append(f"record {jobs._number_words(i + 1)}")
+    return named, unnamed
+
+
+def diff_records(records: Any, payloads: Any) -> list:
+    """Each sending job's host record against its payload, in payload order, one Verdict each: "ok", "missing",
+    "differs: <fields in words>", "paused on the host", "unreadable: <fields>" or "more than one host job with this
+    name". Then each host record named ``limitless-...`` that no payload names ("not a plugin job any more"), then
+    each record with no name to read ("unreadable"). Records of other jobs are left alone. Pure; never raises on
+    a record, whatever its shape."""
+    named, unnamed = _by_name(records)
     out, wanted = [], set()
     for p in payloads:
         wanted.add(p["name"])
@@ -280,3 +300,72 @@ def diff_records(records: Any, payloads: Any) -> list:
 def check_lines(verdicts: list) -> list:
     """One line per Verdict: ``<name>: <words>``."""
     return [f"{v.name}: {v.words}" for v in verdicts]
+
+
+# --- The host calls that would bring the records in step -------------------------------------------------------
+# The calls are the fork's create_job(**kwargs) (cron/jobs.py lines 1779-1925) and update_job(job_id, updates)
+# (lines 2096-2151), which normalizes ``updates`` (lines 1738-1755, 2014-2019), merges them over the record (line
+# 2107) and saves. The plan only names them; nothing here calls Hermes.
+
+def _stored_schedule(value: Any) -> Any:
+    """A payload's schedule as create_job stores it: ``every <n>m`` parsed to the interval dict (cron/jobs.py lines
+    787-788, stored at line 1887). Anything else stays the string; update_job parses a string schedule itself
+    (lines 2045-2047, 2066-2069)."""
+    kind, minutes = _poll_interval(value)
+    if kind != "interval":
+        return value
+    return {"kind": "interval", "minutes": minutes, "display": f"every {minutes}m"}
+
+
+# How each _FIELDS key's payload value is stored by create_job (lines 1872-1921): the same readers diff_records
+# compares with, so an update applied over the record compares equal.
+_STORED = {"schedule": _stored_schedule, "script": _text, "no_agent": bool, "deliver": _text,
+           "window_class": _window, "stale_after_s": _expiry}
+RETIRED = "not a plugin job any more; remove it by hand if wanted"
+
+
+def _plan_one(name: str, found: list, payload: dict) -> Any:
+    if not found:
+        return {"job": name, "call": "create_job", "kwargs": dict(payload)}
+    if len(found) > 1:
+        return {"job": name, "call": "none",
+                "why": "more than one host job with this name; keep one by hand, then plan again"}
+    record = found[0]
+    try:
+        differs, unreadable = _field_diff(record, payload)
+        if unreadable:
+            return {"job": name, "call": "none",
+                    "why": "unreadable: " + _and(unreadable) + "; fix the record by hand, then plan again"}
+        updates = {key: _STORED[key](payload.get(key)) for key in differs}
+    except Exception:   # a record shape no reader expected: say so, never raise
+        return {"job": name, "call": "none", "why": "unreadable; fix the record by hand, then plan again"}
+    if not updates:
+        return None   # ok, or paused only: the pause is the operator's own, so no resume is ever planned
+    job_id = record.get("id")
+    if not isinstance(job_id, str) or not job_id:
+        return {"job": name, "call": "none", "why": "differs, but the host record has no id to update by"}
+    return {"job": name, "call": "update_job", "job_id": job_id, "updates": updates}
+
+
+def update_plan(records: Any, payloads: Any) -> list:
+    """The host calls that would bring ``records`` (the host's cron job records) in step with ``payloads``, for an
+    operator to review and make. Pure: it never calls Hermes and never raises on a record.
+
+    In diff_records order, per sending job: ``{"job", "call": "create_job", "kwargs": <payload>}`` when its record
+    is missing; ``{"job", "call": "update_job", "job_id": <the record's id>, "updates": {...}}`` when it differs,
+    with only the differing fields, each in create_job's stored form (the parsed interval, a float expiry, a
+    normalized window; a field the plugin dropped is ``None``). Nothing when it is ok or only paused, and an update
+    never carries ``enabled``, ``state`` or ``paused_at``: a paused record stays paused (update_job leaves a paused
+    record's next run alone, lines 2072 and 2081-2085). ``{"job", "call": "none", "why": <words>}`` for an
+    unreadable record, more than one record with one name, a ``limitless-`` job the plugin no longer has (never a
+    delete) and a record with no name to read. Other host jobs are left alone."""
+    named, unnamed = _by_name(records)
+    out, wanted = [], set()
+    for p in payloads:
+        wanted.add(p["name"])
+        step = _plan_one(p["name"], named.get(p["name"], []), p)
+        if step is not None:
+            out.append(step)
+    out += [{"job": n, "call": "none", "why": RETIRED} for n in named if n.startswith(PREFIX) and n not in wanted]
+    out += [{"job": n, "call": "none", "why": "unreadable: no name to read; fix it by hand"} for n in unnamed]
+    return out
