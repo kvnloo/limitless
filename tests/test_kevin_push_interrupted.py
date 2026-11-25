@@ -87,7 +87,7 @@ class KevinPushInterrupted(unittest.TestCase):
         rows = self.sent()
         self.assertEqual(len(rows), 3, rows)
         old = self.row(rows, self.old["k"])
-        self.assertEqual(old, {"t": self.old["t"], "k": self.old["k"], "unknown": True})
+        self.assertEqual(old, {"t": self.old["t"], "k": self.old["k"], "unknown": True, "token": "aaaa"})
         self.assertEqual(self.row(rows, self.fresh["k"]), self.fresh)
         # written with the reservation, i.e. inside the locked read, before the sender ran
         during = json.loads((self.home / "sent-during.json").read_text())
@@ -97,14 +97,14 @@ class KevinPushInterrupted(unittest.TestCase):
         self.write_sent([self.old])
         self.assertEqual(self.push("Synthetic old", "A made-up choice"), "kevin-push: log (duplicate)")
         self.assertEqual(self.calls(), 0)
-        self.assertEqual(self.sent(), [{"t": self.old["t"], "k": self.old["k"], "unknown": True}])
+        self.assertEqual(self.sent(), [{"t": self.old["t"], "k": self.old["k"], "unknown": True, "token": "aaaa"}])
 
     def test_the_unknown_row_still_counts_for_the_cap(self):
         rows = [{"t": self.now - 600 - i, "k": f"synthetic{i:02d}"} for i in range(send_gate.DAILY_CAP - 1)]
         self.write_sent(rows + [self.old])
         self.assertEqual(self.push("Pick one", "Synthetic choice A"), "kevin-push: log (daily cap)")
         self.assertEqual(self.calls(), 0)
-        self.assertEqual(self.sent(), rows + [{"t": self.old["t"], "k": self.old["k"], "unknown": True}])
+        self.assertEqual(self.sent(), rows + [{"t": self.old["t"], "k": self.old["k"], "unknown": True, "token": "aaaa"}])
 
     def test_the_mark_is_changed_only_once_the_push_holds_the_lock(self):
         self.write_sent([self.old])

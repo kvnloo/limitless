@@ -50,7 +50,8 @@ first writes its row marked pending (it counts for the cap and dedupe while herm
 mark is removed, on a failed send the row is removed, so only a real delivery uses up the cap. A row still marked
 pending after twice the sender's timeout (send_gate.PENDING_UNKNOWN_S) was left by a push killed before it settled:
 the next push, inside the same lock, swaps its mark for "unknown": true. It keeps its cap slot and dedupe key
-(delivery unknown), and limitless-doctor's "push interrupted" row says so for a day.
+(delivery unknown), and limitless-doctor's "push interrupted" row says so for a day. The reservation token stays on
+the row ("token"), so a push that was only slow, not killed, still settles its own row when it ends.
 """
 import fcntl
 import json
@@ -150,20 +151,22 @@ def read_sent(now):
 
 def name_unknown(sent, now):
     """Under the lock: a row still pending after g.PENDING_UNKNOWN_S was left by a push killed before settle();
-    its mark becomes ``"unknown": true``. The row stays: delivery unknown keeps its cap slot and dedupe key."""
-    return [dict({k: v for k, v in s.items() if k != "pending"}, unknown=True)
+    its mark becomes ``"unknown": true``. The row stays: delivery unknown keeps its cap slot and dedupe key. The
+    reservation token moves to ``"token"``, so a push that was only slow still finds its own row in settle()."""
+    return [dict({k: v for k, v in s.items() if k != "pending"}, unknown=True, token=s["pending"])
             if "pending" in s and now - s["t"] > g.PENDING_UNKNOWN_S else s for s in sent]
 
 
 def settle(now, pending, delivered):
-    """Under the lock: the row marked ``pending`` loses its mark when delivered, else it is removed."""
+    """Under the lock: the push's own row (marked ``pending``, or renamed unknown with its ``token``) loses its
+    marks when delivered, else it is removed."""
     with sent_lock():
         sent = []
         for s in read_sent(now):
-            if s.get("pending") == pending:
+            if s.get("pending") == pending or (s.get("unknown") is True and s.get("token") == pending):
                 if not delivered:
                     continue
-                s = {k: v for k, v in s.items() if k != "pending"}
+                s = {k: v for k, v in s.items() if k not in ("pending", "unknown", "token")}
             sent.append(s)
         SENT.write_text(json.dumps(sent))
 
