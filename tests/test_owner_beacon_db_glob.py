@@ -94,6 +94,52 @@ class WriteGlob(GlobBase):
         self.assertIn("--db-glob", r.stderr)
 
 
+RELATIVE = ("homes/*/state.db", "~/homes/*/state.db", "./*.db", "*.db")
+NEWLINE = ("/tmp/example/a\n*.db", "/tmp/example/a\r*.db")
+
+
+class WriteRefusals(GlobBase):
+    """Exit 2, one line on stderr, nothing written: a relative pattern (the job does not run in this directory
+    or expand ~) and a pattern with a newline."""
+
+    def assert_refused(self, word, pattern):
+        r = self.run_cli("write", "--out", str(self.out), "--dbs", str(self.b), "--db-glob", pattern)
+        self.assertEqual((r.returncode, r.stdout), (2, ""), pattern)
+        self.assert_one_line(r.stderr)
+        self.assertIn("limitless-owner-beacon: refused:", r.stderr)
+        self.assertIn(word, r.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_a_relative_pattern(self):
+        for pattern in RELATIVE:
+            self.assert_refused("--db-glob", pattern)
+
+    def test_a_pattern_with_a_newline(self):
+        for pattern in NEWLINE:
+            self.assert_refused("newline", pattern)
+
+
+class ScheduleRefusals(ScheduleBase):
+    def assert_refused(self, word, pattern):
+        for kind in ("launchd", "systemd"):
+            r = self.run_cli("schedule", "--print", "--kind", kind, "--out", OUT, "--every", "60",
+                             "--db-glob", pattern)
+            self.assertEqual((r.returncode, r.stdout), (2, ""), (kind, pattern))
+            self.assertEqual(len(r.stderr.strip().splitlines()), 1, r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertIn("limitless-owner-beacon: refused:", r.stderr)
+            self.assertIn(word, r.stderr)
+            self.assertEqual(sorted(self.home.iterdir()), [])
+
+    def test_a_relative_pattern(self):
+        for pattern in RELATIVE:
+            self.assert_refused("--db-glob", pattern)
+
+    def test_a_pattern_with_a_newline(self):
+        for pattern in NEWLINE:
+            self.assert_refused("newline", pattern)
+
+
 class Expansion(GlobBase):
     """The DB list the writer reads: --dbs in order, then each pattern's matches sorted, each path once."""
 

@@ -18,7 +18,7 @@ bytes, same mtime) and one line says it is unchanged, so a copy step on a schedu
 Exit 0 when the beacon was written or left unchanged, and also when there is nothing to write (no DB configured, no DB
 readable, no message from the person): then nothing is written, an old beacon is left as it is, and one
 line says why. Exit 1 and one line on stderr when the file cannot be written; exit 2 and a usage line for
-bad arguments. It never sends and never prints a traceback.
+bad arguments, or one "refused" line for a relative --db-glob pattern or one with a newline. It never sends and never prints a traceback.
 
 limitless-owner-beacon schedule --print --kind launchd|systemd --out PATH --every MINUTES
 [--copy-to USER@HOST:PATH] [--db PATH ...] [--db-glob PATTERN ...] [--label LABEL] prints the job (a launchd plist, or a systemd
@@ -103,7 +103,7 @@ def parse_schedule(args):
 def schedule(opts) -> int:
     values = [v for k, v in opts.items() if k not in ("db", "db-glob")] + opts["db"] + opts["db-glob"]
     why = beacon_schedule.refusal(values, opts["every"], opts["out"], opts.get("copy-to"), opts["db"],
-                                  opts.get("label"))
+                                  opts.get("label"), opts["db-glob"])
     if why:
         print(f"{NAME}: refused: {why}", file=sys.stderr)
         return 2
@@ -201,6 +201,10 @@ def main(argv) -> int:
     opts = parse(args)
     if opts is None:
         print(USAGE, file=sys.stderr)
+        return 2
+    why = beacon_schedule.db_glob_refusal(opts["db-glob"])
+    if why:
+        print(f"{NAME}: refused: {why}", file=sys.stderr)
         return 2
     try:
         return write(Path(opts["out"]).expanduser(), db_paths(opts.get("dbs"), opts["db-glob"]), time.time())

@@ -27,8 +27,19 @@ BOOT_DELAY = "5min"   # the first run after boot; then every --every minutes
 DEFAULT_LABEL = "limitless.owner-beacon"
 
 
+def db_glob_refusal(patterns: Iterable[str]) -> Optional[str]:
+    """Why these --db-glob patterns are refused, in one line, or None. The writer and the printer both use it: a
+    pattern must be absolute (the job does not run in this directory or expand ~) and one line."""
+    for pattern in patterns:
+        if "\n" in pattern or "\r" in pattern:
+            return "a --db-glob pattern contains a newline"
+        if not os.path.isabs(pattern):
+            return "--db-glob must be an absolute pattern (the job does not run in this directory or expand ~)"
+    return None
+
+
 def refusal(values: Iterable[str], every: str, out: str, copy_to: Optional[str] = None, dbs: Iterable[str] = (),
-            label: Optional[str] = None) -> Optional[str]:
+            label: Optional[str] = None, db_globs: Iterable[str] = ()) -> Optional[str]:
     """Why these arguments are refused, in one line, or None when they are fine. ``values`` is every value
     given (a newline in any of them is refused first); ``every`` is the raw --every text."""
     if any("\n" in v or "\r" in v for v in values):
@@ -42,6 +53,9 @@ def refusal(values: Iterable[str], every: str, out: str, copy_to: Optional[str] 
     for db in dbs:
         if not os.path.isabs(db) or os.pathsep in db:
             return f"--db must be an absolute path without {os.pathsep!r}"
+    why = db_glob_refusal(db_globs)
+    if why:
+        return why
     if label is not None and not LABEL_RE.match(label):
         return "--label must be letters, digits, dots, dashes or underscores (like org.example.owner-beacon)"
     return None
