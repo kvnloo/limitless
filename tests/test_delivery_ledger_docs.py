@@ -36,6 +36,16 @@ class Docs(unittest.TestCase):
         for who in ("failure alerts", "schedule and change cards", "one-shot", "replies"):
             self.assertIn(who, bypass)
 
+    def section(self, head):
+        return " ".join(DOC.read_text().split(f"\n## {head}\n", 1)[1].split("\n## ", 1)[0].split())
+
+    def test_why_describes_kevin_push_as_it_is_on_main(self):
+        why = self.section("Why")
+        self.assertNotIn("no lock", why)   # read -> decide -> reserve runs under one flock on main
+        for w in ("flock", "pending", "unknown", "token", "rolling 24 h", "`sent.json`", "`held.jsonl`",
+                  "no state column"):
+            self.assertIn(w, why)
+
     def test_the_open_questions_ask_at_least_these(self):
         qs = DOC.read_text().split("## Open questions for review", 1)[1]
         for q in ("Digest body cap", "Max hold age default", "What a bypass counts against"):
