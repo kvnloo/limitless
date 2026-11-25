@@ -232,5 +232,32 @@ class Moves(LedgerCase):
             self.db.execute("UPDATE delivery SET state = 'held', reason = 'cap' WHERE id = ?", (i,))
 
 
+# --- stage dedup
+class Dedup(LedgerCase):
+    def test_a_key_already_queued_sent_or_unknown_is_held_as_dedup(self):
+        for n, settle in enumerate((None, "sent", "unknown")):
+            key = f"synthetic-event:{n}"
+            first = dl.reserve(self.db, T, "first words", day_start=DAY, now=NOW, dedup_key=key)
+            if settle == "sent":
+                dl.mark_sent(self.db, first.id, NOW)
+            elif settle == "unknown":
+                dl.mark_unknown(self.db, first.id)
+            r = dl.reserve(self.db, T, "other words", day_start=DAY, now=NOW, dedup_key=key,
+                           release_after=NOW + H)
+            self.assertEqual((r.state, r.reason), ("held", "dedup"), settle)
+            self.assertIsNone(self.row(r.id)["release_after"])   # a duplicate never comes due
+
+    def test_dedup_comes_before_the_callers_hold_and_bypass(self):
+        dl.reserve(self.db, T, "a", day_start=DAY, now=NOW, dedup_key="k")
+        r = dl.reserve(self.db, T, "a", day_start=DAY, now=NOW, dedup_key="k", hold="sleep", window_class="bypass")
+        self.assertEqual(r.reason, "dedup")
+
+    def test_another_key_target_or_day_is_not_a_duplicate(self):
+        dl.reserve(self.db, T, "a", day_start=DAY - 24 * H, now=DAY - H, dedup_key="k")   # yesterday's
+        for target, key in ((T, "k"), (T, "other"), (T2, "k")):
+            self.assertEqual(dl.reserve(self.db, target, "a", day_start=DAY, now=NOW, dedup_key=key).state,
+                             "queued", (target, key))
+
+
 if __name__ == "__main__":
     unittest.main()
