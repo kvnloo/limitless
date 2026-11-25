@@ -259,5 +259,45 @@ class Dedup(LedgerCase):
                              "queued", (target, key))
 
 
+# --- stage release
+class Release(LedgerCase):
+    def test_due_held_lists_rows_whose_release_after_passed_oldest_first(self):
+        late = dl.reserve(self.db, T, "late", day_start=DAY, now=NOW, hold="sleep", release_after=NOW + 2 * H).id
+        early = dl.reserve(self.db, T, "early", day_start=DAY, now=NOW - H, hold="quiet", release_after=NOW + H).id
+        dl.reserve(self.db, T, "no time", day_start=DAY, now=NOW, hold="sleep")
+        self.assertEqual(dl.due_held(self.db, NOW), [])
+        self.assertEqual([r["id"] for r in dl.due_held(self.db, NOW + 3 * H)], [early, late])
+
+    def test_release_queues_when_a_slot_is_free_else_stays_held_as_cap(self):
+        h = dl.reserve(self.db, T, "h", day_start=DAY, now=NOW, cap=1, window_class="peak", hold="sleep").id
+        q = dl.reserve(self.db, T, "q", day_start=DAY, now=NOW, cap=1, window_class="peak").id
+        self.assertEqual(dl.release(self.db, h, day_start=DAY, now=NOW + 1, cap=1),
+                         dl.Reservation(h, "held", "cap"))
+        dl.mark_failed(self.db, q)
+        self.assertEqual(dl.release(self.db, h, day_start=DAY, now=NOW + 2, cap=1),
+                         dl.Reservation(h, "queued", None))
+        self.assertEqual(self.row(h)["reserved_at"], NOW + 2)
+
+    def test_a_row_held_yesterday_counts_on_the_day_it_is_released(self):
+        h = dl.reserve(self.db, T, "h", day_start=DAY - 24 * H, now=DAY - H, hold="sleep").id
+        dl.release(self.db, h, day_start=DAY, now=NOW)
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+
+    def test_sent_unknown_and_dedup_rows_never_come_due(self):
+        s = dl.reserve(self.db, T, "s", day_start=DAY, now=NOW, dedup_key="k").id
+        dl.mark_sent(self.db, s, NOW)
+        dl.mark_unknown(self.db, dl.reserve(self.db, T, "u", day_start=DAY, now=NOW).id)
+        dl.reserve(self.db, T, "s", day_start=DAY, now=NOW, dedup_key="k", release_after=NOW)
+        self.assertEqual(dl.due_held(self.db, NOW + 365 * 24 * H), [])
+
+    def test_release_of_a_dedup_hold_or_a_row_not_held_raises(self):
+        q = dl.reserve(self.db, T, "a", day_start=DAY, now=NOW, dedup_key="k").id
+        d = dl.reserve(self.db, T, "a", day_start=DAY, now=NOW, dedup_key="k").id
+        for i in (q, d, 999):
+            with self.assertRaises(dl.IllegalTransition):
+                dl.release(self.db, i, day_start=DAY, now=NOW)
+        self.assertEqual(self.row(d)["state"], "held")
+
+
 if __name__ == "__main__":
     unittest.main()
