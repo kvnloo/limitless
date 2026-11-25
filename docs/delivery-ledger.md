@@ -131,6 +131,16 @@ A `bypass` row is recorded like any other but never takes a budget slot and is n
 
 `dedup` and the caller's `quiet` or `sleep` hold still apply to a bypass row.
 
+## Cutover
+
+The ledger replaces `sent.json` and `held.jsonl` in one step; it is never a third store beside them. At cutover,
+under the `sent.json.lock` flock, the rows still inside the budget day are imported: a delivered `sent.json` row
+becomes `sent`, a pending or unknown one becomes `unknown` (it keeps its slot and dedupe key), and a
+`held.jsonl` row (Sleep mode is its only writer) becomes `held` with reason `sleep`. From then on the two files
+are no longer written, and nothing reads them. There is never a period where both are written: no dual write, no
+shadow run, no fallback to the files. This draft builds none of it; `kevin-push` and the jobs runner are
+unchanged until that one step.
+
 ## Open questions for review
 
 - Digest body cap: how many held rows, or characters, ride one digest before the rest wait for the next
