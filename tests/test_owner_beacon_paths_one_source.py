@@ -70,5 +70,35 @@ class SameAsReader(unittest.TestCase):
             self.assertEqual(self.both(dict(cfg, state=str(self.st))), [], cfg)
 
 
+class TheDoctorsOwnCfgAndEnv(unittest.TestCase):
+    """report() hands the doctor the config it read and owner_beacon_row may get an env: the paths come from
+    those, never from a second read of the config file or from os.environ."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.st = self.dir / "state"
+        self.file_cfg = self.dir / "config.json"
+        self.file_cfg.write_text(json.dumps({"state": str(self.dir / "file-state"), KEY: ["from-file.json"]}))
+        base = {k: v for k, v in os.environ.items() if not k.startswith("LIMITLESS_")}
+        self.os_env = dict(base, LIMITLESS_CONFIG=str(self.file_cfg), **{ENV: str(self.dir / "os-env.json")})
+        self.env = dict(base, LIMITLESS_CONFIG=str(self.file_cfg))
+
+    def paths(self, cfg, env):
+        with mock.patch.dict(os.environ, self.os_env, clear=True):
+            return doctor._beacon_paths(cfg, env)
+
+    def test_the_cfg_it_is_given_not_the_config_file(self):
+        cfg = {"state": str(self.st), KEY: ["given.json"]}
+        self.assertEqual(self.paths(cfg, self.env), [self.st / "given.json"])
+        self.assertEqual(self.paths({"state": str(self.st)}, self.env), [])
+
+    def test_the_env_it_is_given_not_os_environ(self):
+        cfg = {"state": str(self.st), KEY: ["given.json"]}
+        env = dict(self.env, LIMITLESS_STATE=str(self.dir / "env-state"), **{ENV: "env.json"})
+        self.assertEqual(self.paths(cfg, env), [self.dir / "env-state" / "env.json"])
+
+
 if __name__ == "__main__":
     unittest.main()
