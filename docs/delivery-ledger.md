@@ -7,11 +7,21 @@ or writes this ledger. Reference code: `limitless/delivery_ledger.py` (stdlib `s
 
 ## Why
 
-Today the budget is a rolling 24 h count in `send_gate.decide` over `sent.json`. `kevin-push` reads the file,
-decides, sends and writes the whole file back with no lock, so two senders at once can both see the last slot
-free, and a message that was held lives in a second file (`held.jsonl`). A move between two files can be split
-by a crash. The jobs runner already counts a send only after a real delivery; the ledger keeps that rule and
-makes the check and the claim of a slot one step.
+On main today, `kevin-push` reads `sent.json`, decides and reserves under one exclusive flock
+(`sent.json.lock`), so two pushes cannot both take the last slot. A send writes its row marked pending first
+(it counts for the cap and dedupe while the send runs); a delivery clears the mark and a failed send removes the
+row. A row still pending after twice the sender's timeout is renamed unknown by the next push, inside the same
+lock: it keeps its slot and dedupe key, and keeps its reservation token, so a push that was only slow still
+settles its own row (a delivery clears the mark, a failed send removes the row).
+
+What is left for the ledger to fix:
+
+- the budget is a rolling 24 h count in `send_gate.decide`, not a budget day with a boundary;
+- the state lives in two files, `sent.json` and `held.jsonl`, and a move between them can be split by a crash;
+- there is no state column: pending, unknown and delivered are marks on a JSON row, and a held message is a line
+  in another file.
+
+The jobs runner already counts a send only after a real delivery; the ledger keeps that rule.
 
 ## Shape
 
