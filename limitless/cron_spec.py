@@ -125,7 +125,7 @@ def payloads() -> list:
 
 # --- Checking a host's job records against the payloads -------------------------------------------------------
 # The record shape is the fork's create_job (cron/jobs.py lines 1872-1921): ``name``, ``script``, ``no_agent``,
-# ``schedule`` parsed to {"kind": "interval", "minutes": n, ...} (lines 784-785), ``enabled``, ``deliver``, and
+# ``schedule`` parsed to {"kind": "interval", "minutes": n, ...} (lines 787-788), ``enabled``, ``deliver``, and
 # ``window_class`` / ``stale_after_s`` only when set (stale_after_s a float, cron/decision_window.py lines 72-84).
 # The file is {"jobs": [...]} (cron/jobs.py line 1566); load_jobs also takes a bare list or an id-keyed map
 # (lines 1407-1426). Pause markers besides ``enabled``: ``state`` "paused" and ``paused_at`` (lines 536-543).
@@ -160,7 +160,7 @@ def _poll_interval(value: Any) -> tuple:
 
 def _stored_interval(value: Any) -> tuple:
     """A stored record's schedule as (kind, minutes): create_job stores it parsed, a dict (cron/jobs.py lines
-    784-785, 1887); anything else is unreadable."""
+    787-788, 1887); anything else is unreadable."""
     if not isinstance(value, dict) or not isinstance(value.get("kind"), str):
         raise _Unreadable
     minutes = value.get("minutes")

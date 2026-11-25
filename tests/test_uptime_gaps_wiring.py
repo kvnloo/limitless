@@ -124,7 +124,11 @@ class Cli(unittest.TestCase):
             cfg = d / "config.json"
             cfg.write_text(json.dumps({"state": str(st)}))
             keep = {k: v for k, v in os.environ.items() if k in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT")}
-            env = dict(keep, LIMITLESS_CONFIG=str(cfg), LIMITLESS_STATE=str(st), HOME=str(d), TZ="UTC")
+            # The CLI reads the real clock and local days: in UTC between midnight and five the newest run (five
+            # hours ago) is yesterday's, today has no run yet and the words say "every known day". A fixed zone
+            # that puts the local clock near noon keeps today's runs in today, whatever the hour.
+            offset = 12 - time.gmtime().tm_hour                       # local = UTC + offset hours
+            env = dict(keep, LIMITLESS_CONFIG=str(cfg), LIMITLESS_STATE=str(st), HOME=str(d), TZ=f"LIM{-offset:+d}")
             r = subprocess.run([sys.executable, "-I", str(BIN)], env=child_env(env), capture_output=True, text=True,
                                timeout=60)
             self.assertEqual(r.returncode, 0, r.stderr)

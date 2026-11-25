@@ -2,7 +2,7 @@
 
 The record shape is the public fork kvnloo/hermes-agent, branch up/cron-decision-window-gate-r2: create_job
 (cron/jobs.py lines 1872-1921) stores name, script, no_agent, the parsed schedule ({"kind": "interval",
-"minutes": n, "display": ...}, lines 784-785), enabled, deliver, and window_class / stale_after_s only when set
+"minutes": n, "display": ...}, lines 787-788), enabled, deliver, and window_class / stale_after_s only when set
 (lines 1915-1921, stale_after_s as a float: cron/decision_window.py lines 72-84). The file is {"jobs": [...]}
 (cron/jobs.py line 1566); load_jobs also takes a bare list or an id-keyed map (lines 1407-1426). Pause markers
 are enabled, state and paused_at (lines 536-543). No Hermes, no network.
