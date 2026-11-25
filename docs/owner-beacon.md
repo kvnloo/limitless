@@ -31,7 +31,9 @@ as one more source.
 
 `bin/limitless-owner-beacon schedule --print` prints the job for you: a launchd plist or a systemd user
 `.service` + `.timer` that runs the writer every `--every` minutes and then, with `--copy-to`, copies the beacon
-with `scp -q -p` (`-p` keeps the writer's 0600 mode and the mtime). It only prints: it never writes, loads,
+with `scp -q -p -o BatchMode=yes` (`-p` keeps the writer's 0600 mode and the mtime; `BatchMode=yes` makes a
+password or host-key prompt fail at once, since nobody is at a terminal when the job runs, so set up key login
+to the plugin host first). It only prints: it never writes, loads,
 enables or runs anything, and every host-specific value comes from your arguments (there is no default host,
 user or path). The job runs one `/bin/sh -c` line with every value shell-quoted; the writer runs with the
 interpreter and checkout you ran `schedule` from. `--db PATH` (repeatable) passes `--dbs` to the writer; without

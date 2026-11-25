@@ -7,8 +7,8 @@ schedule --print, docs/owner-beacon.md).
 ``<label>.timer`` (``OnBootSec``, ``OnUnitActiveSec`` = every minutes), each after a ``# <label>.<kind>`` line;
 the shell line is one double-quoted ExecStart word, with backslash, double quote, ``%`` and ``$`` escaped for
 systemd. Both kinds run one ``/bin/sh -c`` line: the writer (``<python> <writer> write --out <out>
-[--dbs a:b]``), then, with ``copy_to``, ``scp -q -p <out> <copy_to>`` (``-p`` keeps the writer's 0600 mode
-and the mtime). Every value is shell-quoted. Every host-specific value comes from the caller: nothing here
+[--dbs a:b]``), then, with ``copy_to``, ``scp -q -p -o BatchMode=yes <out> <copy_to>`` (``-p`` keeps the
+writer's 0600 mode and the mtime; BatchMode fails at once instead of waiting on a prompt). Every value is shell-quoted. Every host-specific value comes from the caller: nothing here
 names a host, user or path, and nothing is written, loaded, enabled or run. Stdlib only, Python 3.9+.
 """
 from __future__ import annotations
@@ -56,7 +56,8 @@ def writer_argv(python: str, writer: str, out: str, dbs: Iterable[str] = ()) -> 
 
 
 def copy_argv(out: str, copy_to: str) -> list:
-    return ["scp", "-q", "-p", out, copy_to]
+    # BatchMode: nobody is at a terminal when the job runs, so a password or host-key prompt fails at once.
+    return ["scp", "-q", "-p", "-o", "BatchMode=yes", out, copy_to]
 
 
 def shell_line(python: str, writer: str, out: str, copy_to: Optional[str] = None, dbs: Iterable[str] = ()) -> str:

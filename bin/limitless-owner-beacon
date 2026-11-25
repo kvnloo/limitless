@@ -22,7 +22,7 @@ bad arguments. It never sends and never prints a traceback.
 limitless-owner-beacon schedule --print --kind launchd|systemd --out PATH --every MINUTES
 [--copy-to USER@HOST:PATH] [--db PATH ...] [--label LABEL] prints the job (a launchd plist, or a systemd
 user .service and .timer) that runs the writer every MINUTES and then, with --copy-to,
-`scp -q -p` of the beacon to the plugin host (limitless/beacon_schedule.py). It only prints: it never writes,
+`scp -q -p -o BatchMode=yes` of the beacon to the plugin host (limitless/beacon_schedule.py). It only prints: it never writes,
 loads, enables or runs anything. Every host-specific value comes from the arguments.
 """
 import json

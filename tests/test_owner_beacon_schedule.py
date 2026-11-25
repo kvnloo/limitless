@@ -19,6 +19,9 @@ OUT = "/tmp/example/cache/owner-beacon.json"
 DEST = "user@example-host:/tmp/example/state/beacons/this-machine.json"
 ODD = "/tmp/example/it's a dir/owner beacon.json"   # a space and a single quote
 LABEL = "org.example.owner-beacon"
+# The scheduled copy runs with nobody at a terminal: BatchMode makes scp fail at once instead of waiting
+# on a password or host-key prompt.
+SCP = ["scp", "-q", "-p", "-o", "BatchMode=yes"]
 
 
 def writer(out, dbs=()):
@@ -79,13 +82,13 @@ class Launchd(Base):
                          "--db", "/tmp/example/a.db", "--db", "/tmp/example/b.db")
         self.assertEqual(self.sh_steps(got["ProgramArguments"]),
                          [writer(OUT, ["/tmp/example/a.db", "/tmp/example/b.db"]),
-                          ["scp", "-q", "-p", OUT, DEST]])
+                          SCP + [OUT, DEST]])
 
     def test_a_space_and_a_quote_survive_shell_quoting(self):
         dest = "user@example-host:/tmp/example/it's here/b.json"
         got = self.plist("--out", ODD, "--every", "60", "--copy-to", dest, "--db", "/tmp/example/a b's.db")
         self.assertEqual(self.sh_steps(got["ProgramArguments"]),
-                         [writer(ODD, ["/tmp/example/a b's.db"]), ["scp", "-q", "-p", ODD, dest]])
+                         [writer(ODD, ["/tmp/example/a b's.db"]), SCP + [ODD, dest]])
 
     def test_label_has_a_neutral_default(self):
         label = self.plist("--out", OUT, "--every", "60")["Label"]
@@ -173,13 +176,13 @@ class Systemd(Base):
     def test_exec_start_runs_the_writer_then_scp(self):
         got = self.units("--out", OUT, "--every", "60", "--copy-to", DEST, "--db", "/tmp/example/a.db")
         words = systemd_words(got[LABEL + ".service"]["Service"]["ExecStart"])
-        self.assertEqual(self.sh_steps(words), [writer(OUT, ["/tmp/example/a.db"]), ["scp", "-q", "-p", OUT, DEST]])
+        self.assertEqual(self.sh_steps(words), [writer(OUT, ["/tmp/example/a.db"]), SCP + [OUT, DEST]])
 
     def test_a_space_a_quote_a_dollar_and_a_percent_survive_quoting(self):
         odd_db = '/tmp/example/50% "of" $HOME/a b\\c.db'
         got = self.units("--out", ODD, "--every", "60", "--copy-to", DEST, "--db", odd_db)
         words = systemd_words(got[LABEL + ".service"]["Service"]["ExecStart"])
-        self.assertEqual(self.sh_steps(words), [writer(ODD, [odd_db]), ["scp", "-q", "-p", ODD, DEST]])
+        self.assertEqual(self.sh_steps(words), [writer(ODD, [odd_db]), SCP + [ODD, DEST]])
 
 
 class Refusals(Base):
