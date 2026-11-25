@@ -59,12 +59,12 @@ class Docs(unittest.TestCase):
                            capture_output=True, text=True, timeout=60, env=child_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         for said in ("This is the new route for your phone pushes. If you see this, it works.",
-                     "Sender confirm: hold: your reply changed the sender for your phone pushes; the new sender did "
+                     "Sender confirmation: hold: your reply changed the sender for your phone pushes; the new sender did "
                      "not reach you: the send failed",
-                     "job sender confirm: missing: sender confirm: the new sender did not reach you",
-                     "Sleep mode holds it", "job sender confirm: live: sender confirm: waits",
-                     "job sender confirm: live: sender confirm: the new sender reached you",
-                     "Sender confirm: drop: this sender change was already confirmed",
+                     "job sender confirmation: missing: sender confirmation: the new sender did not reach you",
+                     "Sleep mode holds it", "job sender confirmation: live: sender confirmation: waits",
+                     "job sender confirmation: live: sender confirmation: the new sender reached you",
+                     "Sender confirmation: drop: this sender change was already confirmed",
                      "Outage recap: hold: pushes came back after an outage; waits for the next pass"):
             self.assertIn(said, r.stdout)
         self.assertNotIn("backup", r.stdout.split("# pass")[1] if "# pass" in r.stdout else r.stdout)
@@ -76,7 +76,7 @@ class Docs(unittest.TestCase):
         for word in ("sender_changed", "push-sender.json", "sender-confirm.json", "0600", "--once",
                      "sender_confirm:<sender reply time>", "`off`", "`dry_run`", "`write`", "never a clock",
                      "no digit", "Sleep mode", "KEVIN_PUSH_PROFILE", "push_log", "limitless-doctor",
-                     "job sender confirm", "outage recap", "next pass", "duplicate"):
+                     "job sender confirmation", "outage recap", "next pass", "duplicate"):
             self.assertIn(word, text)
 
     def test_the_readme_and_sibling_docs_point_at_it(self):

@@ -77,7 +77,7 @@ class SenderConfirmCli(unittest.TestCase):
     def calls_made(self):
         return [json.loads(ln) for ln in self.calls.read_text().splitlines()] if self.calls.exists() else []
 
-    def line(self, out, name="Sender confirm"):
+    def line(self, out, name="Sender confirmation"):
         return [ln for ln in out.splitlines() if ln.startswith(name + ": ")]
 
     def doctor_reason(self):
@@ -88,7 +88,7 @@ class SenderConfirmCli(unittest.TestCase):
         r = self.run_cli("--send")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.line(r.stdout),
-                         ["Sender confirm: deliver: your reply changed the sender for your phone pushes; sent"])
+                         ["Sender confirmation: deliver: your reply changed the sender for your phone pushes; sent"])
         calls = self.calls_made()
         self.assertEqual(len(calls), 1)
         argv = calls[0]["argv"]
@@ -104,13 +104,13 @@ class SenderConfirmCli(unittest.TestCase):
         self.assertIn("the new sender reached you", said)
         r = self.run_cli("--send")                                   # a replay never sends twice
         self.assertEqual(self.line(r.stdout),
-                         ["Sender confirm: drop: this sender change was already confirmed"])
+                         ["Sender confirmation: drop: this sender change was already confirmed"])
         self.assertEqual(len(self.calls_made()), 1)
 
     def test_a_failed_send_is_the_proof_the_new_sender_did_not_reach_you(self):
         r = self.run_cli("--send", FAKE_PUSH_HOW="log (telegram rc=1)")
         self.assertEqual(self.line(r.stdout),
-                         ["Sender confirm: hold: your reply changed the sender for your phone pushes; the new sender "
+                         ["Sender confirmation: hold: your reply changed the sender for your phone pushes; the new sender "
                           "did not reach you: the send failed; the next pass tries again"])
         status, said = self.doctor_reason()
         self.assertEqual(status, doctor.MISSING)
@@ -119,7 +119,7 @@ class SenderConfirmCli(unittest.TestCase):
     def test_a_sleep_mode_hold_waits(self):
         r = self.run_cli("--send", FAKE_PUSH_HOW="held (sleep mode)")
         self.assertEqual(self.line(r.stdout),
-                         ["Sender confirm: hold: your reply changed the sender for your phone pushes; not delivered: "
+                         ["Sender confirmation: hold: your reply changed the sender for your phone pushes; not delivered: "
                           "Sleep mode holds it; the next pass tries again"])
         status, said = self.doctor_reason()
         self.assertEqual(status, doctor.LIVE)
@@ -131,7 +131,7 @@ class SenderConfirmCli(unittest.TestCase):
     def test_a_dry_run_says_what_it_would_send_and_writes_nothing(self):
         r = self.run_cli()
         self.assertEqual(self.line(r.stdout), [
-            'Sender confirm: deliver: your reply changed the sender for your phone pushes; would send "Pushes": '
+            'Sender confirmation: deliver: your reply changed the sender for your phone pushes; would send "Pushes": '
             '"This is the new route for your phone pushes. If you see this, it works." (dry run of limitless-jobs): '
             'nothing sent'])
         self.assertEqual(self.calls_made(), [])

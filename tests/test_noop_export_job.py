@@ -288,7 +288,7 @@ class ScheduleCard(Base):
     def test_one_schedule_card_on_the_fresh_copy_event(self):
         from limitless import schedule_cards
         c = self.card()
-        self.assertEqual(set(c), {"id", "kind", "name", "description", "trigger", "ends", "window",
+        self.assertEqual(set(c), {"id", "kind", "name", "job", "description", "trigger", "ends", "window",
                                   "stale_after_s", "once_key", "budget", "per_window", "sender", "words"})
         self.assertEqual((c["id"], c["kind"], c["name"]), ("noop_export", "schedule", JOB))
         self.assertEqual((c["trigger"], c["ends"]), ("noop_copy", "noop_copy"))

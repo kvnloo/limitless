@@ -84,10 +84,10 @@ def stale_words(seconds: Any) -> str:
 
 
 def plan_line(spec: Any) -> str:
-    """One job in words: its host job name and title, the window it waits for and how long until stale; or why it
-    is skipped."""
+    """One job in words: its host job name and its name in words (jobs.JOB_WORDS), the window it waits for and how
+    long until stale; or why it is skipped."""
     p = job_spec(spec)
-    head = f"limitless-{spec.name} ({spec.send_title})"
+    head = f"limitless-{spec.name} ({jobs.job_words(spec.name)})"
     if not p:
         return f"{head}: skipped, sends nothing"
     return f"{head}: window {p['window_class'].replace('_', ' ')}, {stale_words(p.get('stale_after_s'))}"

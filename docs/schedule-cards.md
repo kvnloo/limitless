@@ -31,6 +31,7 @@ the card uses its own name, listed here.
 | `id` | job record `id` | `JobSpec.name` | stable job id (`wake_brief`, `nap`, `miq`, ...) |
 | `kind` | approval `kind` (`schedule`) | constant | which card this is: a recurring job |
 | `name` | card / job `name` | `JobSpec.send_title` | the title the person sees (the lane brief's `title`) |
+| `job` | none | `jobs.JOB_WORDS` | the job's name in words, as the doctor and `limitless-cron-spec` say it (`wake brief`, `MIQ`, `habit check-in`) |
 | `description` | card `description` | `jobs.to_schedule_card` | one plain line, same `Schedule "<name>" (<when>): ...` form, digit-free |
 | `trigger` | none (its `schedule` is a clock or cron string, on purpose not used) | `JobSpec.trigger_event` | the event that wakes the job |
 | `ends` | none | `JobSpec.expires` | the event after which a trigger no longer counts |
@@ -143,6 +144,7 @@ and `age_h` is null. Nothing is written, sent, scheduled or registered.
   "id": "wake_brief",
   "kind": "schedule",
   "name": "Wake-up brief",
+  "job": "wake brief",
   "description": "Schedule \"Wake-up brief\" (when you wake up, at most once; any time you are awake): ends when Sleep mode goes on; you, through the send gate; this job never sends by itself",
   "trigger": "wake",
   "ends": "sleep_mode_on",

@@ -1,6 +1,6 @@
 """CAROL FIT files dropped in one folder reach the rides file by themselves: the FIT import as one more ingest of
 limitless-jobs, once per new sync row, as config ``fit_ingest`` says (off, dry_run, write) for the folder config
-``fit_drop_dir`` names; limitless-doctor's "fit import" row and the schedule card say so in words.
+``fit_drop_dir`` names; limitless-doctor's "job FIT import" row and the schedule card say so in words.
 
 Every FIT file here is SYNTHETIC, built by the tiny writer in tests/test_fit_ride.py from made-up values; synthetic
 runs.jsonl rows only. Nothing here sends: the in-process passes get a fake push that only records, and the CLI test
@@ -143,7 +143,7 @@ class Off(Base):
     def test_off_doctor_row(self):
         self.config()
         r = self.doc()
-        self.assertEqual((r["name"], r["status"]), ("fit import", doctor.OFF))
+        self.assertEqual((r["name"], r["status"]), ("job FIT import", doctor.OFF))
         self.assertIn("off (config fit_ingest)", r["reason"])
 
 
@@ -334,7 +334,7 @@ class Mark(Base):
         self.drop("a.fit", start=start(1))
         self.once()
         r = self.doc(now=NOW + 2 * H)
-        self.assertEqual((r["name"], r["status"]), ("fit import", doctor.LIVE))
+        self.assertEqual((r["name"], r["status"]), ("job FIT import", doctor.LIVE))
         self.assertTrue(r["reason"].startswith("dry run: "), r["reason"])
         self.assertIn("would add one ride", r["reason"])
         self.assertNotRegex(r["reason"], r"\d")
@@ -348,7 +348,7 @@ class Mark(Base):
     def test_the_doctor_report_has_the_row(self):
         self.config(fit_ingest="write")
         rows = doctor.report(self.cfg, NOW)
-        self.assertEqual(len([r for r in rows if r["name"] == "fit import"]), 1)
+        self.assertEqual(len([r for r in rows if r["name"] == "job FIT import"]), 1)
 
 
 class NeverSends(Base):
@@ -398,13 +398,13 @@ class Docs(unittest.TestCase):
         text = (ROOT / "docs" / "carol-fit-import.md").read_text(encoding="utf-8")
         self.assertIn("## Drop folder", text)
         sec = text.split("## Drop folder", 1)[1]
-        for w in ("fit_drop_dir", "fit_ingest", "dry_run", "write", "limitless-jobs --ingest", "fit import",
+        for w in ("fit_drop_dir", "fit_ingest", "dry_run", "write", "limitless-jobs --ingest", "job FIT import",
                   fit_ingest_job.MARK, "never moved"):
             self.assertIn(w, sec)
 
     def test_the_doctor_doc_has_the_row(self):
         text = (ROOT / "docs" / "doctor.md").read_text(encoding="utf-8")
-        self.assertEqual(len([ln for ln in text.splitlines() if ln.startswith("| `fit import`")]), 1)
+        self.assertEqual(len([ln for ln in text.splitlines() if ln.startswith("| `job FIT import`")]), 1)
 
 
 if __name__ == "__main__":

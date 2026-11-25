@@ -228,7 +228,7 @@ class Job(unittest.TestCase):
         self.assertEqual(recap["action"], jobs.HOLD)
         self.assertIn("waits for the next pass", recap["reason"])
         names = [r["job"] for r in rows]
-        self.assertLess(names.index("Sender confirm"), names.index(job.TITLE))
+        self.assertLess(names.index("Sender confirmation"), names.index(job.TITLE))
         rows = jobs_runner.run_once(self.st, NOW + 300, push=push, dry_run=False, env=self.env, tz=UTC)
         self.assertEqual([c["title"] for c in push.calls], ["Pushes", outage_recap.TITLE])
         self.assertEqual([r for r in rows if r["job"] == job.TITLE][0]["action"], jobs.DELIVER)

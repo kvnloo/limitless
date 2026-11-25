@@ -36,7 +36,8 @@ ABSENT = "some jobs are not on the host: "
 DIFFER = "some host jobs differ from this plugin's: "
 RETIRED = "a host job the plugin no longer has"
 NO_NAME = "a host job record with no name to read"
-EVERY_JOB = "wake brief, nap, miq, habit checkin, week review, break nudge, outage recap and sender confirm"
+EVERY_JOB = ("wake brief, back from nap, MIQ, habit check-in, week review, break nudge, outage recap and sender "
+             "confirmation")
 
 
 def host_record(payload, job_id="000000000000"):
@@ -154,13 +155,13 @@ class MissingJobs(Case):
 
     def test_two_missing_jobs_in_all_specs_order(self):
         self.write([r for r in in_sync() if r["name"] not in ("limitless-week_review", "limitless-nap")])
-        self.check(self.row(), doctor.MISSING, ABSENT + "nap and week review")
+        self.check(self.row(), doctor.MISSING, ABSENT + "back from nap and week review")
 
     def test_missing_and_stale_together_say_both_and_stay_missing(self):
         records = [r for r in in_sync() if r["name"] != "limitless-nap"]
         by_name(records, "miq")["stale_after_s"] = 7200.0
         self.write(records)
-        self.check(self.row(), doctor.MISSING, ABSENT + "nap; " + DIFFER + "miq")
+        self.check(self.row(), doctor.MISSING, ABSENT + "back from nap; " + DIFFER + "MIQ")
 
 
 class Stale(Case):
@@ -168,7 +169,7 @@ class Stale(Case):
         records = in_sync()
         by_name(records, "miq")["stale_after_s"] = 7200.0
         self.write(records)
-        self.check(self.row(), doctor.STALE, DIFFER + "miq")
+        self.check(self.row(), doctor.STALE, DIFFER + "MIQ")
 
     def test_a_job_paused_on_the_host(self):
         for change in ({"enabled": False}, {"state": "paused"}, {"paused_at": "2000-01-01T00:00:00+00:00"}):
@@ -176,13 +177,13 @@ class Stale(Case):
                 records = in_sync()
                 by_name(records, "habit_checkin").update(change)
                 self.write(records)
-                self.check(self.row(), doctor.STALE, DIFFER + "habit checkin")
+                self.check(self.row(), doctor.STALE, DIFFER + "habit check-in")
 
     def test_an_unreadable_record(self):
         records = in_sync()
         by_name(records, "nap")["schedule"] = "every 5m"   # stored unparsed, as in the fixture
         self.write(records)
-        self.check(self.row(), doctor.STALE, DIFFER + "nap")
+        self.check(self.row(), doctor.STALE, DIFFER + "back from nap")
 
     def test_more_than_one_host_job_with_a_name(self):
         records = in_sync()
@@ -207,12 +208,12 @@ class Stale(Case):
         by_name(records, "nap")["stale_after_s"] = "an hour"
         records.append(host_record(dict(cron_spec.payloads()[0], name="limitless-gone", script="gone.sh")))
         self.write(records)
-        self.check(self.row(), doctor.STALE, DIFFER + "wake brief, nap and break nudge; " + RETIRED)
+        self.check(self.row(), doctor.STALE, DIFFER + "wake brief, back from nap and break nudge; " + RETIRED)
 
     def test_the_fixture(self):
         r = doctor.host_jobs_row({"host_jobs_file": str(FIXTURE)})
-        self.check(r, doctor.MISSING, ABSENT + "wake brief, habit checkin, week review, break nudge, outage recap "
-                                               "and sender confirm; " + DIFFER + "nap and miq; " + RETIRED + "; " +
+        self.check(r, doctor.MISSING, ABSENT + "wake brief, habit check-in, week review, break nudge, outage recap "
+                                               "and sender confirmation; " + DIFFER + "back from nap and MIQ; " + RETIRED + "; " +
                    NO_NAME)
 
 

@@ -55,7 +55,7 @@ class DoctorRow(unittest.TestCase):
 
     def test_off(self):
         r = self.row(mode=None)
-        self.assertEqual((r["status"], r["reason"]), (doctor.OFF, "sender confirm: off (config sender_confirm)"))
+        self.assertEqual((r["status"], r["reason"]), (doctor.OFF, "sender confirmation: off (config sender_confirm)"))
 
     def test_a_failed_send_in_the_log_says_the_new_sender_did_not_reach_you(self):
         self.log([log_row(AT + 60, "log (telegram rc=1)")])
@@ -77,7 +77,7 @@ class DoctorRow(unittest.TestCase):
         self.log([log_row(AT + 60, "log (telegram rc=1)"), log_row(AT + 600, "telegram")])
         r = self.row()
         self.assertEqual(r["status"], doctor.LIVE)
-        self.assertTrue(r["reason"].startswith("sender confirm: the new sender reached you"), r["reason"])
+        self.assertTrue(r["reason"].startswith("sender confirmation: the new sender reached you"), r["reason"])
         self.assertTrue(r["reason"].endswith("; write mode"), r["reason"])
 
     def test_rows_before_the_reply_or_of_other_messages_do_not_count(self):
@@ -100,7 +100,7 @@ class DoctorRow(unittest.TestCase):
 
     def test_nothing_to_confirm_a_late_change_or_an_env_sender(self):
         (self.st / push_sender.REPLY_FILE).unlink()
-        self.assertEqual(self.row()["reason"], "sender confirm: no sender change to confirm; write mode")
+        self.assertEqual(self.row()["reason"], "sender confirmation: no sender change to confirm; write mode")
         (self.st / push_sender.REPLY_FILE).write_text(json.dumps({"profile": PROFILE, "at": AT}))
         late = self.row(now=AT + jobs.SENDER_CONFIRM_STALE_S + H)
         self.assertIn("never confirmed", late["reason"])

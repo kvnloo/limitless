@@ -61,7 +61,7 @@ It never restarts, kills or starts any service, never runs hermes itself and nev
 
 ## The proof: the doctor row
 
-The confirmation's own delivery result is the proof. `limitless-doctor` has a `job sender confirm` row right after
+The confirmation's own delivery result is the proof. `limitless-doctor` has a `job sender confirmation` row right after
 the `job sender ingest` row ([doctor.md](doctor.md)). It reads kevin-push's log (config `push_log`): the newest
 confirmation row logged after the reply (title `Pushes`, its first words). With no push log set, or no such row
 yet, it falls back to the mark's outcome for this reply.
@@ -100,32 +100,32 @@ Real output:
 $ kevin-push limitless "Pushes" <body> --once sender_confirm:1894708200 --why "your reply changed the sender for your phone pushes"
 This is the new route for your phone pushes. If you see this, it works.
 kevin-push: log (telegram rc=1)
-Sender confirm: hold: your reply changed the sender for your phone pushes; the new sender did not reach you: the send failed; the next pass tries again
-job sender confirm: missing: sender confirm: the new sender did not reach you: its confirmation failed to send under an hour ago; reply push via another profile, or fix this one and the next pass tries again; write mode
+Sender confirmation: hold: your reply changed the sender for your phone pushes; the new sender did not reach you: the send failed; the next pass tries again
+job sender confirmation: missing: sender confirmation: the new sender did not reach you: its confirmation failed to send under an hour ago; reply push via another profile, or fix this one and the next pass tries again; write mode
 
 # pass 2: the owner fixed it; the phone is in Sleep mode
 $ kevin-push limitless "Pushes" <body> --once sender_confirm:1894708200 --why "your reply changed the sender for your phone pushes"
 This is the new route for your phone pushes. If you see this, it works.
 kevin-push: held (sleep mode)
-Sender confirm: hold: your reply changed the sender for your phone pushes; not delivered: Sleep mode holds it; the next pass tries again
-job sender confirm: live: sender confirm: waits: Sleep mode held the confirmation; it goes out once Sleep mode is off; write mode
+Sender confirmation: hold: your reply changed the sender for your phone pushes; not delivered: Sleep mode holds it; the next pass tries again
+job sender confirmation: live: sender confirmation: waits: Sleep mode held the confirmation; it goes out once Sleep mode is off; write mode
 
 # pass 3: Sleep mode is off
 $ kevin-push limitless "Pushes" <body> --once sender_confirm:1894708200 --why "your reply changed the sender for your phone pushes"
 This is the new route for your phone pushes. If you see this, it works.
 kevin-push: telegram
-Sender confirm: deliver: your reply changed the sender for your phone pushes; sent
-job sender confirm: live: sender confirm: the new sender reached you: its confirmation was delivered under an hour ago; write mode
+Sender confirmation: deliver: your reply changed the sender for your phone pushes; sent
+job sender confirmation: live: sender confirmation: the new sender reached you: its confirmation was delivered under an hour ago; write mode
 
 # pass 4: the next poll
-Sender confirm: drop: this sender change was already confirmed
-job sender confirm: live: sender confirm: the new sender reached you: its confirmation was delivered under an hour ago; write mode
+Sender confirmation: drop: this sender change was already confirmed
+job sender confirmation: live: sender confirmation: the new sender reached you: its confirmation was delivered under an hour ago; write mode
 
 # limitless-jobs pass 1: the sender changed and an outage just ended
 $ kevin-push limitless "Pushes" <body> --once sender_confirm:1894708200 --why "your reply changed the sender for your phone pushes"
 This is the new route for your phone pushes. If you see this, it works.
 kevin-push: telegram
-Sender confirm: deliver: your reply changed the sender for your phone pushes; sent
+Sender confirmation: deliver: your reply changed the sender for your phone pushes; sent
 Outage recap: hold: pushes came back after an outage; waits for the next pass: the sender confirmation went out in this pass
 
 # limitless-jobs pass 2: the next limitless-jobs pass
@@ -135,6 +135,6 @@ Missed since earlier today: a few messages (wake brief, back from nap).
 They were not sent again: by now they are out of date.
 Reply: OK / More
 kevin-push: telegram
-Sender confirm: drop: this sender change was already confirmed
+Sender confirmation: drop: this sender change was already confirmed
 Outage recap: deliver: pushes came back after an outage; sent
 ```

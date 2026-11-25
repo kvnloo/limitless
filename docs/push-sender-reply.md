@@ -154,7 +154,7 @@ mode, when it ran and what it did in words, plus "KEVIN_PUSH_PROFILE is set and 
 card or line ever holds the profile name.
 
 To prove the new sender works right away, turn on the sender confirmation (config `sender_confirm`): one short
-plain push right after the change, whose own delivery result the doctor's `job sender confirm` row reports
+plain push right after the change, whose own delivery result the doctor's `job sender confirmation` row reports
 ([sender-confirm.md](sender-confirm.md)). The timer's `limitless-jobs --ingest --confirm` pass applies the reply and
 sends that confirmation in the same pass, and nothing else ([limitless-jobs-systemd.md](limitless-jobs-systemd.md)).
 
