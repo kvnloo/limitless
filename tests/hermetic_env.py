@@ -75,6 +75,7 @@ def child_env(base=None, **extra):
     env.update(extra)
     if not env.get("HOME"):
         env["HOME"] = str(TEST_HOME)
+    env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     real = _passwd_home()
     if real and os.path.realpath(env["HOME"]) == os.path.realpath(real):
         raise RuntimeError("a test child process would run with the real HOME")
