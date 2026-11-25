@@ -6,6 +6,7 @@ their cap check before either send returns; without the lock both would send. A 
 synthetic titles only; nothing is sent.
 """
 from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
+import fcntl
 import json
 import os
 import stat
@@ -83,6 +84,26 @@ class KevinPushLock(unittest.TestCase):
         rows = self.sent()
         self.assertEqual(len(rows), send_gate.DAILY_CAP, rows)
         self.assertEqual(sum(1 for r in rows if not r["k"].startswith("synthetic")), 1, rows)
+        self.assertFalse([r for r in rows if "pending" in r], "a delivered row loses its pending mark")
+
+    def test_a_push_reads_sent_json_only_once_it_holds_the_lock(self):
+        # Another writer holds the lock and fills the last cap slot before letting go: the push must wait for
+        # the lock and then see the full cap, never decide on the sent.json it could read before.
+        self.prefill(send_gate.DAILY_CAP - 1)
+        lock = open(self.st / "sent.json.lock", "a")
+        self.addCleanup(lock.close)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        p = self.start("Pick one", "Synthetic choice A", FAKE_HERMES_DELAY="0")
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                p.wait(timeout=2)
+            self.prefill(send_gate.DAILY_CAP)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        out, err = p.communicate(timeout=60)
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(out.strip(), "kevin-push: log (daily cap)")
+        self.assertEqual(self.calls(), 0)
 
     def test_a_failed_send_leaves_sent_json_without_its_reservation(self):
         rows = self.prefill(send_gate.DAILY_CAP - 1)
