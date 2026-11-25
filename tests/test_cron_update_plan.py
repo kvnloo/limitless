@@ -272,7 +272,7 @@ class PlanCli(unittest.TestCase):
                 self.assertNotIn("Traceback", r.stderr)
 
     def test_never_imports_hermes(self):
-        allowed = {"json", "os", "sys", "tempfile", "pathlib", "limitless", "math", "re", "typing"}
+        allowed = {"json", "os", "sys", "tempfile", "pathlib", "limitless", "math", "re", "shlex", "typing"}
         for path in (BIN, ROOT / "limitless" / "cron_spec.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             names = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
