@@ -7,6 +7,10 @@ import re
 from . import decision_window
 
 DAILY_CAP, DEDUP_S = 6, 12 * 3600
+# kevin-push's sender call is cut off after SEND_TIMEOUT_S; a sent.json row still marked pending after twice that
+# was left by a push killed before it could settle (OOM kill, reboot), so its delivery is unknown.
+SEND_TIMEOUT_S = 60
+PENDING_UNKNOWN_S = 2 * SEND_TIMEOUT_S
 ALWAYS = {("limitless", "Wake-up brief"), ("limitless", "Back from nap"), ("limitless", "MIQ for tonight?")}
 # 'Asks waiting on you' hit the cap 133x on 11-21 and starved real messages: it becomes one brief line.
 FOLD = {"asks"}

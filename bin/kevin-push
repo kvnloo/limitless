@@ -211,7 +211,8 @@ def main(argv):
                 # the Hermes profile that owns the Telegram bot and the contact alias (not a chat id): env > config > default
                 rc = subprocess.run(["hermes", "-p", push_sender.profile(cfg), "send", "--to", push_sender.target(cfg),
                                      "--subject", title,
-                                     "--file", f.name, "-q"], capture_output=True, text=True, timeout=60).returncode
+                                     "--file", f.name, "-q"], capture_output=True, text=True,
+                                    timeout=g.SEND_TIMEOUT_S).returncode
                 os.unlink(f.name)
                 how = "telegram" if rc == 0 else f"log (telegram rc={rc})"
         finally:
