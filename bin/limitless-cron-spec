@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""limitless-cron-spec [--json | --scripts <dir> | --check <jobs file>]: the Hermes cron job each plugin job would be.
+"""limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file>]: the Hermes cron job
+each plugin job would be.
 
 Without --json: one line per job in words (its title, the decision window it waits for, how long until a held
 occurrence is stale), or "skipped, sends nothing". With --json: a JSON list of keyword arguments for the host's
@@ -15,6 +16,13 @@ With --check <jobs file>: reads the host's cron jobs file (read-only) and prints
 unreadable), plus any limitless- host job that is not a plugin job any more. Exit 0 when every job is ok, 1
 otherwise, 2 for usage or a file it cannot read as a jobs file.
 
+With --plan <jobs file>: reads the same file (read-only) and prints, as JSON (indent 1, sorted keys), the host
+calls that would bring the records in step (cron_spec.update_plan): create_job with the payload for a missing job,
+update_job with the record's id and only the differing fields for one that differs, and "none" with the reason for
+what only the operator can sort out (an unreadable record, two records with one name, a limitless- job the plugin
+no longer has). A paused job is never resumed and no job is ever deleted. It makes none of the calls. Exit 0 when
+the plan is empty, 1 otherwise, 2 for usage or a file it cannot read as a jobs file.
+
 It never calls Hermes, never creates a job and never sends anything; without --scripts it writes no file.
 """
 import json
@@ -26,7 +34,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from limitless import cron_spec  # noqa: E402
 
-USAGE = "usage: limitless-cron-spec [--json | --scripts <dir> | --check <jobs file>]  (<dir> must exist)"
+USAGE = ("usage: limitless-cron-spec [--json | --scripts <dir> | --check <jobs file> | --plan <jobs file>]"
+         "  (<dir> must exist)")
 
 
 def write_script(path: Path, text: str) -> None:
@@ -47,14 +56,21 @@ def write_script(path: Path, text: str) -> None:
         raise
 
 
-def check(path: str) -> int:
-    """Print one verdict line per job for the jobs file at ``path``; 0 all ok, 1 not, 2 unreadable. Read-only."""
+def read_records(path: str):
+    """The job records in the jobs file at ``path``, or None after one line on stderr. Read-only."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
-        records = cron_spec.records_in(json.loads(text, strict=False))   # the host retries with strict=False too
+        return cron_spec.records_in(json.loads(text, strict=False))   # the host retries with strict=False too
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         print(f"limitless-cron-spec: cannot read {path} as a cron jobs file: {type(exc).__name__}", file=sys.stderr)
+        return None
+
+
+def check(path: str) -> int:
+    """Print one verdict line per job for the jobs file at ``path``; 0 all ok, 1 not, 2 unreadable. Read-only."""
+    records = read_records(path)
+    if records is None:
         return 2
     verdicts = cron_spec.diff_records(records, cron_spec.payloads())
     for line in cron_spec.check_lines(verdicts):
@@ -62,13 +78,23 @@ def check(path: str) -> int:
     return 0 if all(v.ok for v in verdicts) else 1
 
 
+def plan(path: str) -> int:
+    """Print the update plan for the jobs file at ``path`` as JSON; 0 empty, 1 not, 2 unreadable. Read-only."""
+    records = read_records(path)
+    if records is None:
+        return 2
+    steps = cron_spec.update_plan(records, cron_spec.payloads())
+    print(json.dumps(steps, indent=1, sort_keys=True))
+    return 0 if not steps else 1
+
+
 def main(argv):
     args = argv[1:]
-    if args[:1] == ["--check"]:
+    if args[:1] in (["--check"], ["--plan"]):
         if len(args) != 2:
             print(USAGE, file=sys.stderr)
             return 2
-        return check(args[1])
+        return check(args[1]) if args[0] == "--check" else plan(args[1])
     if len(args) == 2 and args[0] == "--scripts":
         out = Path(args[1])
         if not out.is_dir():

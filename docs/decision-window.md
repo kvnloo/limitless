@@ -217,6 +217,16 @@ calls Hermes. The fix for a line that is not ok stays with the operator (`cron.j
 Set config `host_jobs_file` to that file and `bin/limitless-doctor`'s `host job records` row says the same, next
 to the scripts row, so nobody has to remember to run `--check` ([doctor.md](doctor.md#rows)).
 
+`bin/limitless-cron-spec --plan <the host's cron/jobs.json>` reads the same file and prints that fix as JSON for
+the operator to review: `create_job` with the payload as `kwargs` for a missing job, and `update_job` with the
+record's `job_id` and `updates` holding only the fields that differ, each in the form `create_job` stores it (the
+parsed interval, the expiry as float seconds, the window as the host normalizes it; a field the plugin dropped is
+`null`). A paused job is the operator's own choice: paused alone plans nothing, and an update never carries
+`enabled`, `state` or `paused_at`, so the job stays paused. What only a person can sort out gets `"call": "none"`
+with the reason: an unreadable record, two records with one name, a record with no name, and a `limitless-` job
+the plugin no longer has, which is never deleted. It exits 0 when the plan is empty, 1 otherwise and 2 for a usage
+error or a file it cannot read. It makes none of the calls, writes nothing and never imports Hermes.
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
