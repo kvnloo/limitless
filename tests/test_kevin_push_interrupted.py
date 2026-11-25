@@ -2,12 +2,15 @@
 send_gate.PENDING_UNKNOWN_S (twice the sender's timeout) loses the mark and gets ``"unknown": true``, inside the
 same locked read the push decides on. The row stays: it still counts for the daily cap and the dedupe, since its
 delivery is unknown, not failed. A pending row younger than the limit belongs to a push still running and is
-left alone.
+left alone. A push that was only slow, not killed, and settles after its row was renamed still settles its own row:
+a delivery leaves a plain delivered row, a failed send removes it.
 
 A fake `hermes` on PATH answers at once; a temp HOME and state dir, synthetic titles only; nothing is sent.
 """
 from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import fcntl
+import importlib.machinery
+import importlib.util
 import json
 import os
 import stat
@@ -118,6 +121,57 @@ class KevinPushInterrupted(unittest.TestCase):
         out, err = p.communicate(timeout=60)
         self.assertEqual(p.returncode, 0, err)
         self.assertEqual(self.row(self.sent(), self.old["k"]).get("unknown"), True)
+
+
+def load_kevin_push(st):
+    """bin/kevin-push as a module, its sent.json and lock pointed at ``st`` (a temp dir)."""
+    loader = importlib.machinery.SourceFileLoader("kevin_push_under_test", str(CLI))
+    mod = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(mod)
+    mod.ST, mod.SENT, mod.LOCK = st, st / "sent.json", st / "sent.json.lock"
+    return mod
+
+
+class SlowPushSettlesItsOwnRow(unittest.TestCase):
+    """A push that was only slow (stopped, swapped out), not killed, settles after the next push renamed its row
+    unknown: the row is still its own. Synthetic clock: every time is an offset from T0, nothing is sent."""
+
+    T0 = 1_900_000_000.0
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.kp = load_kevin_push(Path(tmp.name))
+        self.k = send_gate.key("Synthetic slow", "A made-up choice")
+        self.other = {"t": self.T0 - 600, "k": send_gate.key("Synthetic other", "Another made-up choice")}
+        # the slow push's reservation, as main() writes it under the lock
+        self.kp.SENT.write_text(json.dumps([self.other, {"t": self.T0, "k": self.k, "pending": "slowtoken"}]))
+        # the next push's locked read, past PENDING_UNKNOWN_S: the slow push's row is renamed unknown
+        later = self.T0 + send_gate.PENDING_UNKNOWN_S + 60
+        with self.kp.sent_lock():
+            self.kp.SENT.write_text(json.dumps(self.kp.name_unknown(self.kp.read_sent(later), later)))
+        renamed = self.mine()
+        self.assertIs(renamed.get("unknown"), True, renamed)
+        self.assertNotIn("pending", renamed)
+
+    def rows(self):
+        return json.loads(self.kp.SENT.read_text())
+
+    def mine(self):
+        got = [r for r in self.rows() if r.get("k") == self.k]
+        return got[0] if len(got) == 1 else got
+
+    def test_a_delivery_after_the_rename_leaves_a_plain_delivered_row(self):
+        self.kp.settle(self.T0, "slowtoken", True)
+        self.assertEqual(self.rows(), [self.other, {"t": self.T0, "k": self.k}])
+
+    def test_a_failed_send_after_the_rename_removes_the_row(self):
+        self.kp.settle(self.T0, "slowtoken", False)
+        self.assertEqual(self.rows(), [self.other])
+
+    def test_another_push_settling_leaves_the_renamed_row_unknown(self):
+        self.kp.settle(self.T0, "othertoken", True)
+        self.assertIs(self.mine().get("unknown"), True)
 
 
 if __name__ == "__main__":
