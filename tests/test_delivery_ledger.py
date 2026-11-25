@@ -178,5 +178,59 @@ class PeakToken(LedgerCase):
         self.assertEqual(dl.used(self.db, T, DAY), 1)
 
 
+# --- stage moves
+class Moves(LedgerCase):
+    def queued(self, **kw):
+        return dl.reserve(self.db, T, "b", day_start=DAY, now=NOW, **kw).id
+
+    def test_sent_keeps_its_slot(self):
+        i = self.queued()
+        dl.mark_sent(self.db, i, NOW + 5)
+        self.assertEqual((self.row(i)["state"], self.row(i)["sent_at"]), ("sent", NOW + 5))
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+
+    def test_failed_frees_its_slot_and_goes_back_to_held(self):
+        ids = [self.queued(window_class="peak", cap=2) for _ in range(2)]
+        self.assertEqual(dl.reserve(self.db, T, "c", day_start=DAY, now=NOW, cap=2, window_class="peak").state,
+                         "held")
+        dl.mark_failed(self.db, ids[0], release_after=NOW + 60)
+        row = self.row(ids[0])
+        self.assertEqual((row["state"], row["reason"], row["reserved_at"], row["release_after"]),
+                         ("held", "failed", None, NOW + 60))
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+        self.assertEqual(dl.reserve(self.db, T, "d", day_start=DAY, now=NOW, cap=2, window_class="peak").state,
+                         "queued")
+
+    def test_unknown_keeps_its_slot_and_is_never_replayed(self):
+        i = self.queued(window_class="peak", cap=1)
+        dl.mark_unknown(self.db, i)
+        self.assertEqual(self.row(i)["state"], "unknown")
+        self.assertEqual(dl.used(self.db, T, DAY), 1)
+        self.assertEqual(dl.reserve(self.db, T, "c", day_start=DAY, now=NOW, cap=1, window_class="peak").reason,
+                         "cap")
+        for move in (lambda: dl.mark_sent(self.db, i, NOW), lambda: dl.mark_failed(self.db, i),
+                     lambda: dl.mark_unknown(self.db, i)):
+            with self.assertRaises(dl.IllegalTransition):
+                move()
+
+    def test_illegal_moves_raise_and_change_nothing(self):
+        sent = self.queued()
+        dl.mark_sent(self.db, sent, NOW)
+        held = dl.reserve(self.db, T, "h", day_start=DAY, now=NOW, hold="quiet").id
+        before = [dict(r) for r in self.db.execute("SELECT * FROM delivery ORDER BY id")]
+        for move in (lambda: dl.mark_sent(self.db, sent, NOW), lambda: dl.mark_failed(self.db, sent),
+                     lambda: dl.mark_unknown(self.db, sent), lambda: dl.mark_sent(self.db, held, NOW),
+                     lambda: dl.mark_failed(self.db, held), lambda: dl.mark_unknown(self.db, held),
+                     lambda: dl.mark_sent(self.db, 999, NOW)):
+            with self.assertRaises(dl.IllegalTransition):
+                move()
+        self.assertEqual([dict(r) for r in self.db.execute("SELECT * FROM delivery ORDER BY id")], before)
+
+    def test_the_table_refuses_a_slot_on_a_row_that_does_not_hold_one(self):
+        i = self.queued()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("UPDATE delivery SET state = 'held', reason = 'cap' WHERE id = ?", (i,))
+
+
 if __name__ == "__main__":
     unittest.main()
