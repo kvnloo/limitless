@@ -18,6 +18,11 @@ Exit 0 when the beacon was written or left unchanged, and also when there is not
 readable, no message from the person): then nothing is written, an old beacon is left as it is, and one
 line says why. Exit 1 and one line on stderr when the file cannot be written; exit 2 and a usage line for
 bad arguments. It never sends and never prints a traceback.
+
+limitless-owner-beacon schedule --print --kind launchd --out PATH --every MINUTES [--copy-to USER@HOST:PATH]
+[--db PATH ...] [--label LABEL] prints the job that runs the writer every MINUTES and then, with --copy-to,
+`scp -q -p` of the beacon to the plugin host (limitless/beacon_schedule.py). It only prints: it never writes,
+loads, enables or runs anything. Every host-specific value comes from the arguments.
 """
 import json
 import os
@@ -27,11 +32,18 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from limitless import owner_messages  # noqa: E402
+from limitless import beacon_schedule, owner_messages  # noqa: E402
 from limitless.state_reader import OWNER_DBS_CONFIG, OWNER_DBS_ENV, StateReader, state_dir  # noqa: E402
 
 USAGE = "usage: limitless-owner-beacon write --out PATH [--dbs PATH" + os.pathsep + "PATH...]"
+SCHEDULE_USAGE = ("       limitless-owner-beacon schedule --print --kind launchd|systemd --out PATH --every MINUTES "
+                  "[--copy-to USER@HOST:PATH] [--db PATH ...] [--label LABEL]")
+HELP = (USAGE + "\n" + SCHEDULE_USAGE + "\n\n"
+        "schedule --print prints a launchd plist or systemd user units that run the writer every MINUTES and then,\n"
+        "with --copy-to, scp -q -p the beacon there. It only prints: it never writes, loads, enables or runs anything.\n"
+        "Every host-specific value comes from the arguments; review the text, then install it yourself.")
 NAME = "limitless-owner-beacon"
+SCHEDULE_FLAGS = ("--kind", "--out", "--every", "--copy-to", "--label")
 
 
 def parse(args):
@@ -45,6 +57,42 @@ def parse(args):
             return None
         got[flag[2:]] = rest.pop(0)
     return got if "out" in got else None
+
+
+def parse_schedule(args):
+    """{"kind", "out", "every", "copy-to"?, "label"?, "db": [...]} or None for bad arguments."""
+    if not args or args[0] != "schedule":
+        return None
+    got, dbs, printing, rest = {}, [], False, list(args[1:])
+    while rest:
+        flag = rest.pop(0)
+        if flag == "--print" and not printing:
+            printing = True
+            continue
+        if flag not in SCHEDULE_FLAGS + ("--db",) or not rest or not rest[0]:
+            return None
+        value = rest.pop(0)
+        if flag == "--db":
+            dbs.append(value)
+        elif flag[2:] in got:
+            return None
+        else:
+            got[flag[2:]] = value
+    if not printing or not {"kind", "out", "every"} <= set(got) or got["kind"] not in beacon_schedule.KINDS:
+        return None
+    got["db"] = dbs
+    return got
+
+
+def schedule(opts) -> int:
+    every = opts["every"]
+    if not (every.isascii() and every.isdigit()):
+        print(USAGE + "\n" + SCHEDULE_USAGE, file=sys.stderr)
+        return 2
+    print(beacon_schedule.render(opts["kind"], sys.executable, str(Path(__file__).resolve()), opts["out"],
+                                 int(every), copy_to=opts.get("copy-to"), dbs=opts["db"],
+                                 label=opts.get("label", beacon_schedule.DEFAULT_LABEL)), end="")
+    return 0
 
 
 def db_paths(flag):
@@ -113,9 +161,15 @@ def write(out: Path, dbs, now: float) -> int:
 
 def main(argv) -> int:
     args = argv[1:]
-    if args in (["-h"], ["--help"]):
-        print(USAGE)
+    if args in (["-h"], ["--help"], ["schedule", "-h"], ["schedule", "--help"]):
+        print(HELP)
         return 0
+    if args[:1] == ["schedule"]:
+        opts = parse_schedule(args)
+        if opts is None:
+            print(USAGE + "\n" + SCHEDULE_USAGE, file=sys.stderr)
+            return 2
+        return schedule(opts)
     opts = parse(args)
     if opts is None:
         print(USAGE, file=sys.stderr)
