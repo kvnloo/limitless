@@ -13,6 +13,7 @@ import ast
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -163,6 +164,25 @@ class ChildEnv(unittest.TestCase):
                            timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.split(), [str(TEST_HOME), str(TEST_HOME / "a")])
+
+    def test_a_real_child_without_isolation_writes_no_bytecode(self):
+        # No -I: the interpreter honours PYTHON* variables and would cache the imported module next to it (or,
+        # on macOS, under $HOME/Library/Caches). The base env carries no bytecode setting of its own.
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as src:
+            pkg = Path(src, "zq_pkg")
+            pkg.mkdir()
+            (pkg / "__init__.py").write_text("")
+            (pkg / "mod.py").write_text("VALUE = 7\n")
+            script = Path(src, "main.py")
+            script.write_text("from zq_pkg import mod\nprint(mod.VALUE)\n")
+            before = sorted(Path(src).rglob("*"))
+            base = {"PATH": os.environ.get("PATH", ""), "HOME": home}
+            r = subprocess.run([sys.executable, str(script)], env=child_env(base), cwd=home, capture_output=True,
+                               text=True, timeout=60)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "7\n", ""))
+            self.assertEqual(sorted(Path(src).rglob("__pycache__")), [])
+            self.assertEqual(sorted(Path(src).rglob("*")), before)
+            self.assertEqual(sorted(Path(home).iterdir()), [], "the child must write nothing under HOME")
 
     def test_in_process_tilde_never_reaches_the_passwd_home_with_home_unset(self):
         with mock.patch.dict(os.environ, {}, clear=True):
