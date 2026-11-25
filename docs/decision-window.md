@@ -227,6 +227,19 @@ with the reason: an unreadable record, two records with one name, a record with 
 the plugin no longer has, which is never deleted. It exits 0 when the plan is empty, 1 otherwise and 2 for a usage
 error or a file it cannot read. It makes none of the calls, writes nothing and never imports Hermes.
 
+`bin/limitless-cron-spec --plan <the host's cron/jobs.json> --cli` prints the same plan as the host's own
+commands, one shell-quoted line per step for the operator to review and paste: `hermes cron create 'every 5m'
+--name limitless-<job> --script limitless-<job>.sh --no-agent --deliver local` for a missing job, and `hermes cron
+edit <job id>` with only the differing fields that have a flag (`--schedule`, `--script`, `--no-agent` or
+`--agent`, `--deliver`). A "none" step is a `# <job>: <why>` comment, and no line is ever a remove, pause or resume;
+the exit codes are those of `--plan`, and it runs nothing. The gap: on the fork branch (`hermes_cli/subcommands/cron.py`
+at a910662, `create` lines 52-133 and `edit` lines 135-201) neither `hermes cron create` nor `hermes cron edit` has a
+flag for `window_class` or `stale_after_s`, and the `cronjob` tool has no such field, so the two fields this whole
+gate rests on can only be set through `cron.jobs.create_job` / `update_job` or the record itself. Each step that
+needs one gets a `# <job>: window and expiry has no hermes cron flag` comment instead of being dropped; after a
+pasted create, `--plan` again shows the `update_job` call that sets them. A host CLI that took `--window-class` and
+`--stale-after` on both subcommands would close the gap.
+
 ## Open questions
 
 - Should `hold` queue the message for the next matching window, or leave it to the job's
