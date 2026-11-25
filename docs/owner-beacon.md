@@ -6,8 +6,9 @@ host cannot open, you look away for days and the catch-up fires when it should n
 the other machine writes a tiny file with only its newest user-message time, and the plugin host reads it
 as one more source.
 
-- **Write** (on the other machine): `bin/limitless-owner-beacon write --out PATH [--dbs a.db:b.db]`. It
-  reads the DBs (`--dbs`, else `LIMITLESS_OWNER_DBS` or config `owner_dbs`) read-only, with the same query
+- **Write** (on the other machine): `bin/limitless-owner-beacon write --out PATH [--dbs a.db:b.db] [--db-glob PATTERN ...]`.
+  It reads the DBs (`--dbs`, plus every match of each `--db-glob` pattern, expanded on every run, sorted, each
+  path once; else `LIMITLESS_OWNER_DBS` or config `owner_dbs`) read-only, with the same query
   as `limitless/owner_messages.py`, and writes `{"at": "<ISO UTC>", "v": 1}` through a temp file and a
   rename, mode 0600. No content, counts, sessions or source names. With no message to report it writes
   nothing, leaves an old beacon alone, prints one line and exits 0. When the newest time is the one already
@@ -36,24 +37,32 @@ password or host-key prompt fail at once, since nobody is at a terminal when the
 to the plugin host first). It only prints: it never writes, loads,
 enables or runs anything, and every host-specific value comes from your arguments (there is no default host,
 user or path). The job runs one `/bin/sh -c` line with every value shell-quoted; the writer runs with the
-interpreter and checkout you ran `schedule` from. `--db PATH` (repeatable) passes `--dbs` to the writer; without
-it the writer uses `LIMITLESS_OWNER_DBS` or config `owner_dbs`. `--label` names the job (default
-`limitless.owner-beacon`).
+interpreter and checkout you ran `schedule` from. `--label` names the job (default `limitless.owner-beacon`).
+
+Which stores the writer reads: prefer `--db-glob PATTERN` (repeatable) over a fixed `--db PATH` list. The
+pattern is put into the job as you gave it, not expanded, and the writer expands it with Python's `glob` on
+every run, so a store added later (a new agent home with its own `state.db`) is read by the next run without
+printing and installing the job again. A fixed `--db PATH` (repeatable; passed as `--dbs`) is frozen into the
+job: a store you add afterwards is never read and the beacon goes stale while you chat there. Both can be
+combined; a path matched twice is read once, and a pattern that matches nothing is not an error. Quote the
+pattern when you type the command (`"$HOME/<agent homes>/*/state.db"`) so your shell does not expand it
+first. With neither flag the writer uses `LIMITLESS_OWNER_DBS` or config `owner_dbs`.
 
 It refuses, in one line with exit 2: `--every` under 5 or over 1440, a `--copy-to` without a `:` (or one that
-starts with `-`), a relative `--out` or `--db` (`~` is not expanded by the job), and any value with a newline.
+starts with `-`), a relative `--out`, `--db` or `--db-glob` (`~` is not expanded by the job), and any value
+with a newline. The writer refuses a relative `--db-glob` or one with a newline the same way.
 
 Create the beacon's directory first (`mkdir -p "$HOME/.cache/limitless"`), then on macOS:
 
 ```
-bin/limitless-owner-beacon schedule --print --kind launchd --out "$HOME/.cache/limitless/owner-beacon.json" --every 60 --copy-to "<plugin host>:<state dir>/beacons/this-machine.json" --label org.example.owner-beacon
+bin/limitless-owner-beacon schedule --print --kind launchd --out "$HOME/.cache/limitless/owner-beacon.json" --every 60 --copy-to "<plugin host>:<state dir>/beacons/this-machine.json" --label org.example.owner-beacon --db-glob "$HOME/<agent homes>/*/state.db"
 ```
 
 Review the plist, save it as `~/Library/LaunchAgents/org.example.owner-beacon.plist`, then
 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.example.owner-beacon.plist`. On Linux:
 
 ```
-bin/limitless-owner-beacon schedule --print --kind systemd --out "$HOME/.cache/limitless/owner-beacon.json" --every 60 --copy-to "<plugin host>:<state dir>/beacons/this-machine.json" --label owner-beacon
+bin/limitless-owner-beacon schedule --print --kind systemd --out "$HOME/.cache/limitless/owner-beacon.json" --every 60 --copy-to "<plugin host>:<state dir>/beacons/this-machine.json" --label owner-beacon --db-glob "$HOME/<agent homes>/*/state.db"
 ```
 
 It prints two units, each after a `# <label>.service` / `# <label>.timer` line. Save them under

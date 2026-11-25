@@ -63,6 +63,15 @@ class PrintedSchedule(unittest.TestCase):
         self.assertIn("scp -q -p", self.text)
         self.assertIn("0600", self.text)
 
+    def test_prefers_a_db_glob_over_a_fixed_db_list(self):
+        for kind in ("launchd", "systemd"):
+            self.assertRegex(self.text, r"bin/limitless-owner-beacon schedule --print --kind " + kind
+                             + r" [^\n]*--db-glob \S+")
+        self.assertIn("prefer `--db-glob PATTERN`", self.text)
+        self.assertIn("added later", self.text)
+        self.assertIn("bin/limitless-owner-beacon write --out PATH [--dbs a.db:b.db] [--db-glob PATTERN ...]",
+                      self.text)
+
     def test_check_it_with_the_doctor_row(self):
         m = re.search(r"(?ms)^#+ Check it\b.*?(?=^#+ |\Z)", self.text)
         self.assertIsNotNone(m, "no 'Check it' section")
