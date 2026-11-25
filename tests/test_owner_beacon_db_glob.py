@@ -3,18 +3,28 @@ added after the job was printed is read by the next scheduled write without repr
 
 Synthetic data only: stores live in temp dirs; printed text uses /tmp/example/... Nothing sends; no network.
 """
-from hermetic_env import child_env  # noqa: F401  (first import: isolates HOME, see tests/hermetic_env.py)
+from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import importlib.machinery
 import importlib.util
 import json
 import os
+import plistlib
+import subprocess
 import sys
+import tempfile
+import time
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from test_owner_beacon_cli import CLI, H, Base, iso  # noqa: E402
+from test_owner_beacon_schedule import Base as ScheduleBase  # noqa: E402
+from test_owner_beacon_schedule import DEST, LABEL, OUT, SCP, systemd_words, units, writer  # noqa: E402
 from test_owner_messages import CONTENT, make_db  # noqa: E402
+
+PATTERN = "/tmp/example/homes/*/state.db"
+ODD_PATTERN = "/tmp/example/it's [a-z]?/*.db"   # a space, a quote, a class and a ?: none expanded by the shell
 
 
 def load_cli():
@@ -102,6 +112,56 @@ class Expansion(GlobBase):
 
     def test_no_match_and_no_dbs_is_none(self):
         self.assertIsNone(self.cli.db_paths(None, [str(self.dir / "none" / "*.db")]))
+
+
+class PrintedJob(ScheduleBase):
+    """schedule --print passes each pattern through to the writer as it was given: shell-quoted (so /bin/sh does
+    not expand it), escaped for systemd, never expanded at print time."""
+
+    def writer_step(self, kind, *args):
+        text = self.schedule("--kind", kind, *args)
+        if kind == "launchd":
+            words = plistlib.loads(text.encode())["ProgramArguments"]
+        else:
+            words = systemd_words(units(text)[LABEL + ".service"]["Service"]["ExecStart"])
+        return self.sh_steps(words)
+
+    def test_launchd_carries_the_literal_patterns(self):
+        steps = self.writer_step("launchd", "--out", OUT, "--every", "60", "--copy-to", DEST,
+                                 "--db", "/tmp/example/a.db", "--db-glob", PATTERN, "--db-glob", ODD_PATTERN)
+        self.assertEqual(steps, [writer(OUT, ["/tmp/example/a.db"]) + ["--db-glob", PATTERN, "--db-glob", ODD_PATTERN],
+                                 SCP + [OUT, DEST]])
+
+    def test_systemd_carries_the_literal_patterns_with_a_dollar_and_a_percent(self):
+        odd = "/tmp/example/50% $HOME/*/state.db"
+        steps = self.writer_step("systemd", "--label", LABEL, "--out", OUT, "--every", "60", "--copy-to", DEST,
+                                 "--db-glob", PATTERN, "--db-glob", odd)
+        self.assertEqual(steps, [writer(OUT) + ["--db-glob", PATTERN, "--db-glob", odd], SCP + [OUT, DEST]])
+
+    def test_a_store_added_after_the_job_was_printed_is_read_by_the_next_write(self):
+        now = time.time()
+        for kind in ("launchd", "systemd"):
+            with tempfile.TemporaryDirectory() as d:
+                homes, out = Path(d) / "homes", Path(d) / "beacon.json"
+                pattern = str(homes / "*" / "state.db")
+                (homes / "one").mkdir(parents=True)
+                make_db(homes / "one" / "state.db", [("s-cli", "user", CONTENT, now - 3 * H)])
+                [argv] = self.writer_step(kind, "--label", LABEL, "--out", str(out), "--every", "60",
+                                          "--db-glob", pattern)
+                self.assertEqual(argv[-2:], ["--db-glob", pattern], kind)
+                self.assertEqual(self.run_step(argv), 0, kind)
+                self.assertEqual(json.loads(out.read_text())["at"], iso(float(int(now - 3 * H))), kind)
+                (homes / "two").mkdir()     # a new agent home: the job is not printed again
+                make_db(homes / "two" / "state.db", [("s-tg", "user", CONTENT, now - H)])
+                self.assertEqual(self.run_step(argv), 0, kind)
+                self.assertEqual(json.loads(out.read_text())["at"], iso(float(int(now - H))), kind)
+
+    def run_step(self, argv):
+        """Run the printed writer argv as the job would (no shell needed: the words are already split)."""
+        r = subprocess.run(argv, capture_output=True, text=True, env=child_env(self.env), cwd=str(self.home),
+                           timeout=30)
+        self.assertEqual(r.stderr, "")
+        return r.returncode
 
 
 if __name__ == "__main__":
