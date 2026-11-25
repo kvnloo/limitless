@@ -178,7 +178,8 @@ class InTheReport(Case):
         at = names.index(ROW)
         self.assertEqual(names[at - 1], doctor.NOOP_MCP_ROW)
         self.assertEqual(names[at + 1], doctor.HOST_SCRIPTS_ROW)   # then the host job scripts row
-        self.assertEqual(names[at + 2], doctor.DESKTOP_AW_ROW)
+        self.assertEqual(names[at + 2], doctor.HOST_JOBS_ROW)      # then the host job records row
+        self.assertEqual(names[at + 3], doctor.DESKTOP_AW_ROW)
         self.assertEqual(rows[at]["kind"], "source")
         self.assertNotIn("source", doctor.STRICT_KINDS)
         self.assertEqual((rows[at]["status"], rows[at]["reason"]), (doctor.LIVE, NOT_CHECKED + HOLD))

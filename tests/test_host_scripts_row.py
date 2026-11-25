@@ -238,7 +238,8 @@ class InTheReport(Case):
         names = [r["name"] for r in rows]
         at = names.index(doctor.CRON_WINDOW_ROW)
         self.assertEqual(names[at + 1], ROW)
-        self.assertEqual(names[at + 2], doctor.DESKTOP_AW_ROW)
+        self.assertEqual(names[at + 2], doctor.HOST_JOBS_ROW)   # then the host job records row
+        self.assertEqual(names[at + 3], doctor.DESKTOP_AW_ROW)
         self.assertEqual(rows[at + 1]["status"], doctor.OFF)
 
     def test_the_report_reads_the_config_key(self):
