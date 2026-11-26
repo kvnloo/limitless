@@ -281,6 +281,13 @@ MISSING = "missing: the sender profile does not exist"
 NOT_TELEGRAM = UNKNOWN_PREFIX + "the send target is not a Telegram chat"
 SECRET_SOURCE = UNKNOWN_PREFIX + "the sender profile may keep its Telegram bot token in a secret source"
 FILES_UNREADABLE = UNKNOWN_PREFIX + "the sender profile's files cannot be read"
+NOT_READ_IN_HOST = UNKNOWN_PREFIX + "the sender profile's token is not read inside Hermes"
+
+# Inside Hermes, which imports the plugin as ``hermes_plugins.<slug>`` (see the repo's __init__.py), readiness
+# never opens a profile's ``.env`` or ``config.yaml``: a plugin gets credentials only through Hermes
+# (plugin-catalog rule 11), so there the token's presence is unknown and candidates offer the profile as a maybe.
+# The CLIs (limitless-doctor, limitless-sender-probe) import ``limitless`` itself and keep the presence read.
+READ_PROFILE_FILES = not __name__.startswith("hermes_plugins.")
 
 TOKEN_KEY, HOME_CHANNEL_KEY = "TELEGRAM_BOT_TOKEN", "TELEGRAM_HOME_CHANNEL"
 # plugins/platforms/telegram/telegram_ids.py parse_send_target: "<chat id>[:<topic id>]", "<dm id>:<topic name>",
@@ -439,6 +446,8 @@ def readiness(cfg: Optional[Mapping], env: Optional[Mapping[str, str]] = None,
     platform, _, ref = target(cfg, env).partition(":")
     if platform.strip().lower() != "telegram":
         return NOT_TELEGRAM
+    if not READ_PROFILE_FILES:
+        return NOT_READ_IN_HOST
     home = _profile_home(cfg, env, hermes_home)
     try:
         dotenv = _dotenv_filled(_text(home / ".env"))

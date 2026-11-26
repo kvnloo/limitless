@@ -41,7 +41,7 @@ import re
 import shlex
 from typing import Any, NamedTuple
 
-from limitless import jobs
+from . import jobs
 
 POLL = "every 5m"          # a poll for events, never a clock time
 SENDS_NOTHING = frozenset(s.name for s in (jobs.NOOP_EXPORT, jobs.APPS_INGEST, jobs.RANKED_INGEST,

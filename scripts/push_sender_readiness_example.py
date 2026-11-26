@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 from limitless import doctor  # noqa: E402
 
-TOKEN = "made-up-token-never-printed"
+TOKEN = os.urandom(16).hex()   # a random made-up token for this run, never printed
 HOME_CHANNEL = "100001"   # a made-up home channel id
 
 with tempfile.TemporaryDirectory() as tmp:
