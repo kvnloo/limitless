@@ -145,8 +145,14 @@ under the `sent.json.lock` flock, the rows still inside the budget day are impor
 becomes `sent`, a pending or unknown one becomes `unknown` (it keeps its slot and dedupe key), and a
 `held.jsonl` row (Sleep mode is its only writer) becomes `held` with reason `sleep`. From then on the two files
 are no longer written, and nothing reads them. There is never a period where both are written: no dual write, no
-shadow run, no fallback to the files. This draft builds none of it; `kevin-push` and the jobs runner are
-unchanged until that one step.
+shadow run, no fallback to the files. `kevin-push` and the jobs runner are unchanged until that one step.
+
+The import itself is built: `import_legacy(conn, target, sent_rows, held_rows, day_start=, now=)` runs in one
+`BEGIN IMMEDIATE`, only into an empty ledger (`LedgerNotEmpty` otherwise), and returns counts
+`{sent, unknown, held, skipped}`. A quiet claim (`"quiet": true`, a dropped push that only claimed its event
+key) never counted as a send and is skipped; held rows are imported whatever their age (body = title line, then
+the body) so none is dropped silently; the dedup key is `once:<key>`, else `k:<send_gate key>` (held.py's form).
+Nothing calls it yet.
 
 ## Open questions for review
 

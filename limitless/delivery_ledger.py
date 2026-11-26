@@ -227,6 +227,76 @@ def due_held(conn, now: float) -> list:
         " AND release_after <= ? ORDER BY created_at, id", (now,))]
 
 
+class LedgerNotEmpty(RuntimeError):
+    """``import_legacy`` runs once, into an empty ledger (Cutover is one step, never a merge)."""
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _legacy_key(row: dict) -> "str | None":
+    once = row.get("once")
+    if isinstance(once, str) and once.strip():
+        return "once:" + once.strip()
+    k = row.get("k")
+    return ("k:" + k) if isinstance(k, str) and k else None
+
+
+def import_legacy(conn, target: str, sent: list, held_rows: list, *, day_start: float, now: float) -> dict:
+    """Cutover import (docs/delivery-ledger.md): ``sent`` (sent.json rows) and ``held_rows`` (held.rows() of
+    held.jsonl) become ledger rows for ``target`` in ONE BEGIN IMMEDIATE, into an empty ledger only
+    (``LedgerNotEmpty`` otherwise). The caller holds the sent.json.lock flock and stops writing both files after.
+
+    - a sent row reserved since ``day_start``: delivered -> ``sent``; marked pending or unknown -> ``unknown``
+      (keeps its slot and dedupe key); older rows are outside the budget day and are skipped;
+    - a quiet claim (``"quiet": true``) never counted as a send and is skipped;
+    - every held row -> ``held`` reason ``sleep`` (Sleep mode is held.jsonl's only writer), its body the title
+      line then the body, whatever its age (a held message is never dropped silently: ``expire_old`` counts it);
+    - a row that is not one of these shapes is skipped.
+
+    The dedup key is ``once:<key>`` when the row has one, else ``k:<send_gate key>`` (held.hold_key's form).
+    Returns counts {sent, unknown, held, skipped}. No clock is read."""
+    if not _target_ok(target):
+        raise ValueError(f"target is not platform:chat_id:thread_id: {target!r}")
+    if day_start > now:
+        raise ValueError("day_start is after now")
+    out = {"sent": 0, "unknown": 0, "held": 0, "skipped": 0}
+    ins = ("INSERT INTO delivery (target, job_id, dedup_key, window_class, state, reason, body, created_at,"
+           " release_after, sent_at, reserved_at) VALUES (?, NULL, ?, 'anytime', ?, ?, ?, ?, NULL, ?, ?)")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if conn.execute("SELECT 1 FROM delivery LIMIT 1").fetchone() is not None:
+            raise LedgerNotEmpty("the ledger already has rows: import runs once, at cutover")
+        for row in sent:
+            t = row.get("t") if isinstance(row, dict) else None
+            if not _num(t) or row.get("quiet") is True or not (day_start <= t <= now):
+                out["skipped"] += 1
+                continue
+            if "pending" in row or row.get("unknown") is True:
+                conn.execute(ins, (target, _legacy_key(row), "unknown", None, "", t, None, t))
+                out["unknown"] += 1
+            else:
+                conn.execute(ins, (target, _legacy_key(row), "sent", None, "", t, t, t))
+                out["sent"] += 1
+        for row in held_rows:
+            if not isinstance(row, dict):
+                out["skipped"] += 1
+                continue
+            title, body, at = row.get("title"), row.get("body"), row.get("at")
+            if not isinstance(title, str) or not isinstance(body, str) or not _num(at):
+                out["skipped"] += 1
+                continue
+            text = f"{title}\n{body}" if title else body
+            conn.execute(ins, (target, _legacy_key(row), "held", "sleep", text, float(at), None, None))
+            out["held"] += 1
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return out
+
+
 def expire_old(conn, now: float, max_age_s: float) -> int:
     """held -> expired for every row held since ``now - max_age_s`` or earlier; returns how many moved, for the
     one count line. No row is ever deleted."""
