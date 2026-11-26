@@ -209,6 +209,17 @@ def mark_unknown(conn, row_id: int) -> None:
     _move(conn, row_id, "queued", "unknown")
 
 
+def name_stale_unknown(conn, now: float, after_s: float) -> int:
+    """queued -> unknown for every row that took its slot more than ``after_s`` before ``now``: its send was
+    killed before it settled (kevin-push's name_unknown on sent.json; pass send_gate.PENDING_UNKNOWN_S). One
+    UPDATE; the rows keep their slot and dedupe key and are never replayed, and a send that was only slow still
+    settles its own row (``mark_sent``, ``mark_failed``). Returns how many moved."""
+    if after_s < 0:
+        raise ValueError("after_s must not be negative")
+    return conn.execute("UPDATE delivery SET state = 'unknown' WHERE state = 'queued' AND reserved_at < ?",
+                        (now - after_s,)).rowcount
+
+
 def mark_failed(conn, row_id: int, release_after: "float | None" = None) -> None:
     """queued or unknown -> held, reason ``failed``: the transport said it did not deliver. The slot is freed
     (its ``reserved_at`` is cleared) and the row waits for ``release`` like any other held row."""
