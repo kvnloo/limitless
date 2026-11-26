@@ -87,6 +87,7 @@ Only these moves exist; anything else raises `IllegalTransition`.
 | (new) | `held` | `reserve` (dedup, quiet, sleep, cap) | none |
 | `queued` | `sent` | `mark_sent(id, now)` | kept |
 | `queued` | `unknown` | `mark_unknown(id)` | kept |
+| `queued` (reserved more than `after_s` ago) | `unknown` | `name_stale_unknown(now, after_s)` | kept |
 | `queued` | `held` (reason `failed`) | `mark_failed(id, release_after)` | freed |
 | `unknown` | `sent` | `mark_sent(id, now)` (a slow send confirmed delivery) | kept; `sent_at` set |
 | `unknown` | `held` (reason `failed`) | `mark_failed(id, release_after)` (a slow send confirmed failure) | freed |
@@ -159,6 +160,11 @@ home channel, or `telegram:<chat>:<topic>`), not always three parts. `ledger_tar
 the ledger key without resolving anything: platform lowercased, parts stripped, a missing thread empty, a bare
 platform `HOME_CHAT` (`telegram:<home>:`). The key is the configured target itself, so changing `push_to` starts
 a new budget; the same target always gives the same key. Nothing calls it yet.
+
+A send killed before it settled (OOM kill, reboot) leaves its row `queued`. `name_stale_unknown(conn, now,
+after_s)` is the ledger form of kevin-push's pending -> unknown rename: one `UPDATE` moves every `queued` row
+reserved more than `after_s` ago (`send_gate.PENDING_UNKNOWN_S`) to `unknown`. It keeps its slot and dedupe key,
+and a send that was only slow still settles its own row from `unknown`. Nothing calls it yet.
 
 ## Open questions for review
 
