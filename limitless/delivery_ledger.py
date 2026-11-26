@@ -87,6 +87,27 @@ def _target_ok(target) -> bool:
     return len(parts) == 3 and bool(parts[0]) and bool(parts[1]) and "\n" not in target
 
 
+# The chat part of the key for a bare-platform send target (``telegram``: Hermes sends it to the home channel).
+HOME_CHAT = "<home>"
+
+
+def ledger_target(send_target) -> str:
+    """kevin-push's send target (the ``hermes send --to`` value: ``platform``, ``platform:ref`` or
+    ``platform:chat:thread``) as the ledger's ``platform:chat_id:thread_id`` budget key. Nothing is resolved:
+    the key is the configured target itself, platform lowercased and parts stripped, a missing thread empty, a
+    bare platform (its home channel) HOME_CHAT. The same target always gives the same key. ValueError for a
+    non-string, an empty platform or a newline."""
+    if not isinstance(send_target, str) or "\n" in send_target:
+        raise ValueError("send target is not one line of text")
+    platform, _, ref = send_target.partition(":")
+    platform = platform.strip().lower()
+    if not platform:
+        raise ValueError("send target has no platform")
+    chat, _, thread = ref.partition(":")
+    chat = chat.strip() or HOME_CHAT
+    return f"{platform}:{chat}:{thread.strip()}"
+
+
 def _check_args(target, window_class, day_start, now, cap):
     if not _target_ok(target):
         raise ValueError(f"target is not platform:chat_id:thread_id: {target!r}")
