@@ -154,6 +154,12 @@ key) never counted as a send and is skipped; held rows are imported whatever the
 the body) so none is dropped silently; the dedup key is `once:<key>`, else `k:<send_gate key>` (held.py's form).
 Nothing calls it yet.
 
+kevin-push's send target is a `hermes send --to` value (`telegram:<contact alias>`, a bare `telegram` for the
+home channel, or `telegram:<chat>:<topic>`), not always three parts. `ledger_target(send_target)` turns it into
+the ledger key without resolving anything: platform lowercased, parts stripped, a missing thread empty, a bare
+platform `HOME_CHAT` (`telegram:<home>:`). The key is the configured target itself, so changing `push_to` starts
+a new budget; the same target always gives the same key. Nothing calls it yet.
+
 ## Open questions for review
 
 - Digest body cap: how many held rows, or characters, ride one digest before the rest wait for the next
