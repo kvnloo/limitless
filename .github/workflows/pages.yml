@@ -1,9 +1,10 @@
 name: pages
-# Publishes the launch page (site/) at https://kvnloo.github.io/limitless/
+# The launch page now lives on Vercel (https://limitless-hermes.vercel.app/, deployed from site/).
+# GitHub Pages publishes only redirect/, which forwards every old link there, keeping #sections.
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/pages.yml']
+    paths: ['redirect/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,13 +21,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Stage site
+      - name: Stage redirect
         run: |
-          mkdir -p _site && cp -R site/. _site/ && touch _site/.nojekyll
-          # every local href/src in the page must exist in the staged site
-          grep -oE '(href|src|poster)="[^"#:]+"' _site/index.html | sed -E 's/.*="([^"]+)"/\1/' | while read -r f; do
-            [ -e "_site/${f%/}" ] || { echo "missing: $f"; exit 1; }
-          done
+          mkdir -p _site && cp redirect/index.html redirect/404.html _site/ && touch _site/.nojekyll
+          grep -q 'https://limitless-hermes.vercel.app' _site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
