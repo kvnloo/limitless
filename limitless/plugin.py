@@ -9,8 +9,8 @@ when the host has it, ctx.register_system_prompt_section(id, content, *, positio
 (prompt_rules.py; config prompt_rules false turns it off) and, when the host has it,
 ctx.register_window_provider(provider) for Hermes' cron decision-window gate (window_provider.py; config
 window_provider off turns it off). Hooks: pre_llm_call (the state card), post_gateway_admission (bedtime capture,
-bedtime.py), pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args) and, when the
-host knows the name, transform_tool_result (result_tier.py: a listed health tool's numbers become words; off by
+bedtime.py), pre_tool_call (focus_safe.py: advisory, off by default, never blocks or rewrites args) and, unless a
+loaded host lacks the name, transform_tool_result (result_tier.py: a listed health tool's numbers become words; off by
 default).
 Handlers follow the documented contract: handler(args: dict, **kwargs) -> str (JSON), never raising.
 Every result is an evidence envelope (envelope.py), with a T1 age label next to a non-null value; every labeled
@@ -715,7 +715,7 @@ def register(ctx) -> None:
     # host has register_system_prompt_section and config prompt_rules is not false; never raises (prompt_rules.py)
     prompt_rules.register(ctx)
     # result tier (off until config t0_tools lists a health tool): every number in a listed tool's result
-    # becomes "a number" before it enters context, when the host knows transform_tool_result (result_tier.py)
+    # becomes "a number" before it enters context, unless a loaded host lacks transform_tool_result (result_tier.py)
     result_tier.register(ctx, clock=lambda: time.time())
     # the plugin's decision window as Hermes' cron window provider, when the host has register_window_provider
     # and config window_provider is not off; held jobs wait for their window; never raises (window_provider.py)

@@ -23,9 +23,11 @@ From the public hermes-agent repo, not guessed:
   is longer. So `mcp__<server>__*` covers every tool of one server.
 - `hermes_cli/plugins.py`, `VALID_HOOKS`: the hook names the host knows. The published ctx API has no list
   of hook names, so `result_tier.register` reads `VALID_HOOKS` from the host's already-loaded
-  `hermes_cli.plugins` module (sys.modules only, never an import) and registers the hook only when the name
-  is there. An older host, or a test ctx with no host module, gets nothing and one content-free log line;
-  every tool and the other hooks still load.
+  `hermes_cli.plugins` module (sys.modules only, never an import) and skips the hook only when that module is
+  loaded and lacks the name (an older host gets one content-free log line instead). With no host module loaded
+  (a test ctx, or the isolated capability probe of `hermes plugins validate`) the hook registers, since the
+  `requires_hermes` floor already guarantees it wherever Hermes loads the plugin. Every tool and the other
+  hooks load either way.
 
 ## Config
 

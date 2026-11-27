@@ -195,8 +195,9 @@ def owner_db(path, at=NOW - 30 * 3600):
     return path
 
 
-# hooks plugin.py registers only when the host knows the name (feature detection): a bare FakeCtx has no host
-HOST_DETECTED_HOOKS = {"transform_tool_result"}
+# hooks plugin.py skips only on a loaded host that lacks the name (feature detection); a bare FakeCtx has no
+# host module, so it gets every manifest hook (test_result_tier_register)
+HOST_DETECTED_HOOKS = set()
 
 
 def fake_ctx_hooks():
@@ -266,7 +267,8 @@ class Wiring(unittest.TestCase):
 
     def test_the_six_tools_and_the_hook(self):
         self.assertEqual(sorted(self.ctx.tools), TOOLS)
-        self.assertEqual(sorted(self.ctx.hooks), ["post_gateway_admission", "pre_llm_call", "pre_tool_call"])
+        self.assertEqual(sorted(self.ctx.hooks), ["post_gateway_admission", "pre_llm_call", "pre_tool_call",
+                                                  "transform_tool_result"])
 
     def test_every_tool_returns_an_envelope(self):
         st = Path(self.tmp.name)
