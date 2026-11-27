@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO))
 from limitless import doctor, push_sender  # noqa: E402
 from limitless.state_reader import StateReader  # noqa: E402
 
-TOKEN = "made-up-token-never-printed"
+TOKEN = os.urandom(16).hex()   # a random made-up token for this run, never printed
 NOW = 1894708800.0   # a fixed made-up clock
 H = 3600.0
 READY_ENV = f"TELEGRAM_BOT_TOKEN={TOKEN}\nTELEGRAM_HOME_CHANNEL=made-up-chat\n"

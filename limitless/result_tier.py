@@ -30,10 +30,12 @@ each call and, for each result it replaces, records one content-free tier_audit 
 ``transform_tool_result:result_tier``, the glob that matched and the count of numbers replaced; never a
 value, the text or a hash; nothing when the audit is off). A failed audit write never stops the replacement.
 
-register(ctx) adds the hook only when the host knows the name: the published ctx API has no list of hook
+register(ctx) adds the hook unless a loaded host lacks the name: the published ctx API has no list of hook
 names, so it reads ``VALID_HOOKS`` from the host's already-loaded ``hermes_cli.plugins`` module
-(sys.modules only, never an import). A host without that module or without the name (an older Hermes, a test
-ctx) gets nothing and one content-free log line; the plugin's tools and other hooks load either way.
+(sys.modules only, never an import). A loaded host without the name, or with a table it cannot read (an older
+Hermes), gets nothing and one content-free log line. With no host module loaded at all (a test ctx, or the
+isolated capability probe of ``hermes plugins validate``) it registers: the plugin's requires_hermes floor
+already guarantees the hook wherever Hermes loads it. The plugin's tools and other hooks load either way.
 
 The tool (``tool``, limitless_result_tier) is read-only: ``value {filter (on or off), tool_globs (no globs, one
 glob, two globs ... ten globs, many globs), raw_numbers_opt_in (on or off), host_hook (known, or unknown: this
@@ -190,9 +192,19 @@ def host_knows(hook_name: str) -> bool:
     return isinstance(hooks, (set, frozenset, list, tuple, dict)) and hook_name in hooks
 
 
+def host_lacks(hook_name: str) -> bool:
+    """True only when a host plugins module IS loaded and does not list ``hook_name``; never imports.
+
+    No loaded host module (a bare test ctx, or ``hermes plugins validate``'s isolated capability probe, which
+    deliberately imports nothing from Hermes) is not evidence of an older host: the plugin's requires_hermes
+    floor already guarantees the hook wherever Hermes loads it, so the hook is registered there."""
+    mod = sys.modules.get(HOST_MODULE)
+    return mod is not None and not host_knows(hook_name)
+
+
 def register(ctx, clock: Callable[[], float] = time.time) -> None:
-    """Register the hook on a host that knows its name; otherwise one content-free line. Never raises."""
-    if not host_knows(HOOK_NAME):
+    """Register the hook unless a loaded host lacks its name (then one content-free line). Never raises."""
+    if host_lacks(HOOK_NAME):
         logger.info(NO_HOST)
         return
     try:
