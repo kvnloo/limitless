@@ -22,6 +22,17 @@ def tracked():
     return [ROOT / p for p in out if p != "tests/test_public_hygiene.py"]
 
 
+# Build/deploy config by exact file name; any other .json outside fixtures counts as data.
+CONFIG_JSON = {"package.json", "vercel.json"}
+
+
+def is_data_file(rel):
+    if rel.name in CONFIG_JSON:
+        return False
+    return (rel.suffix in {".db", ".sqlite", ".sqlite3", ".csv"}
+            or (rel.suffix in {".jsonl", ".json"} and "fixtures" not in rel.parts))
+
+
 class PublicHygiene(unittest.TestCase):
     def test_no_private_strings(self):
         hits = []
@@ -35,10 +46,18 @@ class PublicHygiene(unittest.TestCase):
                     hits.append(f"{f.relative_to(ROOT)}: {what}: {m.group(0)[:40]}")
         self.assertEqual(hits, [], "\n".join(hits))
 
+    def test_build_config_json_is_not_data(self):
+        for rel in ("site/package.json", "site/vercel.json", "package.json"):
+            self.assertFalse(is_data_file(Path(rel)), rel)
+
+    def test_other_json_outside_fixtures_is_data(self):
+        for rel in ("site/state.json", "site/package-lock.json", "data/vercel.jsonl", "x.csv"):
+            self.assertTrue(is_data_file(Path(rel)), rel)
+        self.assertFalse(is_data_file(Path("tests/fixtures/state.json")))
+
     def test_no_data_files(self):
         data = [str(f.relative_to(ROOT)) for f in tracked()
-                if f.suffix in {".db", ".sqlite", ".sqlite3", ".csv"}
-                or (f.suffix in {".jsonl", ".json"} and "fixtures" not in f.parts)]
+                if is_data_file(f.relative_to(ROOT))]
         self.assertEqual(data, [])
 
 
