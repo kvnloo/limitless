@@ -4,6 +4,7 @@ Why-now line). Fake `hermes` on PATH, temp HOME; synthetic data only, no real pe
 from hermetic_env import child_env  # first import: isolates HOME, see tests/hermetic_env.py
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -16,8 +17,8 @@ CLI = ROOT / "bin" / "kevin-push"
 FIX = ROOT / "tests" / "fixtures" / "state"
 sys.path.insert(0, str(ROOT))
 from limitless import (anki, body as body_, brief_post, flow_metrics, flow_week, idea_ledger, jobs,  # noqa: E402
-                       jobs_runner, message_shape, naps, one_tap, overnight, passive_habit, presleep_hr, rides,
-                       send_gate, sleep, stop_rule, weekly_target, wind_down)
+                       jobs_runner, message_shape, naps, one_tap, outage_recap, overnight, passive_habit, presleep_hr,
+                       rides, send_gate, sender_confirm_job, sleep, stop_rule, weekly_target, wind_down)
 from limitless.state_reader import StateReader  # noqa: E402
 
 NOW = 1894708800.0
@@ -75,14 +76,38 @@ def nap_body():
     return jobs_runner.body(jobs.NAP)
 
 
+def break_body():
+    return jobs_runner.body(jobs.BREAK_NUDGE)
+
+
+def outage_body():
+    """The recap with the most kinds it names (more than MAX_KINDS missed kinds, one title it must not repeat)."""
+    titles = (jobs.WAKE_BRIEF.send_title, jobs.MIQ.send_title, jobs.NAP.send_title, jobs.HABIT_CHECKIN.send_title,
+              jobs.BREAK_NUDGE.send_title, "Build t_0123abcd landed")
+    failed = [{"at": NOW - 86400 - 60 * i, "title": t, "body": f"text {i}"} for i, t in enumerate(titles)]
+    return outage_recap.body_for({"failed": failed, "first_at": NOW - 86400 - 600}, NOW)
+
+
+def sender_body():
+    return sender_confirm_job.BODY
+
+
 # (title, body builder, asks): the title kevin-push sends it under, as its sender does
 JOBS = {
     "wake brief": ("Wake-up brief", wake_brief_body, False),
     "MIQ": ("MIQ for tonight?", miq_body, True),
     "week review": (jobs.WEEK_REVIEW.send_title, week_review_body, True),
     "habit check-in": (jobs.HABIT_CHECKIN.send_title, checkin_body, True),
-    "nap": ("Back from nap", nap_body, False),
+    "back from nap": ("Back from nap", nap_body, False),
+    "break nudge": (jobs.BREAK_NUDGE.send_title, break_body, False),
+    "outage recap": (outage_recap.TITLE, outage_body, True),
+    "sender confirmation": (sender_confirm_job.TITLE_SENT, sender_body, False),
 }
+# Jobs that send nothing a person reads (they read or write files on a sync). Every other job in jobs.JOB_WORDS
+# sends a message, so it needs a row in JOBS: a new message job fails here until its card is in the contract.
+NO_MESSAGE = {"noop_export", "apps_ingest", "ranked_ingest", "sender_ingest", "fit_ingest", "idea_ledger"}
+CARD_ID = re.compile(r"\bt_[0-9a-f#]{4,}\b")                              # a kanban card id, masked or not
+PATH = re.compile(r"(?<![\w:/.])(?:~|/(?:home|Users|mnt|tmp|var|etc|opt|root|srv))/")   # a file path, not a URL
 
 
 class Contract(unittest.TestCase):
@@ -119,6 +144,18 @@ class Contract(unittest.TestCase):
                     self.assertEqual(lines[-2], before.splitlines()[-1])     # still ends with its Reply line
                     self.assertIsNotNone(one_tap.choices_of(lines[-2]))
                     self.assertTrue(one_tap.is_one_tap(out))
+
+    def test_a_report_asks_nothing_and_no_message_shows_an_id_or_path(self):
+        for name, (title, build, asking) in JOBS.items():
+            with self.subTest(job=name):
+                out = self.deliver(title, build())
+                self.assertEqual(one_tap.asks(out), asking, out)
+                self.assertIsNone(CARD_ID.search(out), out)
+                self.assertIsNone(PATH.search(out), out)
+
+    def test_every_message_job_has_a_row(self):
+        want = {jobs.job_words(i) for i in jobs.JOB_WORDS if i not in NO_MESSAGE}
+        self.assertEqual(set(JOBS), want)
 
     def test_the_fixtures_have_every_optional_line(self):
         self.assertGreaterEqual(len(week_review_body().splitlines()), 15)
